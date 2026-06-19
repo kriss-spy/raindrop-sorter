@@ -1,4 +1,4 @@
-# Raindrop Sentinel — PRD
+# Raindrop Sorter — PRD
 
 **Status:** `ready-for-agent`
 
@@ -10,7 +10,7 @@ The user maintains a large Raindrop.io bookmark library (~1,000+ items) organize
 
 ## Solution
 
-**Raindrop Sentinel** is a serverless agent deployed on Modal.com that monitors the Raindrop.io `Unsorted` collection, performs visual and semantic analysis, and automatically moves bookmarks into the user's existing folder hierarchy. It learns the user's organization style by embedding existing sorted bookmarks into a vector database and matching new items against folder centroids. The system is fully autonomous: unconfident items stay in `Unsorted` for human review, but everything else is sorted automatically.
+**Raindrop Sorter** is a serverless agent deployed on Modal.com that monitors the Raindrop.io `Unsorted` collection, performs visual and semantic analysis, and automatically moves bookmarks into the user's existing folder hierarchy. It learns the user's organization style by embedding existing sorted bookmarks into a vector database and matching new items against folder centroids. The system is fully autonomous: unconfident items stay in `Unsorted` for human review, but everything else is sorted automatically.
 
 ## User Stories
 
@@ -82,19 +82,19 @@ The Resolver is the single source of truth for all sorting decisions. It execute
   - Auto-extracts candidate exact tag rules from existing bookmarks (tag frequency ≥ 3 per folder).
   - Validates rule targets against live folders; disables rules pointing to missing folders.
   - Auto-deletes rules after 3 manual-move mismatches are detected.
-- **Re-index retry logic:** Old `sentinel-reviewed:<date>` tags are stripped during re-index, causing the Watcher to retry previously rejected bookmarks against the updated vector space.
+- **Re-index retry logic:** Old `sorter-reviewed:<date>` tags are stripped during re-index, causing the Watcher to retry previously rejected bookmarks against the updated vector space.
 
 ### State Machine via Raindrop Tags
 
 The system uses Raindrop tags as its sole state ledger (no separate database):
 
-- `sentinel-pending-vision:<date>` — Watcher tagged, awaiting Vision Worker.
-- `sentinel-pending-resolution` — Vision Worker tagged, awaiting Resolver.
-- `sentinel-reviewed:<date>` — Resolver attempted, item stayed in `Unsorted` (low confidence).
+  - `sorter-pending-vision:<date>` — Watcher tagged, awaiting Vision Worker.
+  - `sorter-pending-resolution` — Vision Worker tagged, awaiting Resolver.
+  - `sorter-reviewed:<date>` — Resolver attempted, item stayed in `Unsorted` (low confidence).
 - `ai:new-rule-<rule_name>` — Sorted by a newly auto-extracted rule (audit trail).
 - `ai:sorted:YYYY-MM-DD` — Successfully sorted by any path (audit trail).
 
-Operational tags (`sentinel-reviewed`, `ai:new-rule-*`, `ai:sorted:*`) are preserved. Transient extraction tags (`ai:wdtag-*`, `ai:sauce-*`) are stripped after sorting.
+Operational tags (`sorter-reviewed`, `ai:new-rule-*`, `ai:sorted:*`) are preserved. Transient extraction tags (`ai:wdtag-*`, `ai:sauce-*`) are stripped after sorting.
 
 ### SauceNAO Integration
 

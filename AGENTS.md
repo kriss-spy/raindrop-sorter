@@ -4,7 +4,7 @@
 
 ### Issue tracker
 
-Issues and PRDs live as markdown files in `.scratch/`. See `docs/agents/issue-tracker.md`.
+GitHub issues, interact using `gh`
 
 ### Triage labels
 

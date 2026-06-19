@@ -1,4 +1,4 @@
-# Raindrop Sentinel
+# Raindrop Sorter
 
 An autonomous serverless agent that organizes your [Raindrop.io](https://raindrop.io) bookmarks for you.
 

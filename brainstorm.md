@@ -1,8 +1,8 @@
-# Project Documentation: Raindrop Sentinel (Serverless Edition)
+# Project Documentation: Raindrop Sorter (Serverless Edition)
 
 ## 1. System Overview
 
-**Raindrop Sentinel** is an autonomous agent deployed on **Modal.com**. It monitors the Raindrop.io `Unsorted` collection, performs visual and semantic analysis using cloud GPUs, and organizes bookmarks into a folder hierarchy based on a "learned" vector database of your existing library.
+**Raindrop Sorter** is an autonomous agent deployed on **Modal.com**. It monitors the Raindrop.io `Unsorted` collection, performs visual and semantic analysis using cloud GPUs, and organizes bookmarks into a folder hierarchy based on a "learned" vector database of your existing library.
 
 ## 2. Technical Architecture
 
