@@ -40,6 +40,10 @@ class RaindropClient:
         """Return a single collection."""
         return self._get(f"collection/{collection_id}")
 
+    def get_raindrop(self, raindrop_id: int) -> dict[str, Any]:
+        """Return a single raindrop by ID."""
+        return self._get(f"raindrop/{raindrop_id}")
+
     def get_raindrops(
         self,
         collection_id: int,

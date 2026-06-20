@@ -54,9 +54,20 @@ def tag_pending_resolution(bookmark: dict[str, Any]) -> list[str]:
     return add_tag(tags, PENDING_RESOLUTION)
 
 
+def tag_after_vision(bookmark: dict[str, Any]) -> list[str]:
+    """Transition from pending-vision to pending-resolution, preserving WD14 tags."""
+    tags = bookmark.get("tags", [])
+    tags = remove_tags_by_prefix(tags, PENDING_VISION_PREFIX)
+    tags = remove_tags_by_prefix(tags, REVIEWED_PREFIX)
+    return add_tag(tags, PENDING_RESOLUTION)
+
+
 def tag_reviewed(bookmark: dict[str, Any]) -> list[str]:
-    """Tag a bookmark as reviewed (stayed in Unsorted)."""
-    tags = get_clean_tags(bookmark)
+    """Tag a bookmark as reviewed (stayed in Unsorted).
+
+    Preserves ai:wdtag-* tags so vision results are not lost on review.
+    """
+    tags = bookmark.get("tags", [])
     tags = remove_tags_by_prefix(tags, PENDING_VISION_PREFIX)
     tags = remove_tags_by_prefix(tags, PENDING_RESOLUTION)
     tags = remove_tags_by_prefix(tags, REVIEWED_PREFIX)
@@ -79,6 +90,18 @@ def is_pending_resolution(bookmark: dict[str, Any]) -> bool:
     """Check if a bookmark is tagged as pending resolution."""
     tags = bookmark.get("tags", [])
     return PENDING_RESOLUTION in tags
+
+
+def is_pending_vision(bookmark: dict[str, Any]) -> bool:
+    """Check if a bookmark is tagged as awaiting vision worker."""
+    tags = bookmark.get("tags", [])
+    return any(t.startswith(PENDING_VISION_PREFIX) for t in tags)
+
+
+def has_vision_tags(bookmark: dict[str, Any]) -> bool:
+    """Check if a bookmark has WD14 extraction tags."""
+    tags = bookmark.get("tags", [])
+    return any(t.startswith("ai:wdtag-") for t in tags)
 
 
 def is_reviewed(bookmark: dict[str, Any]) -> bool:

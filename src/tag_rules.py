@@ -7,6 +7,7 @@ from typing import Any
 
 TAG_RULES_FILE = "tag_rules.json"
 TAG_RULES_CANDIDATES_FILE = "tag_rules_candidates.json"
+SERIES_RULES_FILE = "series_rules.json"
 MIN_TAG_FREQUENCY = 3
 MAX_MISMATCHES = 3
 
@@ -75,4 +76,35 @@ def validate_tag_rules(
     existing_folders: set[str],
 ) -> dict[str, str]:
     """Disable rules that point to missing folders."""
+    return {tag: folder for tag, folder in rules.items() if folder in existing_folders}
+
+
+# ---------------------------------------------------------------------------
+# Series rules
+# ---------------------------------------------------------------------------
+
+def load_series_rules(base_path: str) -> dict[str, str]:
+    """Load series tag -> folder mappings.
+
+    Returns empty dict if the file doesn't exist.
+    """
+    path = os.path.join(base_path, SERIES_RULES_FILE)
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def save_series_rules(rules: dict[str, str], base_path: str) -> None:
+    """Save series tag -> folder mappings."""
+    path = os.path.join(base_path, SERIES_RULES_FILE)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(rules, f, indent=2)
+
+
+def validate_series_rules(
+    rules: dict[str, str],
+    existing_folders: set[str],
+) -> dict[str, str]:
+    """Disable series rules that point to missing folders."""
     return {tag: folder for tag, folder in rules.items() if folder in existing_folders}
