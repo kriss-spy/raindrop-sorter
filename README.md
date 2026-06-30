@@ -17,9 +17,9 @@ It monitors your `Unsorted` collection, learns your personal folder hierarchy fr
 
 ## Architecture
 
-- **Watcher** (CPU, cron) — polls Raindrop, applies text heuristics, queues vision jobs
-- **Vision Worker** (GPU, on-demand) — runs WD14 Tagger on cover images, performs advisory SauceNAO lookups
+- **Watcher** (CPU, cron) — polls Raindrop, tags new items for processing
 - **Resolver** (CPU, on-demand) — applies all decision logic and moves bookmarks via the Raindrop API
+- **Vision Worker** (GPU, on-demand) — runs WD14 Tagger on cover images when text heuristics are uncertain
 
 All state is stored in a ChromaDB vector database on a persistent Modal Volume. The agent uses Raindrop tags as its state machine — no separate database needed.
 
@@ -31,12 +31,17 @@ All state is stored in a ChromaDB vector database on a persistent Modal Volume. 
 | Vector DB | ChromaDB |
 | Embeddings | `sentence-transformers/all-mpnet-base-v2` |
 | Vision | WD14 Tagger (ONNX on NVIDIA T4) |
-| Advisory | SauceNAO API |
 | Source API | Raindrop.io REST API |
 
 ## Project Status
 
-**Design complete, implementation in progress.**
+**Core pipeline complete and deployed.**
+
+- ✅ Autonomous sorting (text + vision)
+- ✅ Weekly re-index with passive learning
+- ✅ Audit trail via Raindrop tags
+- ⏳ SauceNAO advisory integration (issue #4)
+- ⏳ Structured logging & observability (issue #4)
 
 The full architecture and design decisions are documented in [`docs/PRD.md`](docs/PRD.md).
 
@@ -48,18 +53,23 @@ The full architecture and design decisions are documented in [`docs/PRD.md`](doc
 - **No LLMs.** All decisions are deterministic rules and vector similarity. No hallucinations, no API tokens for language models.
 - **Free tier friendly.** GPU is only invoked when visual analysis is actually needed. Text inference runs on CPU.
 
-## Setup (coming soon)
+## Quick Start
 
 ```bash
-# 1. Install dependencies
+# 1. Clone and install dependencies
 pip install -r requirements.txt
 
-# 2. Bootstrap the agent's memory from your existing library
+# 2. Set your Raindrop API token
+export RAINDROP_TOKEN="your_token_here"
+
+# 3. Bootstrap the agent's memory from your existing library
 python bootstrap.py
 
-# 3. Deploy to Modal
+# 4. Deploy to Modal
 modal deploy app.py
 ```
+
+See [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) for the full setup guide.
 
 ## Credits
 
