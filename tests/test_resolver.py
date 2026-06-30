@@ -263,12 +263,44 @@ def test_decide_folder_low_confidence():
     assert "low_confidence" in reason
 
 
+from src.resolver import resolve_bookmark, _rule_name_from_reason
+
+
+# ---------------------------------------------------------------------------
+# Rule name extraction
+# ---------------------------------------------------------------------------
+
+def test_rule_name_from_reason_exact_tag():
+    assert _rule_name_from_reason("exact_tag_rule:miku") == "miku"
+
+
+def test_rule_name_from_reason_other_reasons():
+    assert _rule_name_from_reason("centroid_match:gap=0.500") is None
+    assert _rule_name_from_reason("series_rule:Art/Vocaloid") is None
+    assert _rule_name_from_reason("crossover_fallback") is None
+
+
+def test_resolve_bookmark_tags_new_rule_for_exact_match():
+    bm = {
+        "_id": 4,
+        "tags": ["miku"],
+        "title": "",
+        "domain": "",
+        "excerpt": "",
+        "_folder_id_map": {"Art/Vocaloid": 42},
+    }
+    centroids = {}
+    rules = {"miku": "Art/Vocaloid"}
+
+    target_id, new_tags, reason = resolve_bookmark(bm, centroids, rules)
+    assert target_id == 42
+    assert "ai:new-rule-miku" in new_tags
+    assert "exact_tag_rule:miku" in reason
+
+
 # ---------------------------------------------------------------------------
 # Full resolve_bookmark
 # ---------------------------------------------------------------------------
-
-from src.resolver import resolve_bookmark
-
 
 def test_resolve_bookmark_moves_when_confident():
     bm = {

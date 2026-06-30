@@ -19,6 +19,11 @@ def _today_tag(prefix: str) -> str:
 def get_clean_tags(bookmark: dict[str, Any]) -> list[str]:
     """Return the bookmark's tags with transient AI tags stripped."""
     tags = bookmark.get("tags", [])
+    return cleanup_transient_tags(tags)
+
+
+def cleanup_transient_tags(tags: list[str]) -> list[str]:
+    """Remove transient extraction tags so the Raindrop tag cloud stays clean."""
     return [t for t in tags if not t.startswith(("ai:wdtag-", "ai:sauce-"))]
 
 
@@ -76,7 +81,7 @@ def tag_reviewed(bookmark: dict[str, Any]) -> list[str]:
 
 def tag_sorted(bookmark: dict[str, Any], by_rule: str | None = None) -> list[str]:
     """Tag a bookmark as successfully sorted."""
-    tags = get_clean_tags(bookmark)
+    tags = cleanup_transient_tags(bookmark.get("tags", []))
     tags = remove_tags_by_prefix(tags, PENDING_VISION_PREFIX)
     tags = remove_tags_by_prefix(tags, PENDING_RESOLUTION)
     tags = remove_tags_by_prefix(tags, REVIEWED_PREFIX)

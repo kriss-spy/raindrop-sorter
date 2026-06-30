@@ -168,5 +168,12 @@ def resolve_bookmark(
         new_tags = tag_reviewed(bookmark)
         return None, new_tags, f"missing_folder:{folder}"
 
-    new_tags = tag_sorted(bookmark, by_rule=None)
+    new_tags = tag_sorted(bookmark, by_rule=_rule_name_from_reason(reason))
     return collection_id, new_tags, reason
+
+
+def _rule_name_from_reason(reason: str) -> str | None:
+    """Extract the rule tag from an exact_tag_rule reason, if present."""
+    if reason.startswith("exact_tag_rule:"):
+        return reason[len("exact_tag_rule:"):]
+    return None

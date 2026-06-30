@@ -32,6 +32,7 @@ vol = modal.Volume.from_name("raindrop-sorter-vol", create_if_missing=True)
 DB_PATH = "/data/chroma_db"
 CRON_SCHEDULE = "*/30 * * * *"  # Every 30 minutes
 VISION_CRON_SCHEDULE = "*/15 * * * *"  # Every 15 minutes
+REINDEX_CRON_SCHEDULE = "0 3 * * 0"  # Sunday 3 AM UTC
 
 # ---------------------------------------------------------------------------
 # Modal App definition (must be before @app.function decorators)
@@ -192,6 +193,33 @@ def resolver() -> dict[str, Any]:
         "errors": errors,
         "total": len(to_resolve),
     }
+
+
+# ---------------------------------------------------------------------------
+# Re-index — CPU, weekly Sunday 3 AM
+# ---------------------------------------------------------------------------
+@app.function(
+    image=image,
+    schedule=modal.Cron(REINDEX_CRON_SCHEDULE),
+    volumes={"/data": vol},
+    secrets=[modal.Secret.from_name("raindrop-token")],
+)
+def reindex() -> dict[str, Any]:
+    """Weekly re-index: rebuild ChromaDB, centroids, rules, and retry reviewed items."""
+    from src.embeddings import Embedder
+    from src.raindrop_client import RaindropClient
+    from src.reindex import rebuild_index
+
+    client = RaindropClient()
+    embedder = Embedder()
+
+    try:
+        result = rebuild_index(client, embedder, db_path=DB_PATH)
+    except Exception as exc:
+        print(f"Re-index failed: {exc}")
+        return {"status": "error", "error": str(exc)}
+
+    return result
 
 
 # ---------------------------------------------------------------------------

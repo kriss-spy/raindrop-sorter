@@ -61,6 +61,7 @@ def crawl_all_bookmarks(client: RaindropClient) -> tuple[list[dict[str, Any]], l
     print(f"Found {len(collections)} collections.")
 
     folder_map = build_folder_map(collections)
+    id_to_path_map = {cid: path for path, cid in folder_map.items()}
 
     all_bookmarks: list[dict[str, Any]] = []
     for coll in collections:
@@ -68,7 +69,7 @@ def crawl_all_bookmarks(client: RaindropClient) -> tuple[list[dict[str, Any]], l
         # Skip special collections like Trash (-99) if present
         if cid == -99:
             continue
-        path = folder_map.get(cid, str(cid))
+        path = id_to_path_map.get(cid, str(cid))
         print(f"  Crawling '{path}' (id={cid})...")
         items = client.get_all_raindrops(cid)
         for item in items:
