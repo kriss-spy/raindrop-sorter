@@ -73,6 +73,7 @@ def watcher() -> dict[str, Any]:
     from src.raindrop_client import RaindropClient
     from src.state_machine import (
         is_pending_resolution,
+        is_pending_vision,
         is_reviewed,
         tag_pending_resolution,
     )
@@ -88,7 +89,7 @@ def watcher() -> dict[str, Any]:
 
     for item in items:
         # Skip items already being processed or recently reviewed
-        if is_pending_resolution(item) or is_reviewed(item):
+        if is_pending_resolution(item) or is_pending_vision(item) or is_reviewed(item):
             skipped += 1
             continue
 
@@ -97,6 +98,13 @@ def watcher() -> dict[str, Any]:
         new_tags = tag_pending_resolution(item)
         client.update_raindrop(item["_id"], tags=new_tags)
         processed += 1
+
+    has_resolver_work = any(
+        is_pending_resolution(item) and not is_pending_vision(item)
+        for item in items
+    )
+    if processed or has_resolver_work:
+        resolver.spawn()  # type: ignore[attr-defined]
 
     return {
         "status": "ok",
@@ -263,6 +271,7 @@ def vision_worker(bookmark_id: int) -> dict[str, Any]:
             new_tags.append(vt)
 
     client.update_raindrop(bookmark_id, tags=new_tags)
+    resolver.spawn()  # type: ignore[attr-defined]
     return {"status": "ok", "bookmark_id": bookmark_id, "tags_added": vision_tags}
 
 
@@ -301,6 +310,9 @@ def vision_cron() -> dict[str, Any]:
         except Exception as exc:
             print(f"Error in vision cron for {item['_id']}: {exc}")
             errors += 1
+
+    if processed:
+        resolver.spawn()  # type: ignore[attr-defined]
 
     return {
         "status": "ok",

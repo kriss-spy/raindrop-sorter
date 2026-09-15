@@ -48,6 +48,7 @@ def tag_pending_vision(bookmark: dict[str, Any]) -> list[str]:
     """Tag a bookmark as awaiting vision worker."""
     tags = get_clean_tags(bookmark)
     tags = remove_tags_by_prefix(tags, PENDING_VISION_PREFIX)
+    tags = remove_tags_by_prefix(tags, PENDING_RESOLUTION)
     return add_tag(tags, _today_tag(PENDING_VISION_PREFIX))
 
 
