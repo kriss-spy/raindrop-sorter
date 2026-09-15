@@ -6,6 +6,7 @@ import tempfile
 
 import numpy as np
 import pytest
+import requests
 
 from src.centroids import compute_folder_centroids, load_centroids, save_centroids
 from src.embeddings import build_text_input
@@ -375,7 +376,7 @@ def test_resolve_bookmark_safety_missing_folder():
 # Raindrop client (mocked HTTP)
 # ---------------------------------------------------------------------------
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.raindrop_client import RaindropClient
 
@@ -389,6 +390,57 @@ def test_raindrop_client_get_collections():
     cols = client.get_collections()
     assert len(cols) == 1
     assert cols[0]["title"] == "A"
+
+
+@patch("src.raindrop_client.time.sleep")
+@patch("src.raindrop_client.time.time", return_value=100.0)
+def test_raindrop_client_retries_get_after_rate_limit(mock_time, mock_sleep):
+    client = RaindropClient(token="test")
+    rate_limited = MagicMock(
+        status_code=429,
+        headers={"X-RateLimit-Reset": "105"},
+    )
+    successful = MagicMock(status_code=200)
+    successful.json.return_value = {"items": []}
+    client.session.get = MagicMock(side_effect=[rate_limited, successful])
+
+    result = client.get_collections()
+
+    assert result == []
+    assert client.session.get.call_count == 2
+    mock_sleep.assert_called_once_with(5.0)
+
+
+@patch("src.raindrop_client.time.sleep")
+@patch("src.raindrop_client.time.time", return_value=100.0)
+def test_raindrop_client_caps_rate_limit_wait(mock_time, mock_sleep):
+    client = RaindropClient(token="test")
+    rate_limited = MagicMock(
+        status_code=429,
+        headers={"X-RateLimit-Reset": "10000"},
+    )
+    successful = MagicMock(status_code=200)
+    successful.json.return_value = {"items": []}
+    client.session.get = MagicMock(side_effect=[rate_limited, successful])
+
+    assert client.get_collections() == []
+    mock_sleep.assert_called_once_with(60.0)
+
+
+@patch("src.raindrop_client.time.sleep")
+def test_raindrop_client_propagates_exhausted_rate_limit(mock_sleep):
+    client = RaindropClient(token="test")
+    responses = []
+    for _ in range(6):
+        response = MagicMock(status_code=429, headers={})
+        response.raise_for_status.side_effect = requests.HTTPError("rate limited")
+        responses.append(response)
+    client.session.get = MagicMock(side_effect=responses)
+
+    with pytest.raises(requests.HTTPError, match="rate limited"):
+        client.get_collections()
+
+    assert client.session.get.call_count == 6
 
 
 def test_raindrop_client_update_raindrop():

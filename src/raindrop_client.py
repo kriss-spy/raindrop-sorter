@@ -1,11 +1,14 @@
 """Client for the Raindrop.io REST API."""
 
 import os
+import time
 from typing import Any
 
 import requests
 
 RAINDROP_API_BASE = "https://api.raindrop.io/rest/v1"
+MAX_RATE_LIMIT_RETRIES = 5
+RATE_LIMIT_WINDOW_SECONDS = 60.0
 
 
 class RaindropClient:
@@ -21,9 +24,24 @@ class RaindropClient:
 
     def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         url = f"{RAINDROP_API_BASE}/{path}"
-        resp = self.session.get(url, params=params, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+            resp = self.session.get(url, params=params, timeout=30)
+            if resp.status_code != 429:
+                resp.raise_for_status()
+                return resp.json()
+
+            if attempt == MAX_RATE_LIMIT_RETRIES:
+                resp.raise_for_status()
+
+            reset_at = resp.headers.get("X-RateLimit-Reset")
+            try:
+                delay = float(reset_at) - time.time()
+            except (TypeError, ValueError):
+                delay = RATE_LIMIT_WINDOW_SECONDS
+            delay = min(max(delay, 1.0), RATE_LIMIT_WINDOW_SECONDS)
+            time.sleep(delay)
+
+        raise RuntimeError("unreachable")
 
     def _put(self, path: str, json: dict[str, Any]) -> dict[str, Any]:
         url = f"{RAINDROP_API_BASE}/{path}"
