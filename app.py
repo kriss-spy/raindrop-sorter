@@ -35,6 +35,7 @@ DB_PATH = "/data/chroma_db"
 CRON_SCHEDULE = "*/30 * * * *"  # Every 30 minutes
 VISION_CRON_SCHEDULE = "*/15 * * * *"  # Every 15 minutes
 REINDEX_CRON_SCHEDULE = "0 3 * * 0"  # Sunday 3 AM UTC
+REINDEX_TIMEOUT_SECONDS = 30 * 60
 
 # ---------------------------------------------------------------------------
 # Modal App definition (must be before @app.function decorators)
@@ -211,6 +212,7 @@ def resolver() -> dict[str, Any]:
 @app.function(
     image=image,
     schedule=modal.Cron(REINDEX_CRON_SCHEDULE),
+    timeout=REINDEX_TIMEOUT_SECONDS,
     volumes={"/data": vol},
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
