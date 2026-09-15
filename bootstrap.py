@@ -11,47 +11,8 @@ from dotenv import load_dotenv
 from src.centroids import compute_folder_centroids, save_centroids
 from src.embeddings import Embedder, build_text_input
 from src.raindrop_client import RaindropClient
+from src.reindex import build_folder_hierarchy, build_folder_map
 from src.tag_rules import extract_candidate_tag_rules, save_tag_rules
-
-
-def build_folder_map(collections: list[dict[str, Any]]) -> dict[str, int]:
-    """Map folder path -> collection ID."""
-    # Build lookup by id first
-    by_id: dict[int, dict[str, Any]] = {c["_id"]: c for c in collections}
-
-    def path_for(cid: int) -> str:
-        c = by_id[cid]
-        name = c.get("title", "")
-        parent = c.get("parent", {}).get("$id")
-        if parent and parent in by_id:
-            return f"{path_for(parent)}/{name}"
-        return name
-
-    return {path_for(c["_id"]): c["_id"] for c in collections}
-
-
-def build_folder_hierarchy(collections: list[dict[str, Any]]) -> dict[str, list[str]]:
-    """Build parent -> [children] mapping using folder paths."""
-    by_id = {c["_id"]: c for c in collections}
-    folder_map = build_folder_map(collections)
-
-    def path_for(cid: int) -> str:
-        c = by_id[cid]
-        name = c.get("title", "")
-        parent = c.get("parent", {}).get("$id")
-        if parent and parent in by_id:
-            return f"{path_for(parent)}/{name}"
-        return name
-
-    hierarchy: dict[str, list[str]] = {}
-    for c in collections:
-        parent = c.get("parent", {}).get("$id")
-        if parent and parent in by_id:
-            parent_path = path_for(parent)
-            child_path = path_for(c["_id"])
-            hierarchy.setdefault(parent_path, []).append(child_path)
-
-    return hierarchy
 
 
 def crawl_all_bookmarks(client: RaindropClient) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:

@@ -23,40 +23,43 @@ NEW_DB_DIR = "chroma_db_new"
 OLD_DB_DIR = "chroma_db_old"
 
 
-def build_folder_map(collections: list[dict[str, Any]]) -> dict[str, int]:
-    """Map folder path -> collection ID."""
+def _parent_id(collection: dict[str, Any]) -> int | None:
+    parent = collection.get("parent") or {}
+    return parent.get("$id")
+
+
+def _build_collection_paths(
+    collections: list[dict[str, Any]],
+) -> dict[int, str]:
     by_id: dict[int, dict[str, Any]] = {c["_id"]: c for c in collections}
 
-    def path_for(cid: int) -> str:
-        c = by_id[cid]
-        name = c.get("title", "")
-        parent = c.get("parent", {}).get("$id")
-        if parent and parent in by_id:
-            return f"{path_for(parent)}/{name}"
+    def path_for(collection_id: int) -> str:
+        collection = by_id[collection_id]
+        name = collection.get("title", "")
+        parent_id = _parent_id(collection)
+        if parent_id and parent_id in by_id:
+            return f"{path_for(parent_id)}/{name}"
         return name
 
-    return {path_for(c["_id"]): c["_id"] for c in collections}
+    return {collection_id: path_for(collection_id) for collection_id in by_id}
+
+
+def build_folder_map(collections: list[dict[str, Any]]) -> dict[str, int]:
+    """Map folder path -> collection ID."""
+    paths_by_id = _build_collection_paths(collections)
+    return {path: collection_id for collection_id, path in paths_by_id.items()}
 
 
 def build_folder_hierarchy(collections: list[dict[str, Any]]) -> dict[str, list[str]]:
     """Build parent -> [children] mapping using folder paths."""
-    by_id = {c["_id"]: c for c in collections}
-    folder_map = build_folder_map(collections)
-
-    def path_for(cid: int) -> str:
-        c = by_id[cid]
-        name = c.get("title", "")
-        parent = c.get("parent", {}).get("$id")
-        if parent and parent in by_id:
-            return f"{path_for(parent)}/{name}"
-        return name
+    paths_by_id = _build_collection_paths(collections)
 
     hierarchy: dict[str, list[str]] = {}
-    for c in collections:
-        parent = c.get("parent", {}).get("$id")
-        if parent and parent in by_id:
-            parent_path = path_for(parent)
-            child_path = path_for(c["_id"])
+    for collection in collections:
+        parent_id = _parent_id(collection)
+        if parent_id and parent_id in paths_by_id:
+            parent_path = paths_by_id[parent_id]
+            child_path = paths_by_id[collection["_id"]]
             hierarchy.setdefault(parent_path, []).append(child_path)
 
     return hierarchy

@@ -185,7 +185,7 @@ def test_atomic_swap_new_db():
 
 def test_rebuild_index_creates_db_and_state():
     collections = [
-        {"_id": 1, "title": "Art", "parent": {}},
+        {"_id": 1, "title": "Art", "parent": None},
         {"_id": 2, "title": "Vocaloid", "parent": {"$id": 1}},
     ]
     bookmarks = [
