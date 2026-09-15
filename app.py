@@ -10,15 +10,17 @@ import modal
 # ---------------------------------------------------------------------------
 # Modal image definitions
 # ---------------------------------------------------------------------------
-image = (
+base_image = (
     modal.Image.debian_slim(python_version="3.11")
     .pip_install_from_requirements("requirements.txt")
 )
 
+image = base_image.add_local_python_source("src")
+
 vision_image = (
-    modal.Image.debian_slim(python_version="3.11")
-    .pip_install_from_requirements("requirements.txt")
+    base_image
     .pip_install("onnxruntime-gpu", "Pillow", "huggingface_hub")
+    .add_local_python_source("src")
 )
 
 # ---------------------------------------------------------------------------
