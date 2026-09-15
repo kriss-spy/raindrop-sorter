@@ -163,21 +163,15 @@ def upload_volume(local_path: str) -> None:
     """Upload the local ChromaDB directory to Modal Volume."""
     import modal
 
-    # Assumes a Modal Volume named 'raindrop-sorter-vol' exists
     vol = modal.Volume.from_name("raindrop-sorter-vol", create_if_missing=True)
 
-    # Modal Volume operations happen inside a function context
-    @modal.function(volumes={"/data": vol})
-    def _upload():
-        import shutil
-        dest = "/data/chroma_db"
-        if os.path.exists(dest):
-            shutil.rmtree(dest)
-        shutil.copytree(local_path, dest)
-        return f"Uploaded to {dest}"
+    try:
+        vol.remove_file("/chroma_db", recursive=True)
+    except FileNotFoundError:
+        pass
 
-    result = _upload.remote()
-    print(result)
+    with vol.batch_upload() as upload:
+        upload.put_directory(local_path, "/chroma_db")
 
 
 def main() -> None:
