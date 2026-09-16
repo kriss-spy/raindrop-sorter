@@ -63,8 +63,10 @@ class FakeEmbedder:
 
     def __init__(self, dim: int = 2):
         self.dim = dim
+        self.batch_sizes: list[int] = []
 
     def embed(self, texts: list[str]) -> np.ndarray:
+        self.batch_sizes.append(len(texts))
         rng = np.random.default_rng(42)
         return rng.random((len(texts), self.dim)).astype(np.float32)
 
@@ -261,6 +263,32 @@ def test_rebuild_index_creates_db_and_state():
         assert result["raindrop_requests"] == 0
         assert result["rate_limit_wait_seconds"] == 0.0
         assert client.collection_reads == [0]
+
+
+def test_rebuild_index_embeds_large_libraries_in_bounded_chunks():
+    collections = [{"_id": 1, "title": "Archive", "parent": None}]
+    bookmarks = [
+        {
+            "_id": bookmark_id,
+            "title": f"Bookmark {bookmark_id}",
+            "collection": {"$id": 1},
+            "tags": [],
+        }
+        for bookmark_id in range(600)
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        embedder = FakeEmbedder(dim=8)
+        result = rebuild_index(
+            FakeRaindropClient(collections, bookmarks),
+            embedder,
+            db_path=os.path.join(tmpdir, "chroma_db"),
+        )
+
+    assert result["status"] == "ok"
+    assert sum(embedder.batch_sizes) == 600
+    assert len(embedder.batch_sizes) > 1
+    assert max(embedder.batch_sizes) <= 256
 
 
 def test_rebuild_index_detects_manual_corrections_and_disables_rule():

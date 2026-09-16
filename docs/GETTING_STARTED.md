@@ -135,6 +135,8 @@ While re-indexing, the other functions pause their Raindrop API activity so the
 rebuild owns the account's shared request budget. Modal logs report model
 initialization, crawl, preparation, embedding, and index-write durations, along
 with the request count and time spent waiting for Raindrop rate-limit resets.
+Large libraries are embedded in chunks with live progress and ETA logging. The
+CPU worker allows up to two hours but stops billing as soon as it completes.
 
 ## Troubleshooting
 

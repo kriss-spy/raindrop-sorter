@@ -20,6 +20,8 @@ from src.tag_rules import (
     validate_tag_rules,
 )
 
+EMBED_CHUNK_SIZE = 256
+
 NEW_DB_DIR = "chroma_db_new"
 OLD_DB_DIR = "chroma_db_old"
 
@@ -198,6 +200,32 @@ def atomic_swap_new_db(new_path: str, current_path: str) -> None:
         shutil.rmtree(old_path)
 
 
+def embed_texts_in_chunks(
+    embedder: Any,
+    texts: list[str],
+    chunk_size: int = EMBED_CHUNK_SIZE,
+) -> np.ndarray:
+    """Embed a large library in bounded chunks with measurable progress."""
+    started = time.monotonic()
+    chunks: list[np.ndarray] = []
+    total = len(texts)
+
+    for start in range(0, total, chunk_size):
+        end = min(start + chunk_size, total)
+        chunks.append(np.asarray(embedder.embed(texts[start:end])))
+        elapsed = max(time.monotonic() - started, 0.001)
+        rate = end / elapsed
+        eta_seconds = (total - end) / rate if rate else 0.0
+        print(
+            "Re-index embedding progress: "
+            f"{end}/{total} ({end / total:.1%}), "
+            f"elapsed={elapsed:.1f}s, eta={eta_seconds:.1f}s",
+            flush=True,
+        )
+
+    return np.concatenate(chunks, axis=0)
+
+
 def rebuild_index(
     client: Any,
     embedder: Any,
@@ -294,7 +322,7 @@ def rebuild_index(
     # 7. Build embeddings and write to new ChromaDB
     phase_started = time.monotonic()
     texts = [build_text_input(bm) for bm in all_bookmarks]
-    embeddings = embedder.embed(texts)
+    embeddings = embed_texts_in_chunks(embedder, texts)
     record_phase("embed", phase_started)
 
     phase_started = time.monotonic()
