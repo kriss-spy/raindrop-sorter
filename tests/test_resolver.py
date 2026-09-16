@@ -383,13 +383,18 @@ from src.raindrop_client import RaindropClient
 
 def test_raindrop_client_get_collections():
     client = RaindropClient(token="test")
-    mock_resp = MagicMock()
-    mock_resp.json.return_value = {"items": [{"_id": 1, "title": "A"}]}
-    client.session.get = MagicMock(return_value=mock_resp)
+    root_response = MagicMock(status_code=200, headers={})
+    root_response.json.return_value = {"items": [{"_id": 1, "title": "A"}]}
+    child_response = MagicMock(status_code=200, headers={})
+    child_response.json.return_value = {
+        "items": [{"_id": 2, "title": "B", "parent": {"$id": 1}}]
+    }
+    client.session.get = MagicMock(side_effect=[root_response, child_response])
 
     cols = client.get_collections()
-    assert len(cols) == 1
+    assert len(cols) == 2
     assert cols[0]["title"] == "A"
+    assert cols[1]["title"] == "B"
 
 
 @patch("src.raindrop_client.time.sleep")
@@ -401,12 +406,12 @@ def test_raindrop_client_retries_get_after_rate_limit(mock_time, mock_sleep):
         headers={"X-RateLimit-Reset": "105"},
     )
     successful = MagicMock(status_code=200)
-    successful.json.return_value = {"items": []}
+    successful.json.return_value = {"_id": 1}
     client.session.get = MagicMock(side_effect=[rate_limited, successful])
 
-    result = client.get_collections()
+    result = client.get_collection(1)
 
-    assert result == []
+    assert result == {"_id": 1}
     assert client.session.get.call_count == 2
     mock_sleep.assert_called_once_with(5.0)
 
@@ -420,10 +425,10 @@ def test_raindrop_client_caps_rate_limit_wait(mock_time, mock_sleep):
         headers={"X-RateLimit-Reset": "10000"},
     )
     successful = MagicMock(status_code=200)
-    successful.json.return_value = {"items": []}
+    successful.json.return_value = {"_id": 1}
     client.session.get = MagicMock(side_effect=[rate_limited, successful])
 
-    assert client.get_collections() == []
+    assert client.get_collection(1) == {"_id": 1}
     mock_sleep.assert_called_once_with(60.0)
 
 
@@ -438,7 +443,7 @@ def test_raindrop_client_propagates_exhausted_rate_limit(mock_sleep):
     client.session.get = MagicMock(side_effect=responses)
 
     with pytest.raises(requests.HTTPError, match="rate limited"):
-        client.get_collections()
+        client.get_collection(1)
 
     assert client.session.get.call_count == 6
 

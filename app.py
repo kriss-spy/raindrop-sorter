@@ -2,7 +2,9 @@
 
 import json
 import os
+import time
 from datetime import datetime, timezone
+from functools import wraps
 from typing import Any
 
 import modal
@@ -27,6 +29,7 @@ vision_image = (
 # Persistent volume for ChromaDB + centroids + rules
 # ---------------------------------------------------------------------------
 vol = modal.Volume.from_name("raindrop-sorter-vol", create_if_missing=True)
+coordination = modal.Dict.from_name("raindrop-sorter-coordination", create_if_missing=True)
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -36,11 +39,35 @@ CRON_SCHEDULE = "*/30 * * * *"  # Every 30 minutes
 VISION_CRON_SCHEDULE = "*/15 * * * *"  # Every 15 minutes
 REINDEX_CRON_SCHEDULE = "0 3 * * 0"  # Sunday 3 AM UTC
 REINDEX_TIMEOUT_SECONDS = 30 * 60
+REINDEX_LEASE_SECONDS = REINDEX_TIMEOUT_SECONDS + 5 * 60
+API_CONSUMER_LEASE_SECONDS = 6 * 60
 
 # ---------------------------------------------------------------------------
 # Modal App definition (must be before @app.function decorators)
 # ---------------------------------------------------------------------------
 app = modal.App("raindrop-sorter")
+
+
+def pause_during_reindex(paused_result: Any):
+    """Wrap a Modal entry point in an expiring API-consumer lease."""
+    def decorate(function):
+        @wraps(function)
+        def wrapped(*args, **kwargs):
+            from src.reindex_lease import api_consumer_lease
+
+            with api_consumer_lease(
+                coordination,
+                API_CONSUMER_LEASE_SECONDS,
+            ) as allowed:
+                if not allowed:
+                    if callable(paused_result):
+                        return paused_result(*args, **kwargs)
+                    return dict(paused_result)
+                return function(*args, **kwargs)
+
+        return wrapped
+
+    return decorate
 
 # ---------------------------------------------------------------------------
 # Helper: load state from volume
@@ -71,6 +98,7 @@ def _load_state() -> tuple[dict[str, Any], dict[str, str], dict[str, int], dict[
     volumes={"/data": vol},
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
+@pause_during_reindex({"status": "reindex_active", "processed": 0})
 def watcher() -> dict[str, Any]:
     """Poll Raindrop Unsorted, tag items for Resolver processing."""
     from src.raindrop_client import RaindropClient
@@ -125,6 +153,7 @@ def watcher() -> dict[str, Any]:
     volumes={"/data": vol},
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
+@pause_during_reindex({"status": "reindex_active"})
 def resolver() -> dict[str, Any]:
     """Apply centroid/tag matching and move confident bookmarks.
 
@@ -213,25 +242,70 @@ def resolver() -> dict[str, Any]:
     image=image,
     schedule=modal.Cron(REINDEX_CRON_SCHEDULE),
     timeout=REINDEX_TIMEOUT_SECONDS,
+    max_containers=1,
+    single_use_containers=True,
     volumes={"/data": vol},
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
-def reindex() -> dict[str, Any]:
+def reindex_worker() -> dict[str, Any]:
     """Weekly re-index: rebuild ChromaDB, centroids, rules, and retry reviewed items."""
     from src.embeddings import Embedder
     from src.raindrop_client import RaindropClient
     from src.reindex import rebuild_index
+    from src.reindex_lease import (
+        acquire_reindex_lease,
+        release_reindex_lease,
+        wait_for_api_consumers,
+    )
 
-    client = RaindropClient()
-    embedder = Embedder()
-
+    lease_owner = acquire_reindex_lease(coordination, REINDEX_LEASE_SECONDS)
+    run_started = time.monotonic()
+    model_init_seconds = 0.0
+    model_started = None
+    client = None
     try:
+        wait_for_api_consumers(coordination)
+        client = RaindropClient()
+        model_started = time.monotonic()
+        embedder = Embedder()
+        model_init_seconds = round(time.monotonic() - model_started, 3)
+        print(
+            f"Re-index phase model_init completed in {model_init_seconds:.3f}s",
+            flush=True,
+        )
         result = rebuild_index(client, embedder, db_path=DB_PATH)
     except Exception as exc:
+        if model_started is not None and model_init_seconds == 0.0:
+            model_init_seconds = round(time.monotonic() - model_started, 3)
         print(f"Re-index failed: {exc}")
-        return {"status": "error", "error": str(exc)}
+        result = {"status": "error", "error": str(exc)}
+    finally:
+        release_reindex_lease(coordination, lease_owner)
 
+    timings = result.setdefault("timings_seconds", {})
+    timings["model_init"] = model_init_seconds
+    timings["total"] = round(time.monotonic() - run_started, 3)
+    result.setdefault("raindrop_requests", int(getattr(client, "request_count", 0)))
+    result.setdefault(
+        "rate_limit_wait_seconds",
+        float(getattr(client, "rate_limit_wait_seconds", 0.0)),
+    )
+    print(
+        "Re-index invocation finished: "
+        f"status={result['status']}, total={timings['total']:.3f}s",
+        flush=True,
+    )
     return result
+
+
+@app.local_entrypoint()
+def reindex() -> None:
+    """Run the deployed singleton reindex worker in the selected environment."""
+    deployed_reindex = modal.Function.from_name(
+        "raindrop-sorter",
+        "reindex_worker",
+    )
+    print(deployed_reindex.remote())
 
 
 # ---------------------------------------------------------------------------
@@ -243,6 +317,9 @@ def reindex() -> dict[str, Any]:
     max_containers=1,
     volumes={"/data": vol},
     secrets=[modal.Secret.from_name("raindrop-token")],
+)
+@pause_during_reindex(
+    lambda bookmark_id: {"status": "reindex_active", "bookmark_id": bookmark_id}
 )
 def vision_worker(bookmark_id: int) -> dict[str, Any]:
     """Download cover image, run WD14 Tagger, update bookmark tags.
@@ -291,6 +368,7 @@ def vision_worker(bookmark_id: int) -> dict[str, Any]:
     schedule=modal.Cron(VISION_CRON_SCHEDULE),
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
+@pause_during_reindex({"status": "reindex_active", "dispatched": 0})
 def vision_cron() -> dict[str, Any]:
     """Dispatch bookmarks still tagged as pending-vision to GPU workers."""
     from src.raindrop_client import RaindropClient

@@ -2,6 +2,7 @@
 
 import os
 import time
+from collections.abc import Callable
 from typing import Any
 
 import requests
@@ -17,15 +18,63 @@ class RaindropClient:
     def __init__(self, token: str | None = None):
         self.token = token or os.environ["RAINDROP_TOKEN"]
         self.session = requests.Session()
+        self.request_count = 0
+        self.rate_limit_wait_seconds = 0.0
+        self._rate_limit_remaining: int | None = None
+        self._rate_limit_reset_at: float | None = None
         self.session.headers.update({
             "Authorization": f"Bearer {self.token}",
             "Content-Type": "application/json",
         })
 
-    def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    def _capture_rate_limit(self, headers: Any) -> None:
+        remaining = headers.get("RateLimit-Remaining")
+        if remaining is None:
+            remaining = headers.get("X-RateLimit-Remaining")
+        try:
+            self._rate_limit_remaining = int(remaining)
+        except (TypeError, ValueError):
+            self._rate_limit_remaining = None
+
+        try:
+            self._rate_limit_reset_at = float(headers.get("X-RateLimit-Reset"))
+        except (TypeError, ValueError):
+            self._rate_limit_reset_at = None
+
+    def _wait_for_rate_limit_reset(self, reason: str) -> None:
+        if self._rate_limit_reset_at is None:
+            delay = RATE_LIMIT_WINDOW_SECONDS
+        else:
+            delay = self._rate_limit_reset_at - time.time()
+        delay = min(max(delay, 1.0), RATE_LIMIT_WINDOW_SECONDS)
+        self.rate_limit_wait_seconds += delay
+        print(f"Raindrop rate limit {reason}; waiting {delay:.1f}s for reset")
+        time.sleep(delay)
+        self._rate_limit_remaining = None
+        self._rate_limit_reset_at = None
+
+    def _request(
+        self,
+        send: Callable[..., requests.Response],
+        method_name: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         url = f"{RAINDROP_API_BASE}/{path}"
         for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
-            resp = self.session.get(url, params=params, timeout=30)
+            if self._rate_limit_remaining == 0:
+                self._wait_for_rate_limit_reset("quota exhausted")
+
+            request_options: dict[str, Any] = {"timeout": 30}
+            if params is not None:
+                request_options["params"] = params
+            if json is not None:
+                request_options["json"] = json
+            resp = send(url, **request_options)
+            self.request_count += 1
+            self._capture_rate_limit(resp.headers)
             if resp.status_code != 429:
                 resp.raise_for_status()
                 return resp.json()
@@ -33,26 +82,25 @@ class RaindropClient:
             if attempt == MAX_RATE_LIMIT_RETRIES:
                 resp.raise_for_status()
 
-            reset_at = resp.headers.get("X-RateLimit-Reset")
-            try:
-                delay = float(reset_at) - time.time()
-            except (TypeError, ValueError):
-                delay = RATE_LIMIT_WINDOW_SECONDS
-            delay = min(max(delay, 1.0), RATE_LIMIT_WINDOW_SECONDS)
-            time.sleep(delay)
+            print(
+                f"Raindrop {method_name} retry "
+                f"{attempt + 1}/{MAX_RATE_LIMIT_RETRIES}"
+            )
+            self._wait_for_rate_limit_reset("response received")
 
         raise RuntimeError("unreachable")
 
+    def _get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        return self._request(self.session.get, "GET", path, params=params)
+
     def _put(self, path: str, json: dict[str, Any]) -> dict[str, Any]:
-        url = f"{RAINDROP_API_BASE}/{path}"
-        resp = self.session.put(url, json=json, timeout=30)
-        resp.raise_for_status()
-        return resp.json()
+        return self._request(self.session.put, "PUT", path, json=json)
 
     def get_collections(self) -> list[dict[str, Any]]:
         """Return all collections (folders)."""
-        data = self._get("collections")
-        return data.get("items", [])
+        roots = self._get("collections").get("items", [])
+        children = self._get("collections/childrens").get("items", [])
+        return [*roots, *children]
 
     def get_collection(self, collection_id: int) -> dict[str, Any]:
         """Return a single collection."""

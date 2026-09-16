@@ -35,11 +35,15 @@ class FakeRaindropClient:
         self._bookmarks = {bm["_id"]: bm for bm in bookmarks}
         self._updated: list[tuple[int, dict]] = []
         self._unsorted_items = unsorted_items or []
+        self.collection_reads: list[int] = []
 
     def get_collections(self):
         return self._collections
 
     def get_all_raindrops(self, collection_id):
+        self.collection_reads.append(collection_id)
+        if collection_id == 0:
+            return [*self._bookmarks.values(), *self._unsorted_items]
         if collection_id == -1:
             return self._unsorted_items
         return [bm for bm in self._bookmarks.values() if bm.get("_collection_id") == collection_id]
@@ -183,6 +187,22 @@ def test_atomic_swap_new_db():
 # Full re-index flow
 # ---------------------------------------------------------------------------
 
+def test_rebuild_index_without_bookmarks_reports_crawl_metrics():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        client = FakeRaindropClient([], [])
+        result = rebuild_index(
+            client,
+            FakeEmbedder(dim=8),
+            db_path=os.path.join(tmpdir, "chroma_db"),
+        )
+
+    assert result["status"] == "no_bookmarks"
+    assert result["timings_seconds"]["crawl"] >= 0
+    assert result["timings_seconds"]["total"] >= 0
+    assert result["raindrop_requests"] == 0
+    assert result["rate_limit_wait_seconds"] == 0.0
+
+
 def test_rebuild_index_creates_db_and_state():
     collections = [
         {"_id": 1, "title": "Art", "parent": None},
@@ -231,6 +251,16 @@ def test_rebuild_index_creates_db_and_state():
         assert os.path.isfile(os.path.join(db_path, "centroids.json"))
         assert os.path.isfile(os.path.join(db_path, "tag_rules.json"))
         assert os.path.isfile(os.path.join(db_path, "folder_id_map.json"))
+        assert set(result["timings_seconds"]) == {
+            "crawl",
+            "prepare",
+            "embed",
+            "index",
+            "total",
+        }
+        assert result["raindrop_requests"] == 0
+        assert result["rate_limit_wait_seconds"] == 0.0
+        assert client.collection_reads == [0]
 
 
 def test_rebuild_index_detects_manual_corrections_and_disables_rule():

@@ -128,8 +128,13 @@ If you create new folders or significantly reorganize your library, the agent wi
 
 ```bash
 # Run re-index manually
-modal run app.py::reindex
+modal run -e main app.py::reindex
 ```
+
+While re-indexing, the other functions pause their Raindrop API activity so the
+rebuild owns the account's shared request budget. Modal logs report model
+initialization, crawl, preparation, embedding, and index-write durations, along
+with the request count and time spent waiting for Raindrop rate-limit resets.
 
 ## Troubleshooting
 

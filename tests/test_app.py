@@ -3,6 +3,13 @@
 from unittest.mock import patch
 
 import app as app_module
+import pytest
+from src.reindex_lease import (
+    REINDEX_LEASE_KEY,
+    acquire_reindex_lease,
+    is_reindex_active,
+    release_reindex_lease,
+)
 from src.state_machine import tag_pending_vision
 
 
@@ -26,6 +33,32 @@ class FakeRaindropClient:
         return {"item": {"_id": raindrop_id}}
 
 
+class FakeCoordination:
+    def __init__(self, values=None):
+        self.values = values or {}
+
+    def get(self, key, default=None):
+        return self.values.get(key, default)
+
+    def put(self, key, value, *, skip_if_exists=False):
+        if skip_if_exists and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    def pop(self, key, default=None):
+        return self.values.pop(key, default)
+
+    def keys(self):
+        return list(self.values)
+
+
+@pytest.fixture(autouse=True)
+def local_coordination_store():
+    with patch.object(app_module, "coordination", FakeCoordination()):
+        yield
+
+
 def test_watcher_dispatches_resolver_after_tagging_new_bookmarks():
     client = FakeRaindropClient([{"_id": 123, "tags": []}])
 
@@ -37,6 +70,23 @@ def test_watcher_dispatches_resolver_after_tagging_new_bookmarks():
 
     assert result["processed"] == 1
     spawn_resolver.assert_called_once_with()
+
+
+def test_watcher_does_not_use_raindrop_api_during_reindex():
+    with (
+        patch("src.reindex_lease.time.time", return_value=100),
+        patch.object(
+            app_module,
+            "coordination",
+            FakeCoordination({"reindex_lease_expires_at": 200}),
+            create=True,
+        ),
+        patch("src.raindrop_client.RaindropClient") as client,
+    ):
+        result = app_module.watcher.local()
+
+    assert result == {"status": "reindex_active", "processed": 0}
+    client.assert_not_called()
 
 
 def test_watcher_redispatches_resolver_for_existing_pending_bookmarks():
@@ -89,6 +139,100 @@ def test_pending_vision_transition_clears_pending_resolution():
     assert any(tag.startswith("sorter-pending-vision:") for tag in tags)
 
 
+def test_reindex_reserves_api_budget_and_releases_it_after_completion():
+    coordination = FakeCoordination()
+
+    def rebuild(client, embedder, db_path):
+        assert is_reindex_active(coordination)
+        return {"status": "ok", "processed": 3}
+
+    with (
+        patch("src.reindex_lease.time.time", return_value=100),
+        patch.object(app_module, "coordination", coordination),
+        patch("src.raindrop_client.RaindropClient"),
+        patch("src.embeddings.Embedder"),
+        patch("src.reindex.rebuild_index", side_effect=rebuild),
+    ):
+        result = app_module.reindex_worker.local()
+
+    assert result["status"] == "ok"
+    assert result["processed"] == 3
+    assert result["timings_seconds"]["model_init"] >= 0
+    assert result["timings_seconds"]["total"] >= 0
+    assert coordination.values == {}
+
+
+def test_serialized_reindex_refreshes_a_preempted_workers_pause_signal():
+    coordination = FakeCoordination({"reindex_lease_expires_at": 200})
+
+    with (
+        patch("src.reindex_lease.time.time", return_value=100),
+        patch.object(app_module, "coordination", coordination),
+        patch("src.raindrop_client.RaindropClient") as client,
+        patch("src.embeddings.Embedder"),
+        patch("src.reindex.rebuild_index", return_value={"status": "ok"}),
+    ):
+        result = app_module.reindex_worker.local()
+
+    assert result["status"] == "ok"
+    client.assert_called_once_with()
+
+
+def test_expired_reindex_pause_signal_is_replaced_by_serialized_worker():
+    coordination = FakeCoordination()
+
+    with patch(
+        "src.reindex_lease.time.time",
+        side_effect=[100, 100, 100, 1000, 1000, 1000],
+    ):
+        first_owner = acquire_reindex_lease(coordination, 10)
+        second_owner = acquire_reindex_lease(coordination, 10)
+
+    assert first_owner is not None
+    assert second_owner is not None
+    assert second_owner != first_owner
+    assert list(coordination.values) == [REINDEX_LEASE_KEY]
+
+    release_reindex_lease(coordination, "not-the-owner")
+    assert REINDEX_LEASE_KEY in coordination.values
+
+    release_reindex_lease(coordination, second_owner)
+    assert coordination.values == {}
+
+
+def test_reindex_failure_reports_timing_and_request_metrics():
+    with (
+        patch("src.raindrop_client.RaindropClient") as client_class,
+        patch("src.embeddings.Embedder", side_effect=RuntimeError("model failed")),
+    ):
+        client_class.return_value.request_count = 0
+        client_class.return_value.rate_limit_wait_seconds = 0.0
+        result = app_module.reindex_worker.local()
+
+    assert result["status"] == "error"
+    assert result["error"] == "model failed"
+    assert result["timings_seconds"]["model_init"] >= 0
+    assert result["timings_seconds"]["total"] >= 0
+    assert result["raindrop_requests"] == 0
+    assert result["rate_limit_wait_seconds"] == 0.0
+
+
+def test_resolver_does_not_use_raindrop_api_during_reindex():
+    with (
+        patch("src.reindex_lease.time.time", return_value=100),
+        patch.object(
+            app_module,
+            "coordination",
+            FakeCoordination({"reindex_lease_expires_at": 200}),
+        ),
+        patch("src.raindrop_client.RaindropClient") as client,
+    ):
+        result = app_module.resolver.local()
+
+    assert result == {"status": "reindex_active"}
+    client.assert_not_called()
+
+
 def test_vision_worker_dispatches_resolver_after_adding_vision_tags():
     client = FakeRaindropClient(
         [
@@ -132,6 +276,22 @@ def test_vision_worker_skips_bookmark_that_is_no_longer_pending():
     spawn_resolver.assert_not_called()
 
 
+def test_vision_worker_does_not_use_raindrop_api_during_reindex():
+    with (
+        patch("src.reindex_lease.time.time", return_value=100),
+        patch.object(
+            app_module,
+            "coordination",
+            FakeCoordination({"reindex_lease_expires_at": 200}),
+        ),
+        patch("src.raindrop_client.RaindropClient") as client,
+    ):
+        result = app_module.vision_worker.local(123)
+
+    assert result == {"status": "reindex_active", "bookmark_id": 123}
+    client.assert_not_called()
+
+
 def test_vision_cron_dispatches_pending_bookmarks_to_vision_workers():
     client = FakeRaindropClient(
         [
@@ -157,3 +317,19 @@ def test_vision_cron_dispatches_pending_bookmarks_to_vision_workers():
     assert result == {"status": "ok", "dispatched": 2, "total": 2}
     assert [call.args for call in spawn_vision_worker.call_args_list] == [(123,), (456,)]
     assert client.updates == []
+
+
+def test_vision_cron_does_not_use_raindrop_api_during_reindex():
+    with (
+        patch("src.reindex_lease.time.time", return_value=100),
+        patch.object(
+            app_module,
+            "coordination",
+            FakeCoordination({"reindex_lease_expires_at": 200}),
+        ),
+        patch("src.raindrop_client.RaindropClient") as client,
+    ):
+        result = app_module.vision_cron.local()
+
+    assert result == {"status": "reindex_active", "dispatched": 0}
+    client.assert_not_called()

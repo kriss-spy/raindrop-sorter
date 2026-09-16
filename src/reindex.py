@@ -3,6 +3,7 @@
 import json
 import os
 import shutil
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -225,27 +226,44 @@ def rebuild_index(
     if new_db_path is None:
         new_db_path = f"{db_path}_new"
 
+    total_started = time.monotonic()
+    timings: dict[str, float] = {}
+
+    def record_phase(name: str, started: float) -> None:
+        elapsed = round(time.monotonic() - started, 3)
+        timings[name] = elapsed
+        print(f"Re-index phase {name} completed in {elapsed:.3f}s", flush=True)
+
     # 1. Crawl
+    phase_started = time.monotonic()
     collections = client.get_collections()
     folder_map = build_folder_map(collections)
     id_to_path_map = {cid: path for path, cid in folder_map.items()}
+    id_to_path_map.setdefault(-1, "Unsorted")
 
-    all_bookmarks: list[dict[str, Any]] = []
-    for coll in collections:
-        cid = coll["_id"]
-        if cid == -99:
-            continue
-        path = id_to_path_map.get(cid, str(cid))
-        items = client.get_all_raindrops(cid)
-        for item in items:
-            item["folder_path"] = path
-            item["_collection_id"] = cid
-        all_bookmarks.extend(items)
+    all_bookmarks = client.get_all_raindrops(0)
+    for item in all_bookmarks:
+        collection = item.get("collection") or {}
+        cid = collection.get("$id", item.get("_collection_id"))
+        item["folder_path"] = id_to_path_map.get(cid, str(cid))
+        item["_collection_id"] = cid
+
+    record_phase("crawl", phase_started)
 
     if not all_bookmarks:
-        return {"status": "no_bookmarks", "processed": 0}
+        timings["total"] = round(time.monotonic() - total_started, 3)
+        return {
+            "status": "no_bookmarks",
+            "processed": 0,
+            "timings_seconds": timings,
+            "raindrop_requests": int(getattr(client, "request_count", 0)),
+            "rate_limit_wait_seconds": float(
+                getattr(client, "rate_limit_wait_seconds", 0.0)
+            ),
+        }
 
     # 2. Load previous metadata
+    phase_started = time.monotonic()
     previous_metadata = load_existing_metadata(db_path)
 
     # 3. Load previous rules and detect corrections
@@ -271,11 +289,15 @@ def rebuild_index(
         bm for bm in all_bookmarks if bm.get("_collection_id") == unsorted_id
     ]
     retried = strip_reviewed_tags_from_unsorted(client, unsorted_items)
+    record_phase("prepare", phase_started)
 
     # 7. Build embeddings and write to new ChromaDB
+    phase_started = time.monotonic()
     texts = [build_text_input(bm) for bm in all_bookmarks]
     embeddings = embedder.embed(texts)
+    record_phase("embed", phase_started)
 
+    phase_started = time.monotonic()
     if os.path.exists(new_db_path):
         shutil.rmtree(new_db_path)
     os.makedirs(new_db_path, exist_ok=True)
@@ -318,6 +340,19 @@ def rebuild_index(
     with open(os.path.join(db_path, "folder_id_map.json"), "w", encoding="utf-8") as f:
         json.dump(folder_map, f, indent=2)
 
+    record_phase("index", phase_started)
+    timings["total"] = round(time.monotonic() - total_started, 3)
+
+    request_count = int(getattr(client, "request_count", 0))
+    rate_limit_wait_seconds = float(getattr(client, "rate_limit_wait_seconds", 0.0))
+    print(
+        "Re-index complete: "
+        f"{request_count} Raindrop requests, "
+        f"{rate_limit_wait_seconds:.1f}s waiting for rate limits, "
+        f"{timings['total']:.3f}s total",
+        flush=True,
+    )
+
     return {
         "status": "ok",
         "processed": len(all_bookmarks),
@@ -325,5 +360,8 @@ def rebuild_index(
         "rules": len(final_rules),
         "disabled_rules": len(merged_rules) - len(final_rules),
         "retried": retried,
+        "timings_seconds": timings,
+        "raindrop_requests": request_count,
+        "rate_limit_wait_seconds": rate_limit_wait_seconds,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
