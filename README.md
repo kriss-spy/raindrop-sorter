@@ -19,6 +19,7 @@ It monitors your `Unsorted` collection, learns your personal folder hierarchy fr
 
 - **Watcher** (CPU, cron) — polls Raindrop, tags new items for processing
 - **Resolver** (CPU, on-demand) — applies all decision logic and moves bookmarks via the Raindrop API
+- **Vision Recovery Cron** (CPU, cron) — finds stuck vision items and dispatches them to workers
 - **Vision Worker** (GPU, on-demand) — runs WD14 Tagger on cover images when text heuristics are uncertain
 
 All state is stored in a ChromaDB vector database on a persistent Modal Volume. The agent uses Raindrop tags as its state machine — no separate database needed.

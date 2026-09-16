@@ -240,6 +240,7 @@ def reindex() -> dict[str, Any]:
 @app.function(
     image=vision_image,
     gpu="T4",
+    max_containers=1,
     volumes={"/data": vol},
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
@@ -251,7 +252,7 @@ def vision_worker(bookmark_id: int) -> dict[str, Any]:
         This is acceptable for the on-demand + cron hybrid model.
     """
     from src.raindrop_client import RaindropClient
-    from src.state_machine import tag_after_vision
+    from src.state_machine import is_pending_vision, tag_after_vision
     from src.vision_worker import run_vision_on_bookmark
 
     client = RaindropClient()
@@ -260,6 +261,9 @@ def vision_worker(bookmark_id: int) -> dict[str, Any]:
         bookmark = client.get_raindrop(bookmark_id)
     except Exception as exc:
         return {"status": "fetch_error", "bookmark_id": bookmark_id, "error": str(exc)}
+
+    if not is_pending_vision(bookmark):
+        return {"status": "not_pending", "bookmark_id": bookmark_id}
 
     if not bookmark.get("cover"):
         return {"status": "no_cover", "bookmark_id": bookmark_id}
@@ -280,47 +284,27 @@ def vision_worker(bookmark_id: int) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Vision Cron — GPU, every 15 min (safety net for missed items)
+# Vision Cron — CPU, every 15 min (safety net for missed items)
 # ---------------------------------------------------------------------------
 @app.function(
-    image=vision_image,
-    gpu="T4",
+    image=image,
     schedule=modal.Cron(VISION_CRON_SCHEDULE),
-    volumes={"/data": vol},
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
 def vision_cron() -> dict[str, Any]:
-    """Process any bookmarks still tagged as pending-vision."""
+    """Dispatch bookmarks still tagged as pending-vision to GPU workers."""
     from src.raindrop_client import RaindropClient
-    from src.state_machine import is_pending_vision, tag_after_vision
-    from src.vision_worker import run_vision_on_bookmark
+    from src.state_machine import is_pending_vision
 
     client = RaindropClient()
     items = client.get_all_raindrops(-1)
     to_process = [item for item in items if is_pending_vision(item)]
 
-    processed = 0
-    errors = 0
-
     for item in to_process:
-        try:
-            vision_tags = run_vision_on_bookmark(item)
-            new_tags = tag_after_vision(item)
-            for vt in vision_tags:
-                if vt not in new_tags:
-                    new_tags.append(vt)
-            client.update_raindrop(item["_id"], tags=new_tags)
-            processed += 1
-        except Exception as exc:
-            print(f"Error in vision cron for {item['_id']}: {exc}")
-            errors += 1
-
-    if processed:
-        resolver.spawn()  # type: ignore[attr-defined]
+        vision_worker.spawn(item["_id"])  # type: ignore[attr-defined]
 
     return {
         "status": "ok",
-        "processed": processed,
-        "errors": errors,
+        "dispatched": len(to_process),
         "total": len(to_process),
     }

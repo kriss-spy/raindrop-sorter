@@ -91,7 +91,13 @@ def test_pending_vision_transition_clears_pending_resolution():
 
 def test_vision_worker_dispatches_resolver_after_adding_vision_tags():
     client = FakeRaindropClient(
-        [{"_id": 123, "cover": "https://example.test/cover.jpg", "tags": []}]
+        [
+            {
+                "_id": 123,
+                "cover": "https://example.test/cover.jpg",
+                "tags": ["sorter-pending-vision:2026-09-15"],
+            }
+        ]
     )
 
     with (
@@ -108,7 +114,25 @@ def test_vision_worker_dispatches_resolver_after_adding_vision_tags():
     spawn_resolver.assert_called_once_with()
 
 
-def test_vision_cron_dispatches_one_resolver_after_processing_batch():
+def test_vision_worker_skips_bookmark_that_is_no_longer_pending():
+    client = FakeRaindropClient(
+        [{"_id": 123, "cover": "https://example.test/cover.jpg", "tags": []}]
+    )
+
+    with (
+        patch("src.raindrop_client.RaindropClient", return_value=client),
+        patch("src.vision_worker.run_vision_on_bookmark") as run_vision,
+        patch.object(app_module.resolver, "spawn") as spawn_resolver,
+    ):
+        result = app_module.vision_worker.local(123)
+
+    assert result == {"status": "not_pending", "bookmark_id": 123}
+    run_vision.assert_not_called()
+    assert client.updates == []
+    spawn_resolver.assert_not_called()
+
+
+def test_vision_cron_dispatches_pending_bookmarks_to_vision_workers():
     client = FakeRaindropClient(
         [
             {
@@ -126,13 +150,10 @@ def test_vision_cron_dispatches_one_resolver_after_processing_batch():
 
     with (
         patch("src.raindrop_client.RaindropClient", return_value=client),
-        patch(
-            "src.vision_worker.run_vision_on_bookmark",
-            return_value=["ai:wdtag-hatsune_miku"],
-        ),
-        patch.object(app_module.resolver, "spawn") as spawn_resolver,
+        patch.object(app_module.vision_worker, "spawn") as spawn_vision_worker,
     ):
         result = app_module.vision_cron.local()
 
-    assert result["processed"] == 2
-    spawn_resolver.assert_called_once_with()
+    assert result == {"status": "ok", "dispatched": 2, "total": 2}
+    assert [call.args for call in spawn_vision_worker.call_args_list] == [(123,), (456,)]
+    assert client.updates == []

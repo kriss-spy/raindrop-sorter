@@ -78,14 +78,14 @@ modal secret list
 modal deploy app.py
 ```
 
-This deploys four functions:
+This deploys five functions:
 
 | Function | Schedule | Purpose |
 |----------|----------|---------|
 | `watcher` | Every 30 min | Polls Unsorted, tags new items |
 | `resolver` | On-demand (spawned by watcher) | Applies sorting logic and moves bookmarks |
 | `vision_worker` | On-demand (GPU) | Analyzes cover images when text is uncertain |
-| `vision_cron` | Every 15 min | Safety net for any stuck vision items |
+| `vision_cron` | Every 15 min (CPU) | Finds stuck vision items and dispatches GPU workers only when needed |
 | `reindex` | Sunday 3 AM UTC | Rebuilds DB, learns from corrections |
 
 ## 7. Verify it's working
