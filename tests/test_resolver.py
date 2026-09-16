@@ -451,6 +451,7 @@ def test_raindrop_client_propagates_exhausted_rate_limit(mock_sleep):
 def test_raindrop_client_update_raindrop():
     client = RaindropClient(token="test")
     mock_resp = MagicMock()
+    mock_resp.status_code = 200
     mock_resp.json.return_value = {"item": {"_id": 123}}
     client.session.put = MagicMock(return_value=mock_resp)
 

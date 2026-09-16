@@ -2,6 +2,9 @@
 
 from unittest.mock import patch
 
+import pytest
+import requests
+
 from src.raindrop_client import RaindropClient
 
 
@@ -59,6 +62,40 @@ def test_update_waits_for_rate_limit_reset_then_retries():
     assert result == {"item": {"_id": 123}}
     sleep.assert_called_once_with(50.0)
     assert [request[0] for request in session.requests] == ["PUT", "PUT"]
+
+
+def test_collection_page_retries_transient_server_failure_in_place():
+    session = FakeSession(
+        [
+            FakeResponse(521, {}),
+            FakeResponse(200, {"items": [{"_id": 123}]}),
+        ]
+    )
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    with patch("src.raindrop_client.time.sleep") as sleep:
+        items, has_more = client.get_raindrops(0, page=202, perpage=50)
+
+    assert items == [{"_id": 123}]
+    assert has_more is False
+    sleep.assert_called_once_with(2.0)
+    assert [request[2]["params"]["page"] for request in session.requests] == [202, 202]
+
+
+def test_transient_server_retries_are_bounded():
+    session = FakeSession([FakeResponse(521, {}) for _ in range(6)])
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    with (
+        patch("src.raindrop_client.time.sleep") as sleep,
+        pytest.raises(requests.HTTPError),
+    ):
+        client.get_raindrops(0, page=202, perpage=50)
+
+    assert len(session.requests) == 6
+    assert [call.args[0] for call in sleep.call_args_list] == [2.0, 4.0, 8.0, 16.0, 32.0]
 
 
 def test_client_waits_before_next_request_when_quota_is_exhausted():

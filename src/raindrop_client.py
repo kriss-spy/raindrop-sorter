@@ -8,8 +8,10 @@ from typing import Any
 import requests
 
 RAINDROP_API_BASE = "https://api.raindrop.io/rest/v1"
-MAX_RATE_LIMIT_RETRIES = 5
+MAX_REQUEST_RETRIES = 5
 RATE_LIMIT_WINDOW_SECONDS = 60.0
+TRANSIENT_RETRY_BASE_SECONDS = 2.0
+TRANSIENT_RETRY_MAX_SECONDS = 60.0
 
 
 class RaindropClient:
@@ -63,7 +65,7 @@ class RaindropClient:
         json: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         url = f"{RAINDROP_API_BASE}/{path}"
-        for attempt in range(MAX_RATE_LIMIT_RETRIES + 1):
+        for attempt in range(MAX_REQUEST_RETRIES + 1):
             if self._rate_limit_remaining == 0:
                 self._wait_for_rate_limit_reset("quota exhausted")
 
@@ -75,18 +77,33 @@ class RaindropClient:
             resp = send(url, **request_options)
             self.request_count += 1
             self._capture_rate_limit(resp.headers)
-            if resp.status_code != 429:
+            is_transient_server_error = 500 <= resp.status_code < 600
+            if resp.status_code != 429 and not is_transient_server_error:
                 resp.raise_for_status()
                 return resp.json()
 
-            if attempt == MAX_RATE_LIMIT_RETRIES:
+            if attempt == MAX_REQUEST_RETRIES:
                 resp.raise_for_status()
 
-            print(
-                f"Raindrop {method_name} retry "
-                f"{attempt + 1}/{MAX_RATE_LIMIT_RETRIES}"
+            if resp.status_code == 429:
+                print(
+                    f"Raindrop {method_name} retry "
+                    f"{attempt + 1}/{MAX_REQUEST_RETRIES}"
+                )
+                self._wait_for_rate_limit_reset("response received")
+                continue
+
+            delay = min(
+                TRANSIENT_RETRY_BASE_SECONDS * (2**attempt),
+                TRANSIENT_RETRY_MAX_SECONDS,
             )
-            self._wait_for_rate_limit_reset("response received")
+            print(
+                f"Raindrop {method_name} received {resp.status_code}; "
+                f"retrying {attempt + 1}/{MAX_REQUEST_RETRIES} "
+                f"in {delay:.1f}s",
+                flush=True,
+            )
+            time.sleep(delay)
 
         raise RuntimeError("unreachable")
 
