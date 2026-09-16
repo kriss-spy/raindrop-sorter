@@ -83,6 +83,53 @@ def test_collection_page_retries_transient_server_failure_in_place():
     assert [request[2]["params"]["page"] for request in session.requests] == [202, 202]
 
 
+def test_collection_page_passes_exact_tag_search_to_raindrop():
+    session = FakeSession([FakeResponse(200, {"items": [{"_id": 123}]})])
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    items, has_more = client.get_raindrops(
+        -1,
+        page=0,
+        perpage=25,
+        search="#sorter-pending-resolution",
+    )
+
+    assert items == [{"_id": 123}]
+    assert has_more is False
+    assert session.requests[0][2]["params"] == {
+        "page": 0,
+        "perpage": 25,
+        "search": "#sorter-pending-resolution",
+    }
+
+
+def test_collection_page_uses_total_count_for_exact_last_full_page():
+    session = FakeSession(
+        [FakeResponse(200, {"items": [{"_id": item_id} for item_id in range(25)], "count": 25})]
+    )
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    items, has_more = client.get_raindrops(-1, page=0, perpage=25)
+
+    assert len(items) == 25
+    assert has_more is False
+
+
+def test_get_tags_can_be_scoped_to_unsorted():
+    session = FakeSession(
+        [FakeResponse(200, {"items": [{"_id": "sorter-reviewed:2026-09-16", "count": 41}]})]
+    )
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    tags = client.get_tags(-1)
+
+    assert tags == [{"_id": "sorter-reviewed:2026-09-16", "count": 41}]
+    assert session.requests[0][1].endswith("/tags/-1")
+
+
 def test_transient_server_retries_are_bounded():
     session = FakeSession([FakeResponse(521, {}) for _ in range(6)])
     client = RaindropClient(token="test-token")

@@ -63,6 +63,38 @@ def release_reindex_lease(store: Any, owner: str) -> None:
         store.pop(REINDEX_LEASE_KEY, None)
 
 
+def acquire_item_lease(
+    store: Any,
+    prefix: str,
+    item_id: int,
+    duration_seconds: float,
+) -> str | None:
+    """Atomically reserve an item unless another non-expired owner has it."""
+    key = f"{prefix}{item_id}"
+    now = time.time()
+    existing = store.get(key)
+    if _lease_is_active(existing, now):
+        return None
+    if existing is not None:
+        store.pop(key, None)
+
+    owner = uuid.uuid4().hex
+    acquired = store.put(
+        key,
+        {"owner": owner, "expires_at": now + duration_seconds},
+        skip_if_exists=True,
+    )
+    return owner if acquired else None
+
+
+def release_item_lease(store: Any, prefix: str, item_id: int, owner: str) -> None:
+    """Release an item reservation only when it still belongs to this owner."""
+    key = f"{prefix}{item_id}"
+    lease = store.get(key)
+    if isinstance(lease, dict) and lease.get("owner") == owner:
+        store.pop(key, None)
+
+
 @contextmanager
 def api_consumer_lease(
     store: Any,

@@ -36,11 +36,16 @@ coordination = modal.Dict.from_name("raindrop-sorter-coordination", create_if_mi
 # ---------------------------------------------------------------------------
 DB_PATH = "/data/chroma_db"
 CRON_SCHEDULE = "*/30 * * * *"  # Every 30 minutes
-VISION_CRON_SCHEDULE = "*/15 * * * *"  # Every 15 minutes
+VISION_CRON_SCHEDULE = "7,22,37,52 * * * *"  # Every 15 minutes, offset from Watcher
 REINDEX_CRON_SCHEDULE = "0 3 * * 0"  # Sunday 3 AM UTC
 REINDEX_TIMEOUT_SECONDS = 2 * 60 * 60
 REINDEX_LEASE_SECONDS = REINDEX_TIMEOUT_SECONDS + 5 * 60
 API_CONSUMER_LEASE_SECONDS = 6 * 60
+WATCHER_BATCH_SIZE = 25
+RESOLVER_BATCH_SIZE = 25
+VISION_BATCH_SIZE = 25
+VISION_DISPATCH_LEASE_PREFIX = "vision_dispatch_lease:"
+VISION_DISPATCH_LEASE_SECONDS = 30 * 60
 
 # ---------------------------------------------------------------------------
 # Modal App definition (must be before @app.function decorators)
@@ -95,6 +100,7 @@ def _load_state() -> tuple[dict[str, Any], dict[str, str], dict[str, int], dict[
 @app.function(
     image=image,
     schedule=modal.Cron(CRON_SCHEDULE),
+    max_containers=1,
     volumes={"/data": vol},
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
@@ -103,6 +109,9 @@ def watcher() -> dict[str, Any]:
     """Poll Raindrop Unsorted, tag items for Resolver processing."""
     from src.raindrop_client import RaindropClient
     from src.state_machine import (
+        PENDING_RESOLUTION,
+        PENDING_VISION_PREFIX,
+        REVIEWED_PREFIX,
         is_pending_resolution,
         is_pending_vision,
         is_reviewed,
@@ -110,11 +119,21 @@ def watcher() -> dict[str, Any]:
     )
 
     client = RaindropClient()
-    unsorted = client.get_unsorted_collection()
-    if unsorted is None:
-        return {"status": "no_unsorted_collection", "processed": 0}
-
-    items = client.get_all_raindrops(-1)
+    state_tags = {
+        tag["_id"]
+        for tag in client.get_tags(-1)
+        if tag.get("_id") == PENDING_RESOLUTION
+        or str(tag.get("_id", "")).startswith(PENDING_VISION_PREFIX)
+        or str(tag.get("_id", "")).startswith(REVIEWED_PREFIX)
+    }
+    unprocessed_search = " ".join(
+        f'-#"{tag}"' for tag in sorted(state_tags)
+    ) or None
+    items, has_more = client.get_raindrops(
+        -1,
+        perpage=WATCHER_BATCH_SIZE,
+        search=unprocessed_search,
+    )
     processed = 0
     skipped = 0
 
@@ -130,11 +149,27 @@ def watcher() -> dict[str, Any]:
         client.update_raindrop(item["_id"], tags=new_tags)
         processed += 1
 
-    has_resolver_work = any(
-        is_pending_resolution(item) and not is_pending_vision(item)
-        for item in items
-    )
-    if processed or has_resolver_work:
+    has_resolver_work = processed > 0
+    if not has_resolver_work and PENDING_RESOLUTION in state_tags:
+        vision_exclusions = " ".join(
+            f'-#"{tag}"'
+            for tag in sorted(state_tags)
+            if tag.startswith(PENDING_VISION_PREFIX)
+        )
+        pending_search = f'#"{PENDING_RESOLUTION}"'
+        if vision_exclusions:
+            pending_search = f"{pending_search} {vision_exclusions}"
+        pending_items, _ = client.get_raindrops(
+            -1,
+            perpage=1,
+            search=pending_search,
+        )
+        has_resolver_work = any(
+            is_pending_resolution(item) and not is_pending_vision(item)
+            for item in pending_items
+        )
+
+    if has_resolver_work:
         resolver.spawn()  # type: ignore[attr-defined]
 
     return {
@@ -142,6 +177,7 @@ def watcher() -> dict[str, Any]:
         "processed": processed,
         "skipped": skipped,
         "total": len(items),
+        "has_more": has_more,
     }
 
 
@@ -150,6 +186,7 @@ def watcher() -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 @app.function(
     image=image,
+    max_containers=1,
     volumes={"/data": vol},
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
@@ -163,20 +200,39 @@ def resolver() -> dict[str, Any]:
     from src.embeddings import Embedder
     from src.raindrop_client import RaindropClient
     from src.resolver import resolve_bookmark
-    from src.state_machine import has_vision_tags, is_pending_resolution, tag_pending_vision
-
-    # Load state from volume
-    centroids, rules, _mismatches, folder_id_map, series_rules = _load_state()
-
-    if not centroids:
-        return {"status": "no_state", "moved": 0, "rejected": 0, "vision": 0}
+    from src.state_machine import (
+        PENDING_RESOLUTION,
+        has_vision_tags,
+        is_pending_resolution,
+        tag_pending_vision,
+    )
 
     client = RaindropClient()
-    embedder = Embedder()
+    # Ask Raindrop for one exact state-tag batch instead of crawling all of
+    # Unsorted. This keeps each invocation comfortably within the shared API
+    # budget even when thousands of bookmarks are waiting.
+    to_resolve, has_more = client.get_raindrops(
+        -1,
+        perpage=RESOLVER_BATCH_SIZE,
+        search=f"#{PENDING_RESOLUTION}",
+    )
+    to_resolve = [item for item in to_resolve if is_pending_resolution(item)]
+    if not to_resolve:
+        return {
+            "status": "ok",
+            "moved": 0,
+            "rejected": 0,
+            "vision": 0,
+            "errors": 0,
+            "total": 0,
+            "has_more": False,
+        }
 
-    # Fetch Unsorted items that are tagged pending resolution
-    items = client.get_all_raindrops(-1)
-    to_resolve = [item for item in items if is_pending_resolution(item)]
+    # Load the model only after confirming that this invocation has work.
+    centroids, rules, _mismatches, folder_id_map, series_rules = _load_state()
+    if not centroids:
+        return {"status": "no_state", "moved": 0, "rejected": 0, "vision": 0}
+    embedder = Embedder()
 
     moved = 0
     rejected = 0
@@ -207,7 +263,6 @@ def resolver() -> dict[str, Any]:
                 try:
                     vision_tags = tag_pending_vision(item)
                     client.update_raindrop(item["_id"], tags=vision_tags)
-                    vision_worker.spawn(item["_id"])  # type: ignore[attr-defined]
                     vision += 1
                 except Exception as exc:
                     print(f"Error sending {item['_id']} to vision: {exc}")
@@ -225,6 +280,10 @@ def resolver() -> dict[str, Any]:
             print(f"Error updating {item['_id']}: {exc}")
             errors += 1
 
+    made_progress = moved + rejected + vision
+    if has_more and made_progress:
+        resolver.spawn()  # type: ignore[attr-defined]
+
     return {
         "status": "ok",
         "moved": moved,
@@ -232,6 +291,7 @@ def resolver() -> dict[str, Any]:
         "vision": vision,
         "errors": errors,
         "total": len(to_resolve),
+        "has_more": has_more,
     }
 
 
@@ -309,7 +369,7 @@ def reindex() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Vision Worker — GPU, on-demand (spawned by Resolver)
+# Vision Worker — GPU, on-demand (dispatched by Vision Cron)
 # ---------------------------------------------------------------------------
 @app.function(
     image=vision_image,
@@ -319,9 +379,12 @@ def reindex() -> None:
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
 @pause_during_reindex(
-    lambda bookmark_id: {"status": "reindex_active", "bookmark_id": bookmark_id}
+    lambda bookmark_id, lease_owner=None: {
+        "status": "reindex_active",
+        "bookmark_id": bookmark_id,
+    }
 )
-def vision_worker(bookmark_id: int) -> dict[str, Any]:
+def vision_worker(bookmark_id: int, lease_owner: str | None = None) -> dict[str, Any]:
     """Download cover image, run WD14 Tagger, update bookmark tags.
 
     .. note::
@@ -329,35 +392,43 @@ def vision_worker(bookmark_id: int) -> dict[str, Any]:
         This is acceptable for the on-demand + cron hybrid model.
     """
     from src.raindrop_client import RaindropClient
+    from src.reindex_lease import release_item_lease
     from src.state_machine import is_pending_vision, tag_after_vision
     from src.vision_worker import run_vision_on_bookmark
 
-    client = RaindropClient()
-
     try:
-        bookmark = client.get_raindrop(bookmark_id)
-    except Exception as exc:
-        return {"status": "fetch_error", "bookmark_id": bookmark_id, "error": str(exc)}
+        client = RaindropClient()
+        try:
+            bookmark = client.get_raindrop(bookmark_id)
+        except Exception as exc:
+            return {"status": "fetch_error", "bookmark_id": bookmark_id, "error": str(exc)}
 
-    if not is_pending_vision(bookmark):
-        return {"status": "not_pending", "bookmark_id": bookmark_id}
+        if not is_pending_vision(bookmark):
+            return {"status": "not_pending", "bookmark_id": bookmark_id}
 
-    if not bookmark.get("cover"):
-        return {"status": "no_cover", "bookmark_id": bookmark_id}
+        if not bookmark.get("cover"):
+            return {"status": "no_cover", "bookmark_id": bookmark_id}
 
-    try:
-        vision_tags = run_vision_on_bookmark(bookmark)
-    except Exception as exc:
-        return {"status": "vision_error", "bookmark_id": bookmark_id, "error": str(exc)}
+        try:
+            vision_tags = run_vision_on_bookmark(bookmark)
+        except Exception as exc:
+            return {"status": "vision_error", "bookmark_id": bookmark_id, "error": str(exc)}
 
-    new_tags = tag_after_vision(bookmark)
-    for vt in vision_tags:
-        if vt not in new_tags:
-            new_tags.append(vt)
+        new_tags = tag_after_vision(bookmark)
+        for vt in vision_tags:
+            if vt not in new_tags:
+                new_tags.append(vt)
 
-    client.update_raindrop(bookmark_id, tags=new_tags)
-    resolver.spawn()  # type: ignore[attr-defined]
-    return {"status": "ok", "bookmark_id": bookmark_id, "tags_added": vision_tags}
+        client.update_raindrop(bookmark_id, tags=new_tags)
+        return {"status": "ok", "bookmark_id": bookmark_id, "tags_added": vision_tags}
+    finally:
+        if lease_owner is not None:
+            release_item_lease(
+                coordination,
+                VISION_DISPATCH_LEASE_PREFIX,
+                bookmark_id,
+                lease_owner,
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -366,23 +437,76 @@ def vision_worker(bookmark_id: int) -> dict[str, Any]:
 @app.function(
     image=image,
     schedule=modal.Cron(VISION_CRON_SCHEDULE),
+    max_containers=1,
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
 @pause_during_reindex({"status": "reindex_active", "dispatched": 0})
 def vision_cron() -> dict[str, Any]:
     """Dispatch bookmarks still tagged as pending-vision to GPU workers."""
     from src.raindrop_client import RaindropClient
-    from src.state_machine import is_pending_vision
+    from src.reindex_lease import acquire_item_lease, release_item_lease
+    from src.state_machine import PENDING_VISION_PREFIX, is_pending_vision
 
     client = RaindropClient()
-    items = client.get_all_raindrops(-1)
-    to_process = [item for item in items if is_pending_vision(item)]
+    pending_tags = sorted(
+        str(tag["_id"])
+        for tag in client.get_tags(-1)
+        if str(tag.get("_id", "")).startswith(PENDING_VISION_PREFIX)
+    )
+    to_process: list[dict[str, Any]] = []
+    has_more = False
+    for tag_index, tag in enumerate(pending_tags):
+        remaining = VISION_BATCH_SIZE - len(to_process)
+        if remaining == 0:
+            has_more = True
+            break
+        items, tag_has_more = client.get_raindrops(
+            -1,
+            perpage=remaining,
+            search=f'#"{tag}"',
+        )
+        to_process.extend(item for item in items if is_pending_vision(item))
+        has_more = (
+            has_more
+            or tag_has_more
+            or tag_index < len(pending_tags) - 1
+        )
+        if len(to_process) >= VISION_BATCH_SIZE:
+            break
 
+    dispatched = 0
+    skipped_inflight = 0
     for item in to_process:
-        vision_worker.spawn(item["_id"])  # type: ignore[attr-defined]
+        bookmark_id = item["_id"]
+        lease_owner = acquire_item_lease(
+            coordination,
+            VISION_DISPATCH_LEASE_PREFIX,
+            bookmark_id,
+            VISION_DISPATCH_LEASE_SECONDS,
+        )
+        if lease_owner is None:
+            skipped_inflight += 1
+            continue
+        try:
+            vision_worker.spawn(bookmark_id, lease_owner)  # type: ignore[attr-defined]
+            dispatched += 1
+        except Exception:
+            release_item_lease(
+                coordination,
+                VISION_DISPATCH_LEASE_PREFIX,
+                bookmark_id,
+                lease_owner,
+            )
+            raise
+
+    # One coalesced kick handles vision results from the previous cycle and
+    # avoids every GPU worker enqueueing its own model-backed resolver call.
+    resolver.spawn()  # type: ignore[attr-defined]
 
     return {
         "status": "ok",
-        "dispatched": len(to_process),
+        "dispatched": dispatched,
+        "skipped_inflight": skipped_inflight,
         "total": len(to_process),
+        "has_more": has_more,
     }

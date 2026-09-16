@@ -123,6 +123,10 @@ class RaindropClient:
         """Return a single collection."""
         return self._get(f"collection/{collection_id}")
 
+    def get_tags(self, collection_id: int) -> list[dict[str, Any]]:
+        """Return tag names and counts scoped to a collection."""
+        return self._get(f"tags/{collection_id}").get("items", [])
+
     def get_raindrop(self, raindrop_id: int) -> dict[str, Any]:
         """Return a single raindrop by ID."""
         return self._get(f"raindrop/{raindrop_id}")
@@ -132,14 +136,21 @@ class RaindropClient:
         collection_id: int,
         page: int = 0,
         perpage: int = 50,
+        search: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         """Return raindrops in a collection and whether more pages exist."""
+        params: dict[str, Any] = {"page": page, "perpage": perpage}
+        if search is not None:
+            params["search"] = search
         data = self._get(
             f"raindrops/{collection_id}",
-            params={"page": page, "perpage": perpage},
+            params=params,
         )
         items = data.get("items", [])
-        has_more = len(items) == perpage
+        try:
+            has_more = (page + 1) * perpage < int(data["count"])
+        except (KeyError, TypeError, ValueError):
+            has_more = len(items) == perpage
         return items, has_more
 
     def get_all_raindrops(self, collection_id: int) -> list[dict[str, Any]]:

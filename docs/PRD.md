@@ -41,7 +41,8 @@ The user maintains a large Raindrop.io bookmark library (~1,000+ items) organize
 
 - **One Modal App** with three serverless functions sharing a persistent `modal.Volume`:
   - `watcher` (CPU, cron every 30 min): polls Raindrop `Unsorted`, applies text heuristics, tags items needing vision, spawns Vision Worker asynchronously.
-  - `vision_worker` (GPU, on-demand): downloads cover image via Raindrop's `cover` URL, runs WD14 Tagger and SauceNAO advisory lookup, tags results, spawns Resolver.
+  - `vision_worker` (GPU, on-demand): downloads cover image via Raindrop's `cover` URL, runs WD14 Tagger and SauceNAO advisory lookup, and transitions the bookmark back to pending resolution.
+  - `vision_cron` coalesces Resolver dispatch to one kick per bounded vision batch cycle, avoiding one model-backed Resolver call per completed image.
   - `resolver` (CPU, on-demand): applies all deterministic decision logic and updates bookmark folder via Raindrop API.
 
 ### Decision Pipeline (Resolver)
@@ -67,7 +68,7 @@ The Resolver is the single source of truth for all sorting decisions. It execute
 
 ### Vision Worker Trigger
 
-- **Funnel architecture:** Text-only rules run first. GPU vision is only invoked when:
+- **Funnel architecture:** Text-only rules run first. The Resolver marks eligible bookmarks pending vision, and the bounded Vision Cron dispatches GPU work only when:
   - Text heuristics return low confidence (no exact tag rule, ambiguous centroid match)
   - AND the bookmark has a `cover` image URL from Raindrop
 - The Raindrop `cover` URL is the **only** image source; no page scraping or fallback fetching.
