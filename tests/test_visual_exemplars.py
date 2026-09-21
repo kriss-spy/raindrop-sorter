@@ -46,6 +46,30 @@ def test_partition_visual_examples_reserves_latest_holdout_and_caps_training():
     assert not ({item["_id"] for item in training} & {item["_id"] for item in holdout})
 
 
+def test_partition_visual_examples_can_reserve_oldest_holdout():
+    bookmarks = [
+        {
+            "_id": day,
+            "folder_path": "Art/GFL2",
+            "created": f"2026-01-{day:02d}T00:00:00.000Z",
+            "cover": f"https://example.test/{day}.jpg",
+        }
+        for day in range(1, 16)
+    ]
+
+    training, holdout = partition_visual_examples(
+        bookmarks,
+        folder_paths=["Art/GFL2"],
+        holdout_per_folder=3,
+        max_exemplars_per_folder=4,
+        holdout_position="oldest",
+    )
+
+    assert [item["_id"] for item in holdout] == [1, 2, 3]
+    assert [item["_id"] for item in training] == [15, 14, 13, 12]
+    assert not ({item["_id"] for item in training} & {item["_id"] for item in holdout})
+
+
 def test_visual_exemplar_match_requires_similarity_and_margin():
     index = VisualExemplarIndex(
         embeddings=np.array(

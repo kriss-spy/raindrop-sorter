@@ -162,9 +162,12 @@ def _write_report(
     min_margin: float,
     model_name: str,
     neighbors_per_folder: int,
+    holdout_per_folder: int,
+    holdout_position: str,
 ) -> None:
     by_id = {int(item["_id"]): item for item in holdout}
     rows = []
+    folder_results: dict[str, dict[str, int]] = {}
     for decision in evaluation.decisions:
         item = by_id[decision.bookmark_id]
         predicted = decision.predicted_folder or "Review"
@@ -173,6 +176,11 @@ def _write_report(
             if predicted == decision.expected_folder
             else "review" if decision.predicted_folder is None else "wrong"
         )
+        counts = folder_results.setdefault(
+            decision.expected_folder,
+            {"exact": 0, "wrong": 0, "review": 0},
+        )
+        counts[status] += 1
         cover = resolve_cover_url(item) or str(item.get("cover", ""))
         rows.append(
             "<article class='card {status}'>"
@@ -192,6 +200,13 @@ def _write_report(
                 margin=f"{decision.margin:.3f}" if decision.margin is not None else "—",
             )
         )
+    summary_rows = "".join(
+        "<tr><td>{folder}</td><td>{exact}</td><td>{wrong}</td><td>{review}</td></tr>".format(
+            folder=html.escape(folder),
+            **counts,
+        )
+        for folder, counts in folder_results.items()
+    )
     document = f"""<!doctype html><meta charset='utf-8'>
 <title>Visual exemplar holdout</title>
 <style>
@@ -200,11 +215,14 @@ body{{font:14px system-ui;background:#111;color:#eee;margin:24px}} .summary{{dis
 .card{{border:2px solid #555;border-radius:10px;overflow:hidden;background:#1c1c1c}} .exact{{border-color:#31b46c}}
 .wrong{{border-color:#e45858}} .review{{border-color:#d4a72c}} img{{width:100%;height:220px;object-fit:cover}}
 .card div{{padding:10px}} p{{overflow-wrap:anywhere}} small{{color:#aaa}}
+table{{border-collapse:collapse;margin-top:18px}} th,td{{border:1px solid #555;padding:7px 12px;text-align:left}}
 </style><h1>Frozen visual exemplar holdout</h1>
-<p>Read-only; latest 10 per folder remain excluded from {exemplar_count} older exemplars.</p>
+<p>Read-only; {holdout_position} {holdout_per_folder} per folder remain excluded from {exemplar_count} exemplars.</p>
 <div class='summary'><b>Exact {evaluation.exact}</b><b>Wrong {evaluation.wrong}</b><b>Review {evaluation.review}</b>
 <span>similarity ≥ {min_similarity:.3f}; margin ≥ {min_margin:.3f}; top {neighbors_per_folder}</span></div>
 <p>Frozen model: {html.escape(model_name)}</p>
+<table><thead><tr><th>Folder</th><th>Exact</th><th>Wrong</th><th>Review</th></tr></thead>
+<tbody>{summary_rows}</tbody></table>
 <section class='gallery'>{''.join(rows)}</section>"""
     Path(path).write_text(document, encoding="utf-8")
 
@@ -220,6 +238,8 @@ def build_local_visual_index(
     plateau_patience: int,
     report_path: str,
     model_name: str = DEFAULT_VISUAL_MODEL,
+    holdout_position: str = "latest",
+    persist_index: bool = True,
 ) -> dict[str, Any]:
     folder_map = _load_folder_map(db_path)
     bookmarks = _crawl_target_bookmarks(client, folder_map, folder_paths)
@@ -228,6 +248,7 @@ def build_local_visual_index(
         folder_paths=folder_paths,
         holdout_per_folder=holdout_per_folder,
         max_exemplars_per_folder=max_exemplars_per_folder,
+        holdout_position=holdout_position,
     )
     cache = LocalVisualEmbeddingCache(db_path, model_name=model_name)
     embedder = create_visual_embedder(model_name)
@@ -311,7 +332,8 @@ def build_local_visual_index(
     if best is None:
         raise RuntimeError("No visual exemplars could be embedded")
     _exact, index, evaluation = best
-    save_visual_exemplar_index(index, db_path)
+    if persist_index:
+        save_visual_exemplar_index(index, db_path)
     _write_report(
         report_path,
         holdout,
@@ -321,6 +343,8 @@ def build_local_visual_index(
         min_margin=index.min_margin,
         model_name=index.model_name,
         neighbors_per_folder=index.neighbors_per_folder,
+        holdout_per_folder=holdout_per_folder,
+        holdout_position=holdout_position,
     )
     result = {
         "status": "ok",
@@ -333,12 +357,14 @@ def build_local_visual_index(
         "min_margin": index.min_margin,
         "model_name": index.model_name,
         "neighbors_per_folder": index.neighbors_per_folder,
+        "holdout_position": holdout_position,
         "report": report_path,
     }
-    Path(os.path.join(db_path, "visual_exemplar_metrics.json")).write_text(
-        json.dumps(result, indent=2),
-        encoding="utf-8",
-    )
+    if persist_index:
+        Path(os.path.join(db_path, "visual_exemplar_metrics.json")).write_text(
+            json.dumps(result, indent=2),
+            encoding="utf-8",
+        )
     return result
 
 
@@ -347,10 +373,20 @@ def main() -> None:
     parser.add_argument("--db-path", default="chroma_db")
     parser.add_argument("--folder", action="append", dest="folders")
     parser.add_argument("--holdout-per-folder", type=int, default=10)
+    parser.add_argument(
+        "--holdout-position",
+        choices=("latest", "oldest"),
+        default="latest",
+    )
     parser.add_argument("--max-exemplars-per-folder", type=int, default=24)
     parser.add_argument("--step-per-folder", type=int, default=4)
     parser.add_argument("--plateau-patience", type=int, default=2)
     parser.add_argument("--report", default="explicit-art-50-report.html")
+    parser.add_argument(
+        "--report-only",
+        action="store_true",
+        help="write the report without replacing the active index or metrics",
+    )
     parser.add_argument("--model", default=DEFAULT_VISUAL_MODEL)
     args = parser.parse_args()
     load_dotenv()
@@ -367,6 +403,8 @@ def main() -> None:
         plateau_patience=args.plateau_patience,
         report_path=args.report,
         model_name=args.model,
+        holdout_position=args.holdout_position,
+        persist_index=not args.report_only,
     )
     print(json.dumps(result, indent=2))
 

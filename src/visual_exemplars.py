@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import hashlib
 import io
 import os
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 
@@ -369,12 +369,15 @@ def partition_visual_examples(
     folder_paths: list[str],
     holdout_per_folder: int = 10,
     max_exemplars_per_folder: int = 24,
+    holdout_position: Literal["latest", "oldest"] = "latest",
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Reserve each folder's latest images and bound older training examples."""
+    """Reserve one dated edge of each folder and bound the remaining examples."""
     if holdout_per_folder < 0:
         raise ValueError("holdout_per_folder must be non-negative")
     if max_exemplars_per_folder < 0:
         raise ValueError("max_exemplars_per_folder must be non-negative")
+    if holdout_position not in {"latest", "oldest"}:
+        raise ValueError("holdout_position must be 'latest' or 'oldest'")
 
     selected = set(folder_paths)
     by_folder: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -391,10 +394,16 @@ def partition_visual_examples(
             key=lambda item: (str(item.get("created", "")), int(item.get("_id", 0))),
             reverse=True,
         )
-        folder_holdout = ordered[:holdout_per_folder]
-        folder_training = ordered[
-            holdout_per_folder:holdout_per_folder + max_exemplars_per_folder
-        ]
+        if holdout_position == "latest":
+            folder_holdout = ordered[:holdout_per_folder]
+            remaining = ordered[holdout_per_folder:]
+        elif holdout_per_folder:
+            folder_holdout = list(reversed(ordered[-holdout_per_folder:]))
+            remaining = ordered[:-holdout_per_folder]
+        else:
+            folder_holdout = []
+            remaining = ordered
+        folder_training = remaining[:max_exemplars_per_folder]
         holdout.extend(folder_holdout)
         training.extend(folder_training)
     return training, holdout

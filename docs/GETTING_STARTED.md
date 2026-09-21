@@ -283,6 +283,18 @@ holdout result plateaus. It only saves a confidence policy with zero observed
 holdout misroutes. The resulting index is used by `local_run.py`; Modal workers
 are unchanged.
 
+To prepare a separate oldest-10-per-folder evaluation without replacing the
+active visual index or its metrics:
+
+```bash
+RAINDROP_TOKEN="your-token-here" uv run python visual_index.py \
+  --db-path chroma_db \
+  --holdout-position oldest \
+  --holdout-per-folder 10 \
+  --report-only \
+  --report explicit-art-oldest-50-report.html
+```
+
 ```bash
 RAINDROP_TOKEN="your-token-here" uv run python local_run.py \
   --bookmark-id 123456789 \
