@@ -388,6 +388,39 @@ def test_resolver_leaves_vision_dispatch_to_the_bounded_cron():
     spawn_vision_worker.assert_not_called()
 
 
+def test_resolver_does_not_redispatch_a_completed_empty_vision_attempt():
+    client = FakeRaindropClient(
+        [
+            {
+                "_id": 123,
+                "cover": "https://example.test/dead.jpg",
+                "tags": ["sorter-pending-resolution", "sorter-vision-attempted"],
+            }
+        ]
+    )
+
+    with (
+        patch("src.raindrop_client.RaindropClient", return_value=client),
+        patch("src.embeddings.Embedder"),
+        patch.object(
+            app_module,
+            "_load_state",
+            return_value=({"folder": [1.0]}, {}, {}, {"folder": 42}, {}),
+        ),
+        patch(
+            "src.resolver.resolve_bookmark",
+            return_value=(None, ["sorter-reviewed:2026-09-17"], "low_confidence"),
+        ),
+    ):
+        result = app_module.resolver.local()
+
+    assert result["vision"] == 0
+    assert result["rejected"] == 1
+    assert client.updates == [
+        (123, None, ["sorter-reviewed:2026-09-17"]),
+    ]
+
+
 def test_vision_worker_transitions_state_without_dispatching_resolver():
     client = FakeRaindropClient(
         [

@@ -9,6 +9,7 @@ PENDING_RESOLUTION = "sorter-pending-resolution"
 REVIEWED_PREFIX = "sorter-reviewed"
 SORTED_PREFIX = "ai:sorted"
 NEW_RULE_PREFIX = "ai:new-rule"
+VISION_ATTEMPTED = "sorter-vision-attempted"
 
 
 def _today_tag(prefix: str) -> str:
@@ -65,6 +66,7 @@ def tag_after_vision(bookmark: dict[str, Any]) -> list[str]:
     tags = bookmark.get("tags", [])
     tags = remove_tags_by_prefix(tags, PENDING_VISION_PREFIX)
     tags = remove_tags_by_prefix(tags, REVIEWED_PREFIX)
+    tags = add_tag(tags, VISION_ATTEMPTED)
     return add_tag(tags, PENDING_RESOLUTION)
 
 
@@ -77,6 +79,7 @@ def tag_reviewed(bookmark: dict[str, Any]) -> list[str]:
     tags = remove_tags_by_prefix(tags, PENDING_VISION_PREFIX)
     tags = remove_tags_by_prefix(tags, PENDING_RESOLUTION)
     tags = remove_tags_by_prefix(tags, REVIEWED_PREFIX)
+    tags = remove_tag(tags, VISION_ATTEMPTED)
     return add_tag(tags, _today_tag(REVIEWED_PREFIX))
 
 
@@ -86,6 +89,7 @@ def tag_sorted(bookmark: dict[str, Any], by_rule: str | None = None) -> list[str
     tags = remove_tags_by_prefix(tags, PENDING_VISION_PREFIX)
     tags = remove_tags_by_prefix(tags, PENDING_RESOLUTION)
     tags = remove_tags_by_prefix(tags, REVIEWED_PREFIX)
+    tags = remove_tag(tags, VISION_ATTEMPTED)
     tags = add_tag(tags, _today_tag(SORTED_PREFIX))
     if by_rule:
         tags = add_tag(tags, f"{NEW_RULE_PREFIX}-{by_rule}")
@@ -108,6 +112,11 @@ def has_vision_tags(bookmark: dict[str, Any]) -> bool:
     """Check if a bookmark has WD14 extraction tags."""
     tags = bookmark.get("tags", [])
     return any(t.startswith("ai:wdtag-") for t in tags)
+
+
+def has_completed_vision(bookmark: dict[str, Any]) -> bool:
+    """Check whether vision ran, even when it detected no usable tags."""
+    return VISION_ATTEMPTED in bookmark.get("tags", []) or has_vision_tags(bookmark)
 
 
 def is_reviewed(bookmark: dict[str, Any]) -> bool:

@@ -202,7 +202,7 @@ def resolver() -> dict[str, Any]:
     from src.resolver import resolve_bookmark
     from src.state_machine import (
         PENDING_RESOLUTION,
-        has_vision_tags,
+        has_completed_vision,
         is_pending_resolution,
         tag_pending_vision,
     )
@@ -259,7 +259,7 @@ def resolver() -> dict[str, Any]:
 
         # Funnel: low confidence + cover URL + no existing vision tags -> vision worker
         if target_id is None and reason.startswith("low_confidence"):
-            if item.get("cover") and not has_vision_tags(item):
+            if item.get("cover") and not has_completed_vision(item):
                 try:
                     vision_tags = tag_pending_vision(item)
                     client.update_raindrop(item["_id"], tags=vision_tags)

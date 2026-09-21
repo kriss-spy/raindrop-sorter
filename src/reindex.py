@@ -14,8 +14,11 @@ from src.centroids import compute_folder_centroids, save_centroids
 from src.embeddings import build_text_input
 from src.state_machine import strip_reviewed_tags
 from src.tag_rules import (
+    RuleTarget,
     extract_candidate_tag_rules,
+    extract_series_rules,
     load_tag_rules,
+    save_series_rules,
     save_tag_rules,
     validate_tag_rules,
 )
@@ -33,8 +36,20 @@ def _parent_id(collection: dict[str, Any]) -> int | None:
 
 def _build_collection_paths(
     collections: list[dict[str, Any]],
+    groups: list[dict[str, Any]] | None = None,
 ) -> dict[int, str]:
     by_id: dict[int, dict[str, Any]] = {c["_id"]: c for c in collections}
+    group_by_root_id: dict[int, str] = {}
+    for group in groups or []:
+        group_name = str(group.get("title", "")).strip()
+        for collection_id in group.get("collections", []):
+            existing_group = group_by_root_id.get(collection_id)
+            if existing_group is not None and existing_group != group_name:
+                raise ValueError(
+                    f"Root collection ID {collection_id} appears in multiple groups: "
+                    f"{existing_group!r} and {group_name!r}"
+                )
+            group_by_root_id[collection_id] = group_name
 
     def path_for(collection_id: int) -> str:
         collection = by_id[collection_id]
@@ -42,20 +57,40 @@ def _build_collection_paths(
         parent_id = _parent_id(collection)
         if parent_id and parent_id in by_id:
             return f"{path_for(parent_id)}/{name}"
+        group_name = group_by_root_id.get(collection_id, "")
+        if group_name and group_name.casefold() != name.casefold():
+            return f"{group_name}/{name}"
         return name
 
     return {collection_id: path_for(collection_id) for collection_id in by_id}
 
 
-def build_folder_map(collections: list[dict[str, Any]]) -> dict[str, int]:
+def build_folder_map(
+    collections: list[dict[str, Any]],
+    groups: list[dict[str, Any]] | None = None,
+) -> dict[str, int]:
     """Map folder path -> collection ID."""
-    paths_by_id = _build_collection_paths(collections)
-    return {path: collection_id for collection_id, path in paths_by_id.items()}
+    paths_by_id = _build_collection_paths(collections, groups)
+    folder_map: dict[str, int] = {}
+    for collection_id, path in paths_by_id.items():
+        existing_id = folder_map.get(path)
+        if existing_id is not None and existing_id != collection_id:
+            raise ValueError(
+                f"Duplicate canonical collection path {path!r} for collection IDs "
+                f"{existing_id} and {collection_id}; fetch and pass user groups to "
+                "disambiguate root collections"
+            )
+        folder_map[path] = collection_id
+    return folder_map
 
 
-def build_folder_hierarchy(collections: list[dict[str, Any]]) -> dict[str, list[str]]:
+def build_folder_hierarchy(
+    collections: list[dict[str, Any]],
+    groups: list[dict[str, Any]] | None = None,
+) -> dict[str, list[str]]:
     """Build parent -> [children] mapping using folder paths."""
-    paths_by_id = _build_collection_paths(collections)
+    build_folder_map(collections, groups)
+    paths_by_id = _build_collection_paths(collections, groups)
 
     hierarchy: dict[str, list[str]] = {}
     for collection in collections:
@@ -93,7 +128,7 @@ def load_existing_metadata(db_path: str) -> dict[str, dict[str, Any]]:
 def detect_manual_corrections(
     live_bookmarks: list[dict[str, Any]],
     previous_metadata: dict[str, dict[str, Any]],
-    rules: dict[str, str],
+    rules: dict[str, RuleTarget],
     mismatches: dict[str, int],
 ) -> dict[str, int]:
     """Detect manual moves and bump mismatch counts for affected rules.
@@ -118,7 +153,9 @@ def detect_manual_corrections(
         tags = bm.get("tags", [])
         normalized = _normalized_tags(tags)
         for tag in normalized:
-            if tag in rules and rules[tag] == last_seen_folder:
+            target = rules.get(tag)
+            target_paths = [target] if isinstance(target, str) else (target or [])
+            if last_seen_folder in target_paths:
                 updated[tag] = updated.get(tag, 0) + 1
 
     return updated
@@ -136,15 +173,15 @@ def _normalized_tags(tags: list[str]) -> list[str]:
 
 
 def disable_overmatched_rules(
-    rules: dict[str, str],
+    rules: dict[str, RuleTarget],
     mismatches: dict[str, int],
     max_mismatches: int = 3,
-) -> tuple[dict[str, str], dict[str, int]]:
+) -> tuple[dict[str, RuleTarget], dict[str, int]]:
     """Disable rules whose mismatch count exceeds the threshold.
 
     Returns the pruned rules and the retained mismatch counts.
     """
-    kept_rules = {}
+    kept_rules: dict[str, RuleTarget] = {}
     kept_mismatches = {}
     for tag, folder in rules.items():
         count = mismatches.get(tag, 0)
@@ -265,7 +302,8 @@ def rebuild_index(
     # 1. Crawl
     phase_started = time.monotonic()
     collections = client.get_collections()
-    folder_map = build_folder_map(collections)
+    groups = client.get_collection_groups()
+    folder_map = build_folder_map(collections, groups)
     id_to_path_map = {cid: path for path, cid in folder_map.items()}
     id_to_path_map.setdefault(-1, "Unsorted")
 
@@ -356,7 +394,7 @@ def rebuild_index(
 
     # 8. Compute centroids
     folders = [bm.get("folder_path", "") for bm in all_bookmarks]
-    hierarchy = build_folder_hierarchy(collections)
+    hierarchy = build_folder_hierarchy(collections, groups)
     centroids = compute_folder_centroids(embeddings, folders, hierarchy)
     save_centroids(centroids, new_db_path)
 
@@ -365,6 +403,7 @@ def rebuild_index(
 
     # 10. Persist rules, mismatches, and folder ID map
     save_tag_rules(final_rules, final_mismatches, db_path)
+    save_series_rules(extract_series_rules(list(folder_map)), db_path)
     with open(os.path.join(db_path, "folder_id_map.json"), "w", encoding="utf-8") as f:
         json.dump(folder_map, f, indent=2)
 

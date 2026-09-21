@@ -1,11 +1,16 @@
 """Resolver decision logic — the single source of truth for sorting decisions."""
 
+import re
+import unicodedata
+
 from typing import Any, Protocol
 
 import numpy as np
 
 from src.embeddings import Embedder, build_text_input
 from src.state_machine import tag_sorted, tag_reviewed
+from src.tag_rules import RuleTarget, TEXT_SERIES_ALIASES
+from src.wd14_tagger import normalize_tag, semantic_tag_keys
 
 
 class _EmbedderLike(Protocol):
@@ -64,23 +69,123 @@ def find_best_centroid(
 
 
 def _normalized_tags(tags: list[str]) -> list[str]:
-    """Return tags with ai:wdtag- prefix stripped for rule matching."""
+    """Return canonical tag names for rule matching."""
     normalized: list[str] = []
     for t in tags:
         if t.startswith("ai:wdtag-"):
-            normalized.append(t[len("ai:wdtag-"):])
+            t = t[len("ai:wdtag-"):]
+            normalized.extend(semantic_tag_keys(t))
         else:
-            normalized.append(t)
-    return normalized
+            normalized.append(normalize_tag(t))
+    return list(dict.fromkeys(normalized))
+
+
+def _normalized_hashtags(bookmark: dict[str, Any]) -> list[str]:
+    """Extract explicit ASCII hashtags from user-visible bookmark text."""
+    text = "\n".join(
+        str(bookmark.get(field, "") or "")
+        for field in ("title", "excerpt", "note")
+    )
+    return [normalize_tag(tag) for tag in re.findall(r"#([A-Za-z0-9_]+)", text)]
+
+
+def _normalized_text_aliases(bookmark: dict[str, Any]) -> list[str]:
+    """Return allowlisted series aliases found in user-visible text."""
+    text = "\n".join(
+        str(bookmark.get(field, "") or "")
+        for field in ("title", "excerpt", "note")
+    )
+    normalized_text = normalize_tag(unicodedata.normalize("NFKC", text))
+    return [
+        normalize_tag(unicodedata.normalize("NFKC", alias))
+        for alias in TEXT_SERIES_ALIASES
+        if normalize_tag(unicodedata.normalize("NFKC", alias)) in normalized_text
+    ]
+
+
+def _has_visual_art_evidence(bookmark: dict[str, Any]) -> bool:
+    """Whether completed vision found an anime-style person in an art post."""
+    if _bookmark_modality(bookmark) != "art":
+        return False
+    art_markers = {"1girl", "1boy", "multiple_girls", "multiple_boys"}
+    return bool(art_markers.intersection(_normalized_tags(bookmark.get("tags", []))))
+
+
+def _bookmark_modality(bookmark: dict[str, Any]) -> str | None:
+    """Infer the UI group used for modality-specific collection routes."""
+    bookmark_type = str(bookmark.get("type", "")).casefold()
+    if bookmark_type == "image":
+        return "art"
+    if bookmark_type == "audio":
+        return "music"
+    if bookmark_type == "video":
+        return "video"
+
+    domain = str(bookmark.get("domain", "")).casefold()
+    link = str(bookmark.get("link", "")).casefold()
+    if domain in {"youtube.com", "www.youtube.com", "youtu.be", "vimeo.com"}:
+        return "video"
+    if domain in {"open.spotify.com", "soundcloud.com", "bandcamp.com"}:
+        return "music"
+    if domain in {"x.com", "twitter.com", "www.x.com", "www.twitter.com"}:
+        if bookmark.get("media") or bookmark.get("cover"):
+            return "art"
+    if re.search(r"\.(?:mp3|flac|wav|m4a|ogg)(?:$|[?#])", link):
+        return "music"
+    if re.search(r"\.(?:mp4|webm|mov|mkv)(?:$|[?#])", link):
+        return "video"
+    if re.search(r"\.(?:png|jpe?g|gif|webp|avif)(?:$|[?#])", link):
+        return "art"
+    return None
+
+
+def _resolve_rule_target(
+    bookmark: dict[str, Any],
+    target: RuleTarget,
+) -> str | None:
+    """Choose one canonical route from a rule's possible destinations."""
+    if isinstance(target, str):
+        return target
+    candidates = list(dict.fromkeys(target))
+    if len(candidates) == 1:
+        return candidates[0]
+    modality = _bookmark_modality(bookmark)
+    if modality is None:
+        return None
+    matching = [
+        path
+        for path in candidates
+        if path.partition("/")[0].casefold() == modality
+    ]
+    return matching[0] if len(matching) == 1 else None
+
+
+def _resolve_series_target(
+    bookmark: dict[str, Any],
+    target: RuleTarget,
+) -> str | None:
+    """Resolve a series target without crossing an explicit media group."""
+    folder = _resolve_rule_target(bookmark, target)
+    if folder is None:
+        return None
+    modality = _bookmark_modality(bookmark)
+    target_group = folder.partition("/")[0].casefold()
+    if (
+        modality is not None
+        and target_group in {"art", "music", "video"}
+        and target_group != modality
+    ):
+        return None
+    return folder
 
 
 def decide_folder(
     bookmark: dict[str, Any],
     centroids: dict[str, np.ndarray],
-    tag_rules: dict[str, str],
+    tag_rules: dict[str, RuleTarget],
     embedder: _EmbedderLike | None = None,
     relative_gap_threshold: float = DEFAULT_RELATIVE_GAP_THRESHOLD,
-    series_rules: dict[str, str] | None = None,
+    series_rules: dict[str, RuleTarget] | None = None,
     crossover_folder: str = "Art/ANIME",
 ) -> tuple[str | None, str]:
     """Decide which folder a bookmark should go to.
@@ -95,26 +200,14 @@ def decide_folder(
         (folder_path, reason) where folder_path is None if the item
         should stay in Unsorted (low confidence).
     """
-    tags = bookmark.get("tags", [])
-    normalized = _normalized_tags(tags)
-
-    # Priority 1: Exact tag rules (character recognition from WD14 or user tags)
-    for tag in normalized:
-        if tag in tag_rules:
-            return tag_rules[tag], f"exact_tag_rule:{tag}"
-
-    # Priority 2 & 3: Series rules and crossover fallback
-    series_rules = series_rules or {}
-    matched_series: list[str] = []
-    for tag in normalized:
-        if tag in series_rules:
-            matched_series.append(series_rules[tag])
-
-    if len(matched_series) == 1:
-        return matched_series[0], f"series_rule:{matched_series[0]}"
-
-    if len(matched_series) > 1:
-        return crossover_folder, "crossover_fallback"
+    rule_folder, rule_reason = decide_folder_by_rule(
+        bookmark,
+        tag_rules,
+        series_rules=series_rules,
+        crossover_folder=crossover_folder,
+    )
+    if rule_folder is not None:
+        return rule_folder, rule_reason
 
     # Priority 4: Folder centroid matching (fallback for non-art / no tag match)
     text = build_text_input(bookmark)
@@ -132,13 +225,51 @@ def decide_folder(
     return None, f"low_confidence:gap={gap:.3f}"
 
 
+def decide_folder_by_rule(
+    bookmark: dict[str, Any],
+    tag_rules: dict[str, RuleTarget],
+    *,
+    series_rules: dict[str, RuleTarget] | None = None,
+    crossover_folder: str = "Art/ANIME",
+) -> tuple[str | None, str]:
+    """Apply exact and series rules without loading an embedding model."""
+    normalized = _normalized_tags(bookmark.get("tags", []))
+    rule_inputs = list(dict.fromkeys([*normalized, *_normalized_hashtags(bookmark)]))
+    normalized_tag_rules = {
+        normalize_tag(tag): folder for tag, folder in tag_rules.items()
+    }
+    for tag in rule_inputs:
+        if tag in normalized_tag_rules:
+            folder = _resolve_rule_target(bookmark, normalized_tag_rules[tag])
+            if folder is not None:
+                return folder, f"exact_tag_rule:{tag}"
+
+    normalized_series_rules = {
+        normalize_tag(tag): folder for tag, folder in (series_rules or {}).items()
+    }
+    matched_series: list[str] = []
+    for tag in [*rule_inputs, *_normalized_text_aliases(bookmark)]:
+        if tag in normalized_series_rules:
+            folder = _resolve_series_target(bookmark, normalized_series_rules[tag])
+            if folder is not None and folder not in matched_series:
+                matched_series.append(folder)
+
+    if len(matched_series) == 1:
+        return matched_series[0], f"series_rule:{matched_series[0]}"
+    if len(matched_series) > 1:
+        return crossover_folder, "crossover_fallback"
+    if _has_visual_art_evidence(bookmark):
+        return crossover_folder, "visual_art_fallback"
+    return None, "no_rule"
+
+
 def resolve_bookmark(
     bookmark: dict[str, Any],
     centroids: dict[str, np.ndarray],
-    tag_rules: dict[str, str],
+    tag_rules: dict[str, RuleTarget],
     embedder: _EmbedderLike | None = None,
     relative_gap_threshold: float = DEFAULT_RELATIVE_GAP_THRESHOLD,
-    series_rules: dict[str, str] | None = None,
+    series_rules: dict[str, RuleTarget] | None = None,
     crossover_folder: str = "Art/ANIME",
 ) -> tuple[int | None, list[str], str]:
     """Run the full resolver on a bookmark.

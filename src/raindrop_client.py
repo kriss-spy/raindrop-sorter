@@ -117,11 +117,18 @@ class RaindropClient:
         """Return all collections (folders)."""
         roots = self._get("collections").get("items", [])
         children = self._get("collections/childrens").get("items", [])
-        return [*roots, *children]
+        by_id: dict[int, dict[str, Any]] = {}
+        for collection in [*roots, *children]:
+            by_id.setdefault(collection["_id"], collection)
+        return list(by_id.values())
 
     def get_collection(self, collection_id: int) -> dict[str, Any]:
         """Return a single collection."""
-        return self._get(f"collection/{collection_id}")
+        return self._get(f"collection/{collection_id}")["item"]
+
+    def get_collection_groups(self) -> list[dict[str, Any]]:
+        """Return the authenticated user's root collection groups."""
+        return self._get("user").get("user", {}).get("groups", [])
 
     def get_tags(self, collection_id: int) -> list[dict[str, Any]]:
         """Return tag names and counts scoped to a collection."""
@@ -129,7 +136,8 @@ class RaindropClient:
 
     def get_raindrop(self, raindrop_id: int) -> dict[str, Any]:
         """Return a single raindrop by ID."""
-        return self._get(f"raindrop/{raindrop_id}")
+        data = self._get(f"raindrop/{raindrop_id}")
+        return data["item"]
 
     def get_raindrops(
         self,

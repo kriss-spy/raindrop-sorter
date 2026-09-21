@@ -130,6 +130,72 @@ def test_get_tags_can_be_scoped_to_unsorted():
     assert session.requests[0][1].endswith("/tags/-1")
 
 
+def test_get_raindrop_returns_bookmark_from_api_item_wrapper():
+    bookmark = {
+        "_id": 123,
+        "cover": "https://example.test/cover.jpg",
+        "tags": ["sorter-pending-vision:2026-09-16"],
+    }
+    session = FakeSession(
+        [FakeResponse(200, {"result": True, "item": bookmark, "author": False})]
+    )
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    result = client.get_raindrop(123)
+
+    assert result == bookmark
+    assert session.requests[0][1].endswith("/raindrop/123")
+
+
+def test_get_collections_deduplicates_ids_across_root_and_child_responses():
+    session = FakeSession(
+        [
+            FakeResponse(200, {"items": [{"_id": 1, "title": "Art"}]}),
+            FakeResponse(
+                200,
+                {
+                    "items": [
+                        {"_id": 1, "title": "Art"},
+                        {"_id": 2, "title": "Vocaloid"},
+                    ]
+                },
+            ),
+        ]
+    )
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    assert client.get_collections() == [
+        {"_id": 1, "title": "Art"},
+        {"_id": 2, "title": "Vocaloid"},
+    ]
+
+
+def test_get_collection_returns_collection_from_api_item_wrapper():
+    collection = {"_id": 1, "title": "Art"}
+    session = FakeSession([FakeResponse(200, {"result": True, "item": collection})])
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    assert client.get_collection(1) == collection
+
+
+def test_get_collection_groups_returns_authenticated_users_groups():
+    groups = [
+        {"title": "Art", "sort": 0, "collections": [1, 2]},
+        {"title": "Music", "sort": 1, "collections": [3]},
+    ]
+    session = FakeSession(
+        [FakeResponse(200, {"result": True, "user": {"groups": groups}})]
+    )
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    assert client.get_collection_groups() == groups
+    assert session.requests[0][1].endswith("/user")
+
+
 def test_transient_server_retries_are_bounded():
     session = FakeSession([FakeResponse(521, {}) for _ in range(6)])
     client = RaindropClient(token="test-token")
@@ -150,13 +216,13 @@ def test_client_waits_before_next_request_when_quota_is_exhausted():
         [
             FakeResponse(
                 200,
-                {"_id": 1},
+                {"item": {"_id": 1}},
                 {
                     "RateLimit-Remaining": "0",
                     "X-RateLimit-Reset": "150",
                 },
             ),
-            FakeResponse(200, {"_id": 2}),
+            FakeResponse(200, {"item": {"_id": 2}}),
         ]
     )
     client = RaindropClient(token="test-token")

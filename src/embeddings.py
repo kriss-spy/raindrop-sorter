@@ -19,14 +19,20 @@ def build_text_input(bookmark: dict[str, Any]) -> str:
     title = bookmark.get("title", "")
     domain = bookmark.get("domain", "")
     tags = bookmark.get("tags", [])
-    # Filter out AI/transient tags for embedding input
-    user_tags = [t for t in tags if not t.startswith(("ai:", "sorter-"))]
+    # Vision labels carry semantic signal for centroid matching. Normalize the
+    # transient prefix while excluding operational and unrelated AI tags.
+    embedding_tags = []
+    for tag in tags:
+        if tag.startswith("ai:wdtag-"):
+            embedding_tags.append(tag[len("ai:wdtag-"):])
+        elif not tag.startswith(("ai:", "sorter-")):
+            embedding_tags.append(tag)
     description = bookmark.get("excerpt", "") or bookmark.get("note", "") or ""
 
     parts = [
         f"Title: {title}",
         f"Domain: {domain}",
-        f"Tags: {' '.join(user_tags)}",
+        f"Tags: {' '.join(embedding_tags)}",
     ]
     if description:
         parts.append(f"Description: {description}")

@@ -6,21 +6,22 @@ It monitors your `Unsorted` collection, learns your personal folder hierarchy fr
 
 ## How it works
 
-1. **Learn.** The agent embeds your existing sorted bookmarks into a vector database and builds folder centroids. It also auto-discovers character/series tag rules from your current organization.
+1. **Learn.** The agent embeds your existing sorted bookmarks, builds folder centroids, and performs a bounded local vision sample to discover high-purity character/series rules from your current organization.
 2. **Watch.** A cron job polls your `Unsorted` collection every 30 minutes.
 3. **Sort.** New bookmarks are analyzed through a deterministic pipeline:
    - **Exact tag rules** — recognizes characters from cover images (e.g., `hatsune_miku` → `Art/Vocaloid/Hatsune Miku`)
-   - **Series rules** — groups same-series multi-character art into series folders
+   - **Series rules** — groups same-series items into group-aware destinations, using image/audio/video modality when names repeat across Art, Music, and Video
    - **Crossover fallback** — ambiguous art lands safely in `Art/ANIME`
    - **Centroid matching** — everything else is matched against folder embeddings; low-confidence items stay in `Unsorted` for your review
 4. **Improve.** A weekly re-index updates the vector database as your library grows and learns from your manual corrections.
 
 ## Architecture
 
-- **Watcher** (CPU, cron) — polls Raindrop, tags new items for processing
-- **Resolver** (CPU, on-demand) — applies all decision logic and moves bookmarks via the Raindrop API
-- **Vision Recovery Cron** (CPU, cron) — finds stuck vision items and dispatches them to workers
-- **Vision Worker** (GPU, on-demand) — runs WD14 Tagger on cover images when text heuristics are uncertain
+- **Watcher** (CPU, every 30 minutes) — discovers new items and starts the resolution pipeline
+- **Resolver** (CPU, on-demand) — processes bounded batches and moves confident matches
+- **Vision Cron** (CPU, every 15 minutes) — drains pending vision work in bounded batches
+- **Vision Worker** (T4 GPU, on-demand) — runs WD14 Tagger when text heuristics are uncertain
+- **Reindex Worker** (CPU, weekly) — rebuilds embeddings and learns from manual corrections
 
 All state is stored in a ChromaDB vector database on a persistent Modal Volume. The agent uses Raindrop tags as its state machine — no separate database needed.
 
@@ -36,10 +37,12 @@ All state is stored in a ChromaDB vector database on a persistent Modal Volume. 
 
 ## Project Status
 
-**Core pipeline complete and deployed.**
+**Core pipeline complete.**
 
 - ✅ Autonomous sorting (text + vision)
 - ✅ Weekly re-index with passive learning
+- ✅ Raindrop rate-limit handling and transient-server-error retries
+- ✅ Bounded, self-draining CPU and vision queues
 - ✅ Audit trail via Raindrop tags
 - ⏳ SauceNAO advisory integration (issue #4)
 - ⏳ Structured logging & observability (issue #4)
@@ -52,25 +55,29 @@ The full architecture and design decisions are documented in [`docs/PRD.md`](doc
 - **Never delete.** The agent only moves bookmarks — it never removes them.
 - **Never auto-create folders.** Your folder structure stays under your control.
 - **No LLMs.** All decisions are deterministic rules and vector similarity. No hallucinations, no API tokens for language models.
-- **Free tier friendly.** GPU is only invoked when visual analysis is actually needed. Text inference runs on CPU.
+- **Usage-conscious.** GPU is invoked only when visual analysis is needed; text inference and orchestration run on CPU.
 
 ## Quick Start
 
 ```bash
-# 1. Clone and install dependencies
-pip install -r requirements.txt
+# 1. Create/sync the Python 3.11 environment
+uv sync --python 3.11
 
-# 2. Set your Raindrop API token
-export RAINDROP_TOKEN="your_token_here"
+# 2. Authenticate the Modal CLI
+uv run modal setup
 
-# 3. Bootstrap the agent's memory from your existing library
-python bootstrap.py
+# 3. Put the raw Raindrop test token in Modal (do not include "Bearer ")
+uv run modal secret create -e main raindrop-token \
+  RAINDROP_TOKEN="your-token-here"
 
-# 4. Deploy to Modal
-modal deploy app.py
+# 4. Bootstrap the index locally and upload it to the Modal Volume
+RAINDROP_TOKEN="your-token-here" uv run python bootstrap.py --upload
+
+# 5. Deploy the scheduled application
+uv run modal deploy -e main app.py
 ```
 
-See [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) for the full setup guide.
+See [`docs/GETTING_STARTED.md`](docs/GETTING_STARTED.md) for setup, health checks, reindexing, and troubleshooting.
 
 ## Credits
 

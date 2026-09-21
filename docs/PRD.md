@@ -50,7 +50,7 @@ The user maintains a large Raindrop.io bookmark library (~1,000+ items) organize
 The Resolver is the single source of truth for all sorting decisions. It executes a strict priority order:
 
 1. **Exact Tag Rules:** If WD14 tags contain a character tag that maps to a known exact rule (e.g., `hatsune_miku` → `Art/Vocaloid/Hatsune Miku`), sort there immediately.
-2. **Series Rules:** If WD14 tags contain multiple characters from the same series (detected via series tags like `vocaloid`, `touhou`), sort to the series folder (e.g., `Art/Vocaloid`).
+2. **Series Rules:** If WD14 tags contain multiple characters from the same series (detected via series tags like `vocaloid`, `touhou`), sort to the series folder. When the same terminal collection exists in multiple UI groups, the rule retains every canonical candidate and uses bookmark modality to choose among them (for example `Art/VOCALOID`, `Music/VOCALOID`, or `Video/VOCALOID`). A series tag without enough modality evidence remains unresolved.
 3. **Crossover Fallback:** If characters are from different series or the image is otherwise ambiguous, sort to `Art/ANIME`.
 4. **Folder Centroid Matching:** If no character/series match applies, embed the bookmark's text features and compare against pre-computed folder centroids. Sort to the nearest centroid only if the gap between 1st and 2nd place exceeds the relative confidence threshold. Otherwise, leave in `Unsorted`.
 
@@ -77,6 +77,8 @@ The Resolver is the single source of truth for all sorting decisions. It execute
 
 - **Vector Database:** ChromaDB stored on Modal Volume (`chroma_db/`).
 - **Folder Centroids:** Computed weekly during re-index. Each folder's centroid is the mean embedding of all bookmarks in that folder's subtree (recursive contribution: subfolder bookmarks feed parent centroids). Both leaf and parent folders compete as sorting destinations.
+- **Canonical collection identity:** Routes include the Raindrop UI group plus the nested collection path. If a group and its root collection have the same normalized name, the repeated segment is collapsed (`Games` + `GAMES/BA` becomes `GAMES/BA`). Duplicate canonical routes abort index construction instead of silently overwriting a collection ID.
+- **Bounded visual initialization:** Bootstrap samples image-bearing historical bookmarks round-robin from the busiest image folders and runs WD14 locally. Character labels and their parenthetical series keys are counted by canonical destination. Rules require minimum support and destination purity; sampling can stop only after enough folder passes produce a non-empty stable rule set, or at a hard ceiling. Sampled labels also enrich centroid inputs without writing tags back to Raindrop. Weekly re-indexes preserve learned visual rules but do not repeat this paid-compute phase.
 - **Passive Learning Loop:**
   - Weekly re-index (Sunday 3 AM) rebuilds the DB via atomic swap (`chroma_db_new/` → `chroma_db/`).
   - Detects manual corrections by comparing `last_seen_folder` metadata to current folder.
@@ -144,7 +146,7 @@ Operational tags (`sorter-reviewed`, `ai:new-rule-*`, `ai:sorted:*`) are preserv
 
 ## Further Notes
 
-- **Folder naming:** The catch-all terminal folder for ambiguous art is `Art/ANIME` (all caps, matching the user's existing convention). The user must create this folder before the first re-index, or the crossover fallback rule will pre-validate as disabled.
+- **Folder naming:** The canonical catch-all path for ambiguous art is `Art/ANIME` (matching the indexed Raindrop group and hierarchy). The user must create this folder before the first re-index, or the crossover fallback rule will pre-validate as disabled.
 - **Cost target:** Modal free tier (~$30/month credit). GPU is invoked sparingly via the funnel architecture; text inference runs on CPU.
 - **Cold starts:** Expected ~10s for the first Vision Worker run of the day as the T4 GPU loads WD14 ONNX weights. Acceptable for a personal tool.
 - **Tag normalization:** The `tag_rules.json` bridges WD14's snake_case tags (e.g., `hakurei_reimu`) to the user's folder names. This map is auto-extracted but can be manually curated on the Volume if needed.

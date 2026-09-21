@@ -3,10 +3,12 @@
 import os
 import shutil
 import tempfile
+import json
 
 import numpy as np
 import pytest
 
+from bootstrap import bootstrap as bootstrap_index, crawl_all_bookmarks
 from src.reindex import (
     atomic_swap_new_db,
     build_folder_hierarchy,
@@ -16,6 +18,8 @@ from src.reindex import (
     rebuild_index,
 )
 from src.state_machine import cleanup_transient_tags
+from src.tag_rules import load_tag_rules
+from src.visual_learning import VisualLearningConfig
 
 
 # ---------------------------------------------------------------------------
@@ -30,15 +34,20 @@ class FakeRaindropClient:
         collections: list[dict],
         bookmarks: list[dict],
         unsorted_items: list[dict] | None = None,
+        groups: list[dict] | None = None,
     ):
         self._collections = collections
         self._bookmarks = {bm["_id"]: bm for bm in bookmarks}
         self._updated: list[tuple[int, dict]] = []
         self._unsorted_items = unsorted_items or []
+        self._groups = groups or []
         self.collection_reads: list[int] = []
 
     def get_collections(self):
         return self._collections
+
+    def get_collection_groups(self):
+        return self._groups
 
     def get_all_raindrops(self, collection_id):
         self.collection_reads.append(collection_id)
@@ -92,6 +101,65 @@ def test_build_folder_map():
     }
 
 
+def test_build_folder_map_uses_ui_group_to_distinguish_duplicate_root_names():
+    collections = [
+        {"_id": 1, "title": "VOCALOID", "parent": None},
+        {"_id": 2, "title": "VOCALOID", "parent": None},
+        {"_id": 3, "title": "VOCALOID", "parent": None},
+    ]
+    groups = [
+        {"title": "Art", "collections": [1]},
+        {"title": "Music", "collections": [2]},
+        {"title": "Video", "collections": [3]},
+    ]
+
+    assert build_folder_map(collections, groups) == {
+        "Art/VOCALOID": 1,
+        "Music/VOCALOID": 2,
+        "Video/VOCALOID": 3,
+    }
+
+
+def test_build_folder_map_does_not_repeat_equivalent_group_and_root_names():
+    collections = [
+        {"_id": 10, "title": "GAMES", "parent": None},
+        {"_id": 11, "title": "BA", "parent": {"$id": 10}},
+    ]
+    groups = [{"title": "Games", "collections": [10]}]
+
+    assert build_folder_map(collections, groups) == {
+        "GAMES": 10,
+        "GAMES/BA": 11,
+    }
+
+
+def test_build_folder_map_rejects_duplicate_canonical_paths():
+    collections = [
+        {"_id": 1, "title": "VOCALOID", "parent": None},
+        {"_id": 2, "title": "VOCALOID", "parent": None},
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match=r"Duplicate canonical collection path 'VOCALOID'.*1.*2.*groups",
+    ):
+        build_folder_map(collections)
+
+
+def test_build_folder_map_rejects_root_listed_in_multiple_groups():
+    collections = [{"_id": 1, "title": "VOCALOID", "parent": None}]
+    groups = [
+        {"title": "Art", "collections": [1]},
+        {"title": "Music", "collections": [1]},
+    ]
+
+    with pytest.raises(
+        ValueError,
+        match=r"collection ID 1.*multiple groups.*Art.*Music",
+    ):
+        build_folder_map(collections, groups)
+
+
 def test_build_folder_hierarchy():
     collections = [
         {"_id": 1, "title": "Art", "parent": {}},
@@ -100,6 +168,18 @@ def test_build_folder_hierarchy():
     ]
     hierarchy = build_folder_hierarchy(collections)
     assert hierarchy == {"Art": ["Art/Vocaloid", "Art/Touhou"]}
+
+
+def test_build_folder_hierarchy_uses_group_aware_collection_paths_only():
+    collections = [
+        {"_id": 1, "title": "VOCALOID", "parent": None},
+        {"_id": 2, "title": "Miku", "parent": {"$id": 1}},
+    ]
+    groups = [{"title": "Art", "collections": [1]}]
+
+    assert build_folder_hierarchy(collections, groups) == {
+        "Art/VOCALOID": ["Art/VOCALOID/Miku"],
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +226,20 @@ def test_detect_manual_corrections_normalizes_wd14_tags():
 
     updated = detect_manual_corrections(live_bookmarks, previous_metadata, rules, mismatches)
     assert updated["miku"] == 1
+
+
+def test_detect_manual_corrections_handles_group_specific_rule_candidates():
+    live_bookmarks = [
+        {"_id": 1, "folder_path": "Music/VOCALOID", "tags": ["vocaloid"]},
+    ]
+    previous_metadata = {
+        "1": {"last_seen_folder": "Art/VOCALOID"},
+    }
+    rules = {"vocaloid": ["Art/VOCALOID", "Music/VOCALOID"]}
+
+    updated = detect_manual_corrections(live_bookmarks, previous_metadata, rules, {})
+
+    assert updated["vocaloid"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -205,6 +299,108 @@ def test_rebuild_index_without_bookmarks_reports_crawl_metrics():
     assert result["rate_limit_wait_seconds"] == 0.0
 
 
+def test_rebuild_index_persists_group_aware_collection_routes():
+    collections = [
+        {"_id": 1, "title": "VOCALOID", "parent": None},
+        {"_id": 2, "title": "VOCALOID", "parent": None},
+    ]
+    groups = [
+        {"title": "Art", "collections": [1]},
+        {"title": "Music", "collections": [2]},
+    ]
+    bookmarks = [
+        {"_id": 101, "title": "Miku image", "collection": {"$id": 1}, "tags": []},
+        {"_id": 102, "title": "Miku song", "collection": {"$id": 2}, "tags": []},
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = os.path.join(tmpdir, "chroma_db")
+        rebuild_index(
+            FakeRaindropClient(collections, bookmarks, groups=groups),
+            FakeEmbedder(dim=8),
+            db_path=db_path,
+        )
+        with open(os.path.join(db_path, "folder_id_map.json"), encoding="utf-8") as f:
+            folder_map = json.load(f)
+
+    assert folder_map == {"Art/VOCALOID": 1, "Music/VOCALOID": 2}
+
+
+def test_bootstrap_crawl_assigns_group_aware_folder_paths():
+    collections = [
+        {"_id": 1, "title": "VOCALOID", "parent": None},
+        {"_id": 2, "title": "VOCALOID", "parent": None},
+    ]
+    bookmarks = [
+        {"_id": 101, "_collection_id": 1, "tags": []},
+        {"_id": 102, "_collection_id": 2, "tags": []},
+    ]
+    client = FakeRaindropClient(
+        collections,
+        bookmarks,
+        groups=[
+            {"title": "Art", "collections": [1]},
+            {"title": "Music", "collections": [2]},
+        ],
+    )
+
+    crawled, _collections, groups = crawl_all_bookmarks(client)
+
+    assert groups == client._groups
+    assert {item["folder_path"] for item in crawled} == {
+        "Art/VOCALOID",
+        "Music/VOCALOID",
+    }
+
+
+def test_bootstrap_persists_bounded_visual_rules(tmp_path, monkeypatch):
+    collections = [
+        {"_id": 1, "title": "TOUHOU", "parent": None},
+        {"_id": 2, "title": "BA", "parent": None},
+    ]
+    bookmarks = [
+        {"_id": 101, "_collection_id": 1, "title": "Reimu", "cover": "1.jpg", "tags": []},
+        {"_id": 102, "_collection_id": 1, "title": "Reimu 2", "cover": "2.jpg", "tags": []},
+        {"_id": 103, "_collection_id": 2, "title": "Hina", "cover": "3.jpg", "tags": []},
+    ]
+    client = FakeRaindropClient(
+        collections,
+        bookmarks,
+        groups=[{"title": "Art", "collections": [1, 2]}],
+    )
+    detected = {
+        101: ["hakurei_reimu"],
+        102: ["hakurei_reimu"],
+        103: ["hina_(blue_archive)"],
+    }
+    monkeypatch.setattr("bootstrap.Embedder", lambda: FakeEmbedder(dim=8))
+
+    bootstrap_index(
+        client,
+        db_path=str(tmp_path),
+        visual_analyzer=lambda bookmark: detected[bookmark["_id"]],
+        visual_learning_config=VisualLearningConfig(
+            max_samples=3,
+            min_tag_support=2,
+            min_tag_purity=0.9,
+            stability_patience=10,
+            min_folder_rounds=1,
+        ),
+    )
+
+    rules, _mismatches = load_tag_rules(str(tmp_path))
+    assert rules["hakurei_reimu"] == "Art/TOUHOU"
+    metrics = json.loads((tmp_path / "visual_learning.json").read_text())
+    assert metrics["samples_analyzed"] == 3
+    assert metrics["rules_learned"] == 1
+    assert metrics["stop_reason"] == "sample_budget"
+    import chromadb
+
+    indexed = chromadb.PersistentClient(path=str(tmp_path)).get_collection("bookmarks")
+    stored = indexed.get(ids=["101"], include=["metadatas"])
+    assert "ai:wdtag-hakurei_reimu" in stored["metadatas"][0]["tags"]
+
+
 def test_rebuild_index_creates_db_and_state():
     collections = [
         {"_id": 1, "title": "Art", "parent": None},
@@ -252,6 +448,7 @@ def test_rebuild_index_creates_db_and_state():
         assert result["rules"] == 1  # miku rule extracted
         assert os.path.isfile(os.path.join(db_path, "centroids.json"))
         assert os.path.isfile(os.path.join(db_path, "tag_rules.json"))
+        assert os.path.isfile(os.path.join(db_path, "series_rules.json"))
         assert os.path.isfile(os.path.join(db_path, "folder_id_map.json"))
         assert set(result["timings_seconds"]) == {
             "crawl",

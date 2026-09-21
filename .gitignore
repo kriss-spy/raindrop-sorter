@@ -9,6 +9,8 @@ dist/
 build/
 .pytest_cache/
 .mypy_cache/
+.scratch/wd14_model/
+.scratch/chroma_db*/
 chroma_db/
 chroma_db_new/
 chroma_db_old/

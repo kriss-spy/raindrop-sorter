@@ -43,8 +43,8 @@ def test_build_text_input():
     text = build_text_input(bm)
     assert "Hello World" in text
     assert "example.com" in text
-    assert "python" in text
-    assert "ai:wdtag-test" not in text  # transient tags stripped
+    assert "Tags: python test" in text
+    assert "ai:wdtag-test" not in text  # prefix is normalized for embedding
     assert "A short description" in text
 
 
@@ -116,6 +116,18 @@ def test_extract_candidate_tag_rules():
     assert "vocaloid" not in rules
 
 
+def test_extract_candidate_tag_rules_preserves_group_specific_candidates():
+    bookmarks = [
+        {"folder_path": folder, "tags": ["vocaloid"]}
+        for folder in ("Art/VOCALOID", "Music/VOCALOID")
+        for _ in range(3)
+    ]
+
+    assert extract_candidate_tag_rules(bookmarks) == {
+        "vocaloid": ["Art/VOCALOID", "Music/VOCALOID"]
+    }
+
+
 def test_save_and_load_tag_rules():
     with tempfile.TemporaryDirectory() as tmpdir:
         save_tag_rules({"a": "b"}, {"a": 1}, tmpdir)
@@ -135,6 +147,17 @@ def test_validate_tag_rules():
     rules = {"a": "Folder/A", "b": "Folder/B", "c": "Missing"}
     validated = validate_tag_rules(rules, {"Folder/A", "Folder/B"})
     assert validated == {"a": "Folder/A", "b": "Folder/B"}
+
+
+def test_validate_tag_rules_prunes_missing_group_candidates():
+    rules = {
+        "vocaloid": ["Art/VOCALOID", "Music/VOCALOID", "Missing/VOCALOID"]
+    }
+
+    assert validate_tag_rules(
+        rules,
+        {"Art/VOCALOID", "Music/VOCALOID"},
+    ) == {"vocaloid": ["Art/VOCALOID", "Music/VOCALOID"]}
 
 
 # ---------------------------------------------------------------------------
@@ -406,7 +429,7 @@ def test_raindrop_client_retries_get_after_rate_limit(mock_time, mock_sleep):
         headers={"X-RateLimit-Reset": "105"},
     )
     successful = MagicMock(status_code=200)
-    successful.json.return_value = {"_id": 1}
+    successful.json.return_value = {"item": {"_id": 1}}
     client.session.get = MagicMock(side_effect=[rate_limited, successful])
 
     result = client.get_collection(1)
@@ -425,7 +448,7 @@ def test_raindrop_client_caps_rate_limit_wait(mock_time, mock_sleep):
         headers={"X-RateLimit-Reset": "10000"},
     )
     successful = MagicMock(status_code=200)
-    successful.json.return_value = {"_id": 1}
+    successful.json.return_value = {"item": {"_id": 1}}
     client.session.get = MagicMock(side_effect=[rate_limited, successful])
 
     assert client.get_collection(1) == {"_id": 1}

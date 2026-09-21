@@ -6,6 +6,7 @@ inference via ONNX Runtime. Supports both CPU and GPU providers.
 
 import io
 import os
+import re
 from typing import Any
 
 import numpy as np
@@ -40,6 +41,20 @@ def _load_labels(model_dir: str) -> list[str]:
     return tags
 
 
+def _load_categories(model_dir: str) -> list[int]:
+    """Load the Danbooru category for each model label."""
+    import csv
+
+    label_path = os.path.join(model_dir, LABEL_FILENAME)
+    categories: list[int] = []
+    with open(label_path, "r", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        next(reader)
+        for row in reader:
+            categories.append(int(row[2]))
+    return categories
+
+
 def _preprocess(image: Image.Image) -> np.ndarray:
     """Resize to 448x448, keep raw [0, 255] pixel values, add batch dimension.
 
@@ -57,6 +72,18 @@ def normalize_tag(raw_tag: str) -> str:
     return raw_tag.lower().replace(" ", "_")
 
 
+def semantic_tag_keys(raw_tag: str) -> list[str]:
+    """Return a character label and its final parenthetical series key."""
+    tag = normalize_tag(raw_tag)
+    keys = [tag]
+    parentheticals = re.findall(r"\(([^()]+)\)", tag)
+    if parentheticals:
+        series = normalize_tag(parentheticals[-1])
+        if series != tag:
+            keys.append(series)
+    return keys
+
+
 class WD14Tagger:
     """ONNX-based WD14 tagger with lazy model loading."""
 
@@ -65,6 +92,7 @@ class WD14Tagger:
         self.threshold = threshold
         self._session: Any | None = None
         self._tags: list[str] | None = None
+        self._categories: list[int] | None = None
 
     def _load(self) -> None:
         """Lazy-load the ONNX session and tag list, falling back to CPU."""
@@ -83,6 +111,26 @@ class WD14Tagger:
             # CPU is always available.
             self._session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
         self._tags = _load_labels(self.model_dir)
+        self._categories = _load_categories(self.model_dir)
+
+    def _predict_probabilities(
+        self,
+        image_input: bytes | Image.Image | str,
+    ) -> np.ndarray:
+        self._load()
+        if self._session is None:
+            raise RuntimeError("WD14 model failed to load")
+
+        if isinstance(image_input, str):
+            image = Image.open(image_input)
+        elif isinstance(image_input, bytes):
+            image = Image.open(io.BytesIO(image_input))
+        else:
+            image = image_input
+
+        input_arr = _preprocess(image)
+        outputs = self._session.run(None, {self._session.get_inputs()[0].name: input_arr})
+        return outputs[0][0]
 
     def predict(
         self,
@@ -96,23 +144,30 @@ class WD14Tagger:
         Returns:
             List of normalized tag strings.
         """
-        self._load()
-        if self._session is None or self._tags is None:
+        probs = self._predict_probabilities(image_input)
+        if self._tags is None:
             raise RuntimeError("WD14 model failed to load")
-
-        if isinstance(image_input, str):
-            image = Image.open(image_input)
-        elif isinstance(image_input, bytes):
-            image = Image.open(io.BytesIO(image_input))
-        else:
-            image = image_input
-
-        input_arr = _preprocess(image)
-        outputs = self._session.run(None, {self._session.get_inputs()[0].name: input_arr})
-        probs = outputs[0][0]  # shape: (num_tags,)
 
         tags = []
         for tag, prob in zip(self._tags, probs):
             if prob >= self.threshold:
                 tags.append(normalize_tag(tag))
         return tags
+
+    def predict_characters(
+        self,
+        image_input: bytes | Image.Image | str,
+    ) -> list[str]:
+        """Return confident character labels, excluding generic properties."""
+        probs = self._predict_probabilities(image_input)
+        if self._tags is None or self._categories is None:
+            raise RuntimeError("WD14 model labels failed to load")
+        return [
+            normalize_tag(tag)
+            for tag, category, probability in zip(
+                self._tags,
+                self._categories,
+                probs,
+            )
+            if category == 4 and probability >= self.threshold
+        ]
