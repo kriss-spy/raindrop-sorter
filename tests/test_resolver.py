@@ -10,7 +10,12 @@ import requests
 
 from src.centroids import compute_folder_centroids, load_centroids, save_centroids
 from src.embeddings import build_text_input
-from src.resolver import cosine_similarity, decide_folder, find_best_centroid
+from src.resolver import (
+    cosine_similarity,
+    decide_folder,
+    decide_folder_by_rule,
+    find_best_centroid,
+)
 from src.state_machine import (
     add_tag,
     get_clean_tags,
@@ -246,6 +251,201 @@ def test_decide_folder_exact_tag_rule():
     folder, reason = decide_folder(bm, centroids, rules)
     assert folder == "Art/Vocaloid"
     assert "exact_tag_rule" in reason
+
+
+def test_decide_folder_honors_explicit_user_calibration():
+    bookmark = {
+        "_id": 1860037727,
+        "type": "article",
+        "tags": ["ai:wdtag-1girl"],
+        "title": "시즈/しず (@sizuzang) on X",
+        "domain": "x.com",
+        "excerpt": "",
+        "media": [{"type": "image", "link": "https://example.test/art.jpg"}],
+    }
+
+    folder, reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder == "Art/GAMES/BA"
+    assert reason == "user_calibration:1860037727"
+
+
+def test_decide_folder_generalizes_calibrated_character_tag():
+    bookmark = {
+        "type": "article",
+        "tags": ["ai:wdtag-hatsune_miku", "ai:wdtag-1girl"],
+        "title": "untitled",
+        "domain": "x.com",
+        "excerpt": "",
+        "media": [{"type": "image", "link": "https://example.test/art.jpg"}],
+    }
+
+    folder, reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder == "Art/MIKU"
+    assert reason == "calibrated_tag:hatsune_miku"
+
+
+def test_calibration_uses_x_cover_as_art_evidence_without_typed_media():
+    bookmark = {
+        "type": "article",
+        "tags": ["ai:wdtag-hatsune_miku"],
+        "title": "untitled",
+        "domain": "x.com",
+        "cover": "https://pbs.twimg.com/media/example.jpg",
+        "excerpt": "",
+        "media": [],
+    }
+
+    folder, reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder == "Art/MIKU"
+    assert reason == "calibrated_tag:hatsune_miku"
+
+
+def test_user_confirmed_character_route_overrides_stale_learned_rule():
+    bookmark = {
+        "type": "image",
+        "tags": ["ai:wdtag-hakurei_reimu"],
+        "title": "untitled",
+        "domain": "x.com",
+        "excerpt": "",
+    }
+
+    folder, reason = decide_folder_by_rule(
+        bookmark,
+        {"hakurei_reimu": "Art/ANIME"},
+        series_rules={},
+    )
+
+    assert folder == "Art/TOUHOU"
+    assert reason == "calibrated_tag:hakurei_reimu"
+
+
+@pytest.mark.parametrize(
+    ("bookmark_id", "expected_folder"),
+    [
+        (1860416132, "Art/TOUHOU"),
+        (1861076432, "Art/GAMES/BA"),
+        (1860716167, "Art/GAMES/BA"),
+        (1860392169, "Art/ANIME/MAJONOTABITABI"),
+        (1860292294, "Art/MIKU"),
+        (1860292290, "Art/ANIME/MAJONOTABITABI"),
+        (1860037727, "Art/GAMES/BA"),
+        (1860037717, "Art/MIKU"),
+        (1859637128, "Art/GAMES/FGO"),
+        (1859600128, "Art/MIKU"),
+        (1859600122, "Art/ANIME/lucky star"),
+        (1860052154, "Art/GAMES/BA"),
+        (1859600099, "Art/VTUBERS"),
+        (1859254203, "Art/GAMES/BA"),
+        (1859290755, "Art/GAMES/BA"),
+        (1859254200, "Art/GAMES/BA"),
+        (1859152957, "Art/GAMES/GFL2"),
+        (1859138295, "Art/TOUHOU"),
+        (1859152949, "Art/GAMES/BA"),
+        (1859160939, "Art/GAMES/BA"),
+        (1859454297, "Art/GAMES/BA"),
+        (1859100626, "Art/GAMES/GFL2"),
+        (1859102703, "Art/NEUROVERSE/EVIL"),
+        (1858587910, "Art/GAMES/BA"),
+        (1859152945, "Art/GAMES/BA"),
+        (1859191393, "Art/GAMES/GALGAME"),
+        (1859152931, "Art/VTUBERS"),
+        (1858587892, "Art/MISCE"),
+        (1858587884, "Art/MIKU"),
+        (1859152928, "Art/IDOL@MASTER"),
+        (1859104912, "Art/GAMES/BA"),
+        (1858601441, "Art/GAMES/FGO"),
+        (1859117686, "Art/VTUBERS"),
+    ],
+)
+def test_decide_folder_preserves_latest_100_user_feedback(
+    bookmark_id,
+    expected_folder,
+):
+    bookmark = {
+        "_id": bookmark_id,
+        "type": "article",
+        "tags": ["ai:wdtag-1girl"],
+        "title": "",
+        "domain": "x.com",
+        "excerpt": "",
+        "media": [{"type": "image", "link": "https://example.test/art.jpg"}],
+    }
+
+    folder, reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder == expected_folder
+    assert reason == f"user_calibration:{bookmark_id}"
+
+
+@pytest.mark.parametrize(
+    ("title", "vision_tag", "expected_folder"),
+    [
+        ("untitled", "hakurei_reimu", "Art/TOUHOU"),
+        ("untitled", "elaina_(majo_no_tabitabi)", "Art/ANIME/MAJONOTABITABI"),
+        ("untitled", "izumi_konata", "Art/ANIME/lucky star"),
+        ("untitled", "mari_(blue_archive)", "Art/GAMES/BA"),
+        ("untitled", "komeiji_satori", "Art/TOUHOU"),
+        ("untitled", "nero_claudius_(fate)", "Art/GAMES/FGO"),
+        ("#初音ミク", "1girl", "Art/MIKU"),
+        ("#ほしまちぎゃらりー", "1girl", "Art/VTUBERS"),
+        ("Clannad figure", "1girl", "Art/GAMES/GALGAME"),
+        ("untitled", "furukawa_nagisa", "Art/GAMES/GALGAME"),
+        ("花海咲季 rkgk", "1girl", "Art/IDOL@MASTER"),
+    ],
+)
+def test_calibrated_visual_and_text_aliases_generalize(
+    title,
+    vision_tag,
+    expected_folder,
+):
+    bookmark = {
+        "type": "article",
+        "tags": [f"ai:wdtag-{vision_tag}"],
+        "title": title,
+        "domain": "x.com",
+        "excerpt": "",
+        "media": [{"type": "image", "link": "https://example.test/art.jpg"}],
+    }
+
+    folder, reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder == expected_folder
+    assert reason.startswith("calibrated_")
+
+
+def test_short_text_calibration_does_not_match_source_url():
+    bookmark = {
+        "type": "article",
+        "tags": ["ai:wdtag-1girl"],
+        "title": "unrelated original character",
+        "domain": "x.com",
+        "link": "https://x.com/miyako_artist/status/1",
+        "excerpt": "",
+        "media": [{"type": "image", "link": "https://example.test/art.jpg"}],
+    }
+
+    folder, reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder == "Art/ANIME"
+    assert reason == "visual_art_fallback"
+
+
+def test_latin_text_calibration_requires_word_boundaries():
+    bookmark = {
+        "type": "image",
+        "tags": ["ai:wdtag-1girl"],
+        "title": "Miyakojima original character",
+        "domain": "x.com",
+        "excerpt": "",
+    }
+
+    folder, reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder == "Art/ANIME"
+    assert reason == "visual_art_fallback"
 
 
 def test_decide_folder_centroid_match():

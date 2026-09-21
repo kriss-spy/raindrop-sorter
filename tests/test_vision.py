@@ -316,7 +316,7 @@ def test_decide_folder_uses_series_key_embedded_in_wd14_character_tag():
     )
 
     assert folder == "Art/GAMES/BA"
-    assert reason == "exact_tag_rule:blue_archive"
+    assert reason == "calibrated_tag:blue_archive"
 
 
 def test_decide_folder_maps_wd14_series_name_to_abbreviated_collection():
@@ -364,6 +364,36 @@ def test_decide_folder_routes_image_x_post_to_art_series_collection():
         "link": "https://x.com/example/status/1",
         "domain": "x.com",
         "media": [{"link": "https://pbs.twimg.com/media/example.jpg"}],
+        "tags": [],
+        "title": "#VOCALOID",
+        "excerpt": "",
+    }
+
+    folder, reason = decide_folder(
+        bookmark,
+        {},
+        {},
+        series_rules={
+            "vocaloid": [
+                "Art/VOCALOID",
+                "Music/VOCALOID",
+                "Video/VOCALOID",
+            ]
+        },
+    )
+
+    assert folder == "Art/VOCALOID"
+    assert reason == "series_rule:Art/VOCALOID"
+
+
+def test_decide_folder_trusts_x_image_media_over_misleading_video_type():
+    bookmark = {
+        "type": "video",
+        "link": "https://x.com/example/status/1",
+        "domain": "x.com",
+        "media": [
+            {"type": "image", "link": "https://pbs.twimg.com/media/example.jpg"}
+        ],
         "tags": [],
         "title": "#VOCALOID",
         "excerpt": "",

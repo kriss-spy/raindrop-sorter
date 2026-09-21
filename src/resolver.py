@@ -7,7 +7,9 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from src.calibrations import calibrated_bookmark_folder, calibrated_content_folder
 from src.embeddings import Embedder, build_text_input
+from src.modality import bookmark_modality
 from src.state_machine import tag_sorted, tag_reviewed
 from src.tag_rules import RuleTarget, TEXT_SERIES_ALIASES
 from src.wd14_tagger import normalize_tag, semantic_tag_keys
@@ -105,38 +107,10 @@ def _normalized_text_aliases(bookmark: dict[str, Any]) -> list[str]:
 
 def _has_visual_art_evidence(bookmark: dict[str, Any]) -> bool:
     """Whether completed vision found an anime-style person in an art post."""
-    if _bookmark_modality(bookmark) != "art":
+    if bookmark_modality(bookmark) != "art":
         return False
     art_markers = {"1girl", "1boy", "multiple_girls", "multiple_boys"}
     return bool(art_markers.intersection(_normalized_tags(bookmark.get("tags", []))))
-
-
-def _bookmark_modality(bookmark: dict[str, Any]) -> str | None:
-    """Infer the UI group used for modality-specific collection routes."""
-    bookmark_type = str(bookmark.get("type", "")).casefold()
-    if bookmark_type == "image":
-        return "art"
-    if bookmark_type == "audio":
-        return "music"
-    if bookmark_type == "video":
-        return "video"
-
-    domain = str(bookmark.get("domain", "")).casefold()
-    link = str(bookmark.get("link", "")).casefold()
-    if domain in {"youtube.com", "www.youtube.com", "youtu.be", "vimeo.com"}:
-        return "video"
-    if domain in {"open.spotify.com", "soundcloud.com", "bandcamp.com"}:
-        return "music"
-    if domain in {"x.com", "twitter.com", "www.x.com", "www.twitter.com"}:
-        if bookmark.get("media") or bookmark.get("cover"):
-            return "art"
-    if re.search(r"\.(?:mp3|flac|wav|m4a|ogg)(?:$|[?#])", link):
-        return "music"
-    if re.search(r"\.(?:mp4|webm|mov|mkv)(?:$|[?#])", link):
-        return "video"
-    if re.search(r"\.(?:png|jpe?g|gif|webp|avif)(?:$|[?#])", link):
-        return "art"
-    return None
 
 
 def _resolve_rule_target(
@@ -149,7 +123,7 @@ def _resolve_rule_target(
     candidates = list(dict.fromkeys(target))
     if len(candidates) == 1:
         return candidates[0]
-    modality = _bookmark_modality(bookmark)
+    modality = bookmark_modality(bookmark)
     if modality is None:
         return None
     matching = [
@@ -168,7 +142,7 @@ def _resolve_series_target(
     folder = _resolve_rule_target(bookmark, target)
     if folder is None:
         return None
-    modality = _bookmark_modality(bookmark)
+    modality = bookmark_modality(bookmark)
     target_group = folder.partition("/")[0].casefold()
     if (
         modality is not None
@@ -191,10 +165,11 @@ def decide_folder(
     """Decide which folder a bookmark should go to.
 
     Priority order:
-        1. Exact tag rules (including normalized WD14 tags).
-        2. Series rules (single matched series).
-        3. Crossover fallback (multiple matched series).
-        4. Folder centroid matching.
+        1. Exact bookmark and reusable user calibrations.
+        2. Exact tag rules (including normalized WD14 tags).
+        3. Series rules (single matched series).
+        4. Crossover fallback (multiple matched series).
+        5. Folder centroid matching.
 
     Returns:
         (folder_path, reason) where folder_path is None if the item
@@ -233,8 +208,17 @@ def decide_folder_by_rule(
     crossover_folder: str = "Art/ANIME",
 ) -> tuple[str | None, str]:
     """Apply exact and series rules without loading an embedding model."""
+    calibration = calibrated_bookmark_folder(bookmark)
+    if calibration is not None:
+        return calibration
+
     normalized = _normalized_tags(bookmark.get("tags", []))
     rule_inputs = list(dict.fromkeys([*normalized, *_normalized_hashtags(bookmark)]))
+
+    calibration = calibrated_content_folder(bookmark)
+    if calibration is not None:
+        return calibration
+
     normalized_tag_rules = {
         normalize_tag(tag): folder for tag, folder in tag_rules.items()
     }
