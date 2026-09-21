@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 from dotenv import load_dotenv
 
+from src.destinations import canonical_destination
 from src.raindrop_client import RaindropClient
 from src.vision_worker import resolve_cover_url, run_visual_embedding_on_bookmark
 from src.visual_exemplars import (
@@ -53,7 +54,7 @@ def _crawl_target_bookmarks(
             raise ValueError(f"Target folder is missing from the local index: {folder}")
         items = client.get_all_raindrops(collection_id)
         for item in items:
-            item["folder_path"] = folder
+            item["folder_path"] = canonical_destination(folder)
         bookmarks.extend(items)
         print(f"Fetched {len(items)} bookmarks from {folder}", flush=True)
     return bookmarks
@@ -243,9 +244,12 @@ def build_local_visual_index(
 ) -> dict[str, Any]:
     folder_map = _load_folder_map(db_path)
     bookmarks = _crawl_target_bookmarks(client, folder_map, folder_paths)
+    destination_paths = list(
+        dict.fromkeys(canonical_destination(folder) for folder in folder_paths)
+    )
     training, holdout = partition_visual_examples(
         bookmarks,
-        folder_paths=folder_paths,
+        folder_paths=destination_paths,
         holdout_per_folder=holdout_per_folder,
         max_exemplars_per_folder=max_exemplars_per_folder,
         holdout_position=holdout_position,
@@ -281,7 +285,7 @@ def build_local_visual_index(
 
     training_by_folder = {
         folder: [item for item in training if item["folder_path"] == folder]
-        for folder in folder_paths
+        for folder in destination_paths
     }
     best: tuple[int, VisualExemplarIndex, VisualEvaluation] | None = None
     stale_rounds = 0
@@ -292,7 +296,7 @@ def build_local_visual_index(
     ):
         current = [
             item
-            for folder in folder_paths
+            for folder in destination_paths
             for item in training_by_folder[folder][:per_folder]
         ]
         print(f"Building round with up to {per_folder} exemplars per folder", flush=True)

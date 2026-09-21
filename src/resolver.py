@@ -8,6 +8,7 @@ from typing import Any, Protocol
 import numpy as np
 
 from src.calibrations import calibrated_bookmark_folder, calibrated_content_folder
+from src.destinations import canonical_destination
 from src.embeddings import Embedder, build_text_input
 from src.modality import bookmark_modality
 from src.state_machine import tag_sorted, tag_reviewed
@@ -315,6 +316,8 @@ def resolve_bookmark(
     if folder is None:
         new_tags = tag_reviewed(bookmark)
         return None, new_tags, reason
+
+    folder = canonical_destination(folder)
 
     # Map folder path to collection ID
     collection_id = bookmark.get("_folder_id_map", {}).get(folder)

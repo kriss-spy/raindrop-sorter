@@ -281,7 +281,8 @@ folder as an untouched holdout, caches frozen CCIP embeddings after every
 image, grows the older exemplar set in bounded rounds, and stops after the
 holdout result plateaus. It only saves a confidence policy with zero observed
 holdout misroutes. The resulting index is used by `local_run.py`; Modal workers
-are unchanged.
+are unchanged. Images sourced from `Art/GAMES/BA/gaki` are learned and reported
+as `Art/GAMES/BA`; the child collection is never a sorting destination.
 
 To prepare a separate oldest-10-per-folder evaluation without replacing the
 active visual index or its metrics:

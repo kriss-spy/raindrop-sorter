@@ -522,6 +522,29 @@ def test_resolve_bookmark_tags_new_rule_for_exact_match():
     assert "exact_tag_rule:miku" in reason
 
 
+def test_resolve_bookmark_routes_ba_gaki_rules_to_ba_parent():
+    bookmark = {
+        "_id": 5,
+        "tags": ["small_shun"],
+        "title": "",
+        "domain": "",
+        "excerpt": "",
+        "_folder_id_map": {
+            "Art/GAMES/BA": 42,
+            "Art/GAMES/BA/gaki": 43,
+        },
+    }
+
+    target_id, _new_tags, reason = resolve_bookmark(
+        bookmark,
+        {},
+        {"small_shun": "Art/GAMES/BA/gaki"},
+    )
+
+    assert target_id == 42
+    assert reason == "exact_tag_rule:small_shun"
+
+
 # ---------------------------------------------------------------------------
 # Full resolve_bookmark
 # ---------------------------------------------------------------------------
