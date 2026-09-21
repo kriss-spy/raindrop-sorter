@@ -27,6 +27,7 @@ from src.tag_rules import (
 from src.vision_worker import (
     download_cover,
     resolve_cover_url,
+    run_visual_embedding_on_bookmark,
     run_character_vision_on_bookmark,
     run_vision_on_bookmark,
 )
@@ -234,6 +235,18 @@ def test_run_vision_on_bookmark_dead_url():
     with patch("src.vision_worker.download_cover", return_value=None):
         tags = run_vision_on_bookmark(bm)
     assert tags == []
+
+
+def test_run_visual_embedding_on_bookmark_reuses_cover_recovery():
+    bookmark = {"cover": "http://example.com/cover.jpg"}
+    mock_embedder = MagicMock()
+    mock_embedder.embed_image.return_value = np.array([0.25, 0.75], dtype=np.float32)
+
+    with patch("src.vision_worker.download_cover", return_value=b"img"):
+        embedding = run_visual_embedding_on_bookmark(bookmark, mock_embedder)
+
+    np.testing.assert_array_equal(embedding, [0.25, 0.75])
+    mock_embedder.embed_image.assert_called_once_with(b"img")
 
 
 def test_run_character_vision_on_bookmark_returns_only_character_labels():

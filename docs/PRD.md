@@ -51,8 +51,10 @@ The Resolver is the single source of truth for all sorting decisions. It execute
 
 1. **Exact Tag Rules:** If WD14 tags contain a character tag that maps to a known exact rule (e.g., `hatsune_miku` → `Art/Vocaloid/Hatsune Miku`), sort there immediately.
 2. **Series Rules:** If WD14 tags contain multiple characters from the same series (detected via series tags like `vocaloid`, `touhou`), sort to the series folder. When the same terminal collection exists in multiple UI groups, the rule retains every canonical candidate and uses bookmark modality to choose among them (for example `Art/VOCALOID`, `Music/VOCALOID`, or `Video/VOCALOID`). A series tag without enough modality evidence remains unresolved.
-3. **Crossover Fallback:** If characters are from different series or the image is otherwise ambiguous, sort to `Art/ANIME`.
-4. **Folder Centroid Matching:** If no character/series match applies, embed the bookmark's text features and compare against pre-computed folder centroids. Sort to the nearest centroid only if the gap between 1st and 2nd place exceeds the relative confidence threshold. Otherwise, leave in `Unsorted`.
+3. **Explicit Crossover Fallback:** If character/series rules identify multiple series, sort to `Art/ANIME` rather than overriding that evidence with image similarity.
+4. **Local Visual Exemplars:** In local runs, compare the cover against a bounded index of older, already-sorted images. Explicit character and series rules retain priority. A destination is accepted only when calibrated similarity and runner-up margin thresholds both pass; otherwise generic anime fallback or review remains in control.
+5. **Generic Art Fallback:** If visual art evidence remains but no specific route passes, sort to `Art/ANIME`.
+6. **Folder Centroid Matching:** For remaining bookmarks, embed the text features and compare against pre-computed folder centroids. Sort to the nearest centroid only if the gap between 1st and 2nd place exceeds the relative confidence threshold. Otherwise, leave in `Unsorted`.
 
 ### Text Embedding Strategy
 
@@ -79,6 +81,7 @@ The Resolver is the single source of truth for all sorting decisions. It execute
 - **Folder Centroids:** Computed weekly during re-index. Each folder's centroid is the mean embedding of all bookmarks in that folder's subtree (recursive contribution: subfolder bookmarks feed parent centroids). Both leaf and parent folders compete as sorting destinations.
 - **Canonical collection identity:** Routes include the Raindrop UI group plus the nested collection path. If a group and its root collection have the same normalized name, the repeated segment is collapsed (`Games` + `GAMES/BA` becomes `GAMES/BA`). Duplicate canonical routes abort index construction instead of silently overwriting a collection ID.
 - **Bounded visual initialization:** Bootstrap samples image-bearing historical bookmarks round-robin from the busiest image folders and runs WD14 locally. Character labels and their parenthetical series keys are counted by canonical destination. Rules require minimum support and destination purity; sampling can stop only after enough folder passes produce a non-empty stable rule set, or at a hard ceiling. Sampled labels also enrich centroid inputs without writing tags back to Raindrop. Weekly re-indexes preserve learned visual rules but do not repeat this paid-compute phase.
+- **Local visual exemplar index:** A separate read-only builder uses a frozen CCIP image encoder on older images from selected art folders. The latest 10 images in each folder are permanently excluded from training for calibration. Embeddings are cached locally and built in bounded rounds; growth stops on a holdout plateau. The saved thresholds must produce zero wrong destinations on the calibration holdout, allowing uncertain images to remain for review. This index currently augments only the local runner and is not uploaded to or executed on Modal.
 - **Passive Learning Loop:**
   - Weekly re-index (Sunday 3 AM) rebuilds the DB via atomic swap (`chroma_db_new/` → `chroma_db/`).
   - Detects manual corrections by comparing `last_seen_folder` metadata to current folder.
@@ -139,7 +142,7 @@ Operational tags (`sorter-reviewed`, `ai:new-rule-*`, `ai:sorted:*`) are preserv
 - **Auto-creating Raindrop folders.** The system never creates folders. If a rule targets a missing folder, the rule is disabled during pre-validation.
 - **Deleting or archiving dead bookmarks.** The system only sorts; it never removes bookmarks.
 - **Page scraping for images.** Only Raindrop's `cover` URL is used.
-- **Multimodal embeddings (CLIP).** Text-only `mpnet-base-v2` for now; vision-to-vision similarity is a future optimization.
+- **Broader visual deployment.** The calibrated visual exemplar path is local-only; deploying it to Modal remains a future optimization.
 - **Heuristic JSON config.** Phase 1 URL/title heuristics are set aside for a future iteration; the initial build relies on tag rules and centroids.
 - **Notifications / digests / dashboards.** No email, Slack, or external alerting. Observability is via Raindrop tags only.
 - **Mobile app or web UI.** The agent is purely backend/serverless.

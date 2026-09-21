@@ -17,7 +17,8 @@ from src.state_machine import (
     tag_after_vision,
 )
 from src.tag_rules import load_series_rules, load_tag_rules
-from src.vision_worker import run_vision_on_bookmark
+from src.vision_worker import run_vision_on_bookmark, run_visual_embedding_on_bookmark
+from src.visual_exemplars import create_visual_embedder, load_visual_exemplar_index
 from src.wd14_tagger import WD14Tagger
 
 REQUIRED_INDEX_FILES = (
@@ -106,6 +107,7 @@ def run_local_bookmark(
     bookmark_id: int,
     db_path: str,
     analyze_vision: Callable[[dict[str, Any]], list[str]] = run_vision_on_bookmark,
+    analyze_visual: Callable[[dict[str, Any]], Any | None] | None = None,
     embedder: Any | None = None,
     apply: bool = False,
 ) -> dict[str, Any]:
@@ -118,6 +120,7 @@ def run_local_bookmark(
     centroids = load_centroids(db_path)
     tag_rules, _mismatches = load_tag_rules(db_path)
     series_rules = load_series_rules(db_path)
+    visual_index = load_visual_exemplar_index(db_path)
     vision_tags: list[str] = []
 
     def run_vision() -> None:
@@ -129,6 +132,10 @@ def run_local_bookmark(
                 transitioned_tags.append(tag)
         candidate = dict(candidate)
         candidate["tags"] = transitioned_tags
+        if visual_index is not None and analyze_visual is not None:
+            visual_embedding = analyze_visual(candidate)
+            if visual_embedding is not None:
+                candidate["_visual_embedding"] = visual_embedding
 
     if is_pending_vision(candidate):
         rule_folder, _rule_reason = decide_folder_by_rule(
@@ -145,7 +152,27 @@ def run_local_bookmark(
         tag_rules,
         embedder=embedder,
         series_rules=series_rules,
+        visual_index=visual_index,
     )
+
+    if (
+        visual_index is not None
+        and analyze_visual is not None
+        and candidate.get("cover")
+        and candidate.get("_visual_embedding") is None
+        and (reason == "visual_art_fallback" or reason.startswith("low_confidence"))
+    ):
+        visual_embedding = analyze_visual(candidate)
+        if visual_embedding is not None:
+            candidate["_visual_embedding"] = visual_embedding
+            target_id, new_tags, reason = resolve_bookmark(
+                candidate,
+                centroids,
+                tag_rules,
+                embedder=embedder,
+                series_rules=series_rules,
+                visual_index=visual_index,
+            )
 
     if (
         target_id is None
@@ -160,6 +187,7 @@ def run_local_bookmark(
             tag_rules,
             embedder=embedder,
             series_rules=series_rules,
+            visual_index=visual_index,
         )
 
     if apply:
@@ -216,6 +244,12 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("RAINDROP_TOKEN is required in the environment or .env")
 
     tagger = WD14Tagger(model_dir=args.model_dir)
+    visual_index = load_visual_exemplar_index(args.db_path)
+    visual_embedder = (
+        create_visual_embedder(visual_index.model_name)
+        if visual_index is not None
+        else None
+    )
     client = RaindropClient(token=token)
     embedder = Embedder()
     run_one = lambda bookmark_id: run_local_bookmark(
@@ -223,6 +257,14 @@ def main(argv: list[str] | None = None) -> None:
         bookmark_id=bookmark_id,
         db_path=args.db_path,
         analyze_vision=lambda bookmark: run_vision_on_bookmark(bookmark, tagger=tagger),
+        analyze_visual=(
+            lambda bookmark: run_visual_embedding_on_bookmark(
+                bookmark,
+                visual_embedder,
+            )
+            if visual_embedder is not None
+            else None
+        ),
         embedder=embedder,
         apply=args.apply,
     )

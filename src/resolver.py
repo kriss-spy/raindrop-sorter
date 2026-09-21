@@ -12,6 +12,7 @@ from src.embeddings import Embedder, build_text_input
 from src.modality import bookmark_modality
 from src.state_machine import tag_sorted, tag_reviewed
 from src.tag_rules import RuleTarget, TEXT_SERIES_ALIASES
+from src.visual_exemplars import VisualExemplarIndex, classify_visual_embedding
 from src.wd14_tagger import normalize_tag, semantic_tag_keys
 
 
@@ -161,6 +162,9 @@ def decide_folder(
     relative_gap_threshold: float = DEFAULT_RELATIVE_GAP_THRESHOLD,
     series_rules: dict[str, RuleTarget] | None = None,
     crossover_folder: str = "Art/ANIME",
+    visual_index: VisualExemplarIndex | None = None,
+    visual_min_similarity: float | None = None,
+    visual_min_margin: float | None = None,
 ) -> tuple[str | None, str]:
     """Decide which folder a bookmark should go to.
 
@@ -180,6 +184,9 @@ def decide_folder(
         tag_rules,
         series_rules=series_rules,
         crossover_folder=crossover_folder,
+        visual_index=visual_index,
+        visual_min_similarity=visual_min_similarity,
+        visual_min_margin=visual_min_margin,
     )
     if rule_folder is not None:
         return rule_folder, rule_reason
@@ -206,6 +213,9 @@ def decide_folder_by_rule(
     *,
     series_rules: dict[str, RuleTarget] | None = None,
     crossover_folder: str = "Art/ANIME",
+    visual_index: VisualExemplarIndex | None = None,
+    visual_min_similarity: float | None = None,
+    visual_min_margin: float | None = None,
 ) -> tuple[str | None, str]:
     """Apply exact and series rules without loading an embedding model."""
     calibration = calibrated_bookmark_folder(bookmark)
@@ -242,6 +252,30 @@ def decide_folder_by_rule(
         return matched_series[0], f"series_rule:{matched_series[0]}"
     if len(matched_series) > 1:
         return crossover_folder, "crossover_fallback"
+    visual_embedding = bookmark.get("_visual_embedding")
+    if visual_index is not None and visual_embedding is not None:
+        visual_match = classify_visual_embedding(
+            np.asarray(visual_embedding, dtype=np.float32),
+            visual_index,
+            min_similarity=(
+                visual_index.min_similarity
+                if visual_min_similarity is None
+                else visual_min_similarity
+            ),
+            min_margin=(
+                visual_index.min_margin
+                if visual_min_margin is None
+                else visual_min_margin
+            ),
+            neighbors_per_folder=visual_index.neighbors_per_folder,
+        )
+        if visual_match is not None:
+            return (
+                visual_match.folder_path,
+                "visual_exemplar:"
+                f"similarity={visual_match.similarity:.3f},"
+                f"margin={visual_match.margin:.3f}",
+            )
     if _has_visual_art_evidence(bookmark):
         return crossover_folder, "visual_art_fallback"
     return None, "no_rule"
@@ -255,6 +289,9 @@ def resolve_bookmark(
     relative_gap_threshold: float = DEFAULT_RELATIVE_GAP_THRESHOLD,
     series_rules: dict[str, RuleTarget] | None = None,
     crossover_folder: str = "Art/ANIME",
+    visual_index: VisualExemplarIndex | None = None,
+    visual_min_similarity: float | None = None,
+    visual_min_margin: float | None = None,
 ) -> tuple[int | None, list[str], str]:
     """Run the full resolver on a bookmark.
 
@@ -270,6 +307,9 @@ def resolve_bookmark(
         relative_gap_threshold=relative_gap_threshold,
         series_rules=series_rules,
         crossover_folder=crossover_folder,
+        visual_index=visual_index,
+        visual_min_similarity=visual_min_similarity,
+        visual_min_margin=visual_min_margin,
     )
 
     if folder is None:

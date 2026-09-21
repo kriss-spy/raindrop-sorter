@@ -6,6 +6,11 @@ import pytest
 from src.centroids import save_centroids
 from src.local_runner import find_local_work, run_local_bookmark
 from src.tag_rules import save_series_rules, save_tag_rules
+from src.visual_exemplars import (
+    DEFAULT_CLIP_MODEL,
+    VisualExemplarIndex,
+    save_visual_exemplar_index,
+)
 
 
 class FakeRaindropClient:
@@ -161,3 +166,98 @@ def test_local_runner_uses_explicit_hashtag_before_queued_vision(tmp_path):
     assert result["action"] == "move"
     assert result["target_folder"] == "VOCALOID"
     assert result["vision_tag_count"] == 0
+
+
+def test_local_runner_uses_visual_exemplars_before_anime_fallback(tmp_path):
+    _write_state(tmp_path)
+    (tmp_path / "folder_id_map.json").write_text(
+        json.dumps(
+            {
+                "MIKU": 42,
+                "VOCALOID": 43,
+                "Art/GAMES/GFL2": 44,
+                "Art/ANIME": 45,
+            }
+        ),
+        encoding="utf-8",
+    )
+    save_visual_exemplar_index(
+        VisualExemplarIndex(
+            embeddings=np.array([[1.0, 0.0], [0.99, 0.01]], dtype=np.float32),
+            folder_paths=["Art/GAMES/GFL2", "Art/GAMES/GFL2"],
+            bookmark_ids=[1, 2],
+            min_similarity=0.8,
+            min_margin=0.1,
+            model_name=DEFAULT_CLIP_MODEL,
+        ),
+        str(tmp_path),
+    )
+    client = FakeRaindropClient(
+        {
+            "_id": 123,
+            "title": "new character",
+            "type": "image",
+            "cover": "https://example.test/cover.jpg",
+            "tags": ["sorter-pending-vision:2026-09-18"],
+        }
+    )
+
+    result = run_local_bookmark(
+        client,
+        bookmark_id=123,
+        db_path=str(tmp_path),
+        analyze_vision=lambda _bookmark: ["ai:wdtag-1girl"],
+        analyze_visual=lambda _bookmark: np.array([1.0, 0.0], dtype=np.float32),
+    )
+
+    assert result["target_folder"] == "Art/GAMES/GFL2"
+    assert result["reason"].startswith("visual_exemplar:")
+
+
+def test_local_runner_adds_visual_match_after_completed_vision(tmp_path):
+    _write_state(tmp_path)
+    (tmp_path / "folder_id_map.json").write_text(
+        json.dumps(
+            {
+                "MIKU": 42,
+                "VOCALOID": 43,
+                "Art/GAMES/GFL2": 44,
+                "Art/ANIME": 45,
+            }
+        ),
+        encoding="utf-8",
+    )
+    save_visual_exemplar_index(
+        VisualExemplarIndex(
+            embeddings=np.array([[1.0, 0.0]], dtype=np.float32),
+            folder_paths=["Art/GAMES/GFL2"],
+            bookmark_ids=[1],
+            min_similarity=0.8,
+            min_margin=0.1,
+            model_name=DEFAULT_CLIP_MODEL,
+        ),
+        str(tmp_path),
+    )
+    client = FakeRaindropClient(
+        {
+            "_id": 123,
+            "title": "new character",
+            "type": "image",
+            "cover": "https://example.test/cover.jpg",
+            "tags": ["sorter-pending-resolution", "ai:wdtag-1girl"],
+        }
+    )
+    calls = []
+
+    result = run_local_bookmark(
+        client,
+        bookmark_id=123,
+        db_path=str(tmp_path),
+        analyze_vision=lambda _bookmark: pytest.fail("vision already completed"),
+        analyze_visual=lambda bookmark: calls.append(bookmark["_id"])
+        or np.array([1.0, 0.0], dtype=np.float32),
+    )
+
+    assert calls == [123]
+    assert result["target_folder"] == "Art/GAMES/GFL2"
+    assert result["reason"].startswith("visual_exemplar:")

@@ -104,6 +104,20 @@ def run_vision_on_bookmark(
     return [f"ai:wdtag-{tag}" for tag in raw_tags]
 
 
+def run_visual_embedding_on_bookmark(
+    bookmark: dict[str, Any],
+    embedder: Any,
+) -> Any | None:
+    """Download real image media and compute a frozen visual embedding."""
+    cover_url = resolve_cover_url(bookmark)
+    if not cover_url:
+        return None
+    image_bytes = download_cover(cover_url)
+    if image_bytes is None:
+        return None
+    return embedder.embed_image(image_bytes)
+
+
 def run_character_vision_on_bookmark(
     bookmark: dict[str, Any],
     tagger: WD14Tagger | None = None,

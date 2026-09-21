@@ -11,6 +11,7 @@ It monitors your `Unsorted` collection, learns your personal folder hierarchy fr
 3. **Sort.** New bookmarks are analyzed through a deterministic pipeline:
    - **Exact tag rules** — recognizes characters from cover images (e.g., `hatsune_miku` → `Art/Vocaloid/Hatsune Miku`)
    - **Series rules** — groups same-series items into group-aware destinations, using image/audio/video modality when names repeat across Art, Music, and Video
+   - **Visual exemplars** — the local runner compares newer art with older images already sorted into the user's game folders
    - **Crossover fallback** — ambiguous art lands safely in `Art/ANIME`
    - **Centroid matching** — everything else is matched against folder embeddings; low-confidence items stay in `Unsorted` for your review
 4. **Improve.** A weekly re-index updates the vector database as your library grows and learns from your manual corrections.
@@ -33,6 +34,7 @@ All state is stored in a ChromaDB vector database on a persistent Modal Volume. 
 | Vector DB | ChromaDB |
 | Embeddings | `sentence-transformers/all-mpnet-base-v2` |
 | Vision | WD14 Tagger (ONNX on NVIDIA T4) |
+| Local visual exemplars | CCIP (frozen ONNX encoder) |
 | Source API | Raindrop.io REST API |
 
 ## Project Status
@@ -43,6 +45,7 @@ All state is stored in a ChromaDB vector database on a persistent Modal Volume. 
 - ✅ Weekly re-index with passive learning
 - ✅ Raindrop rate-limit handling and transient-server-error retries
 - ✅ Bounded, self-draining CPU and vision queues
+- ✅ Bounded, resumable local visual exemplar indexing with untouched holdouts
 - ✅ Audit trail via Raindrop tags
 - ⏳ SauceNAO advisory integration (issue #4)
 - ⏳ Structured logging & observability (issue #4)

@@ -9,6 +9,7 @@ description = "Autonomous serverless agent that organizes Raindrop.io bookmarks"
 requires-python = ">=3.11"
 dependencies = [
     "chromadb==0.5.5",
+    "dghs-imgutils==0.19.0",
     "huggingface-hub>=0.20.0",
     "modal==1.5.5",
     "numpy==1.26.4",

@@ -267,6 +267,22 @@ Use this as a pre-deployment gate. After it passes, validate one separately cont
 The local runner executes the actual text, CPU vision, rule, and centroid
 pipeline without Modal. It is read-only unless `--apply` is supplied:
 
+For newer anime/game works that WD14 does not name reliably, first build a
+local visual exemplar index from older bookmarks in the configured game
+folders:
+
+```bash
+RAINDROP_TOKEN="your-token-here" uv run python visual_index.py \
+  --db-path chroma_db
+```
+
+This operation is read-only. It reserves the latest 10 images in every target
+folder as an untouched holdout, caches frozen CCIP embeddings after every
+image, grows the older exemplar set in bounded rounds, and stops after the
+holdout result plateaus. It only saves a confidence policy with zero observed
+holdout misroutes. The resulting index is used by `local_run.py`; Modal workers
+are unchanged.
+
 ```bash
 RAINDROP_TOKEN="your-token-here" uv run python local_run.py \
   --bookmark-id 123456789 \
