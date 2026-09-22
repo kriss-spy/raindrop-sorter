@@ -71,7 +71,90 @@ TAG_ROUTES: dict[str, str] = {
     "furukawa_nagisa": "Art/GAMES/GALGAME",
     "hurukaga_nagisa": "Art/GAMES/GALGAME",
 }
+
+# First-party localized franchise and character names for Girls' Frontline 2.
+# These aliases are distinctive enough to route art before visual matching.
+GFL2_LOCALIZED_TEXT_ALIASES = (
+    "leva",
+    "リヴァ",
+    "莱娅",
+    "리바",
+    "makiatto",
+    "マキアート",
+    "玛绮朵",
+    "마키아토",
+    "klukai",
+    "クルカイ",
+    "可露凯",
+    "클루카이",
+    "suomi",
+    "スオミ",
+    "索米",
+    "수오미",
+    "cheyanne",
+    "シャイアン",
+    "夏安",
+    "샤이엔",
+    "lenna",
+    "groza",
+    "グローザ",
+    "그로자",
+    "colphne",
+    "コルフェン",
+    "寇尔芙",
+    "콜펜",
+    "girls' frontline 2",
+    "girls’ frontline 2",
+    "girls frontline 2",
+    "girlsfrontline2",
+    "gfl2",
+    "ドールズフロントライン2",
+    "ドルフロ2",
+    "少女前线2",
+    "少女前線2",
+    "소녀전선2",
+)
+LOCALIZED_ART_TEXT_ALIASES: dict[str, tuple[str, ...]] = {
+    "Art/GAMES/GFL2": GFL2_LOCALIZED_TEXT_ALIASES,
+    "Art/GAMES/Arknights Endfield": (
+        "arknights: endfield",
+        "arknights endfield",
+        "arknightsendfield",
+        "アークナイツ:エンドフィールド",
+        "エンドフィールド",
+        "明日方舟:终末地",
+        "明日方舟终末地",
+        "終末地",
+        "终末地",
+        "명일방주: 엔드필드",
+        "명일방주 엔드필드",
+        "엔드필드",
+    ),
+    "Art/GAMES/GENSHIN": (
+        "genshin impact",
+        "genshinimpact",
+        "genshin",
+        "原神",
+        "원신",
+    ),
+    "Art/GAMES/BA": (
+        "blue archive",
+        "bluearchive",
+        "ブルーアーカイブ",
+        "ブルアカ",
+        "蔚蓝档案",
+        "蔚藍檔案",
+        "블루 아카이브",
+        "블루아카이브",
+        "블루아카",
+    ),
+}
 TEXT_ROUTES: dict[str, str] = {
+    **{
+        alias: target
+        for target, aliases in LOCALIZED_ART_TEXT_ALIASES.items()
+        for alias in aliases
+    },
     "初音ミク": "Art/MIKU",
     "ほしまちぎゃらりー": "Art/VTUBERS",
     "星街すいせい": "Art/VTUBERS",
@@ -133,7 +216,7 @@ def calibrated_bookmark_folder(
 def calibrated_content_folder(
     bookmark: dict[str, Any],
 ) -> tuple[str, str] | None:
-    """Generalize confirmed visual and textual aliases to new art."""
+    """Generalize confirmed visual tags and source aliases to new art."""
     if bookmark_modality(bookmark) == "art":
         semantic_tags = {
             semantic_tag
@@ -145,19 +228,28 @@ def calibrated_content_folder(
         for tag, target in TAG_ROUTES.items():
             if tag in semantic_tags:
                 return target, f"calibrated_tag:{tag}"
-        searchable_text = unicodedata.normalize(
-            "NFKC",
-            "\n".join(
-                str(bookmark.get(field, "") or "")
-                for field in ("title", "excerpt", "note")
-            ),
-        ).casefold()
-        for alias, target in TEXT_ROUTES.items():
-            normalized_alias = unicodedata.normalize("NFKC", alias).casefold()
-            if _contains_text_alias(searchable_text, normalized_alias):
-                return target, f"calibrated_text:{normalized_alias}"
         source = str(bookmark.get("link", "") or "").casefold()
         for source_fragment, target in SOURCE_ROUTES.items():
             if source_fragment in source:
                 return target, f"calibrated_source:{source_fragment}"
+    return None
+
+
+def calibrated_text_folder(
+    bookmark: dict[str, Any],
+) -> tuple[str, str] | None:
+    """Route art from curated Unicode aliases after user-defined rules."""
+    if bookmark_modality(bookmark) != "art":
+        return None
+    searchable_text = unicodedata.normalize(
+        "NFKC",
+        "\n".join(
+            str(bookmark.get(field, "") or "")
+            for field in ("title", "excerpt", "note")
+        ),
+    ).casefold()
+    for alias, target in TEXT_ROUTES.items():
+        normalized_alias = unicodedata.normalize("NFKC", alias).casefold()
+        if _contains_text_alias(searchable_text, normalized_alias):
+            return target, f"calibrated_text:{normalized_alias}"
     return None

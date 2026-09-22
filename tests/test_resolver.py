@@ -323,6 +323,84 @@ def test_user_confirmed_character_route_overrides_stale_learned_rule():
 
 
 @pytest.mark.parametrize(
+    "title",
+    [
+        "Leva",
+        "メイドリヴァ姉",
+        "莱娅",
+        "리바",
+        "Girls' Frontline 2 fan art",
+        "ドルフロ2",
+        "少女前线2：追放",
+        "소녀전선2: 망명",
+        "Klukai",
+        "マキアート",
+        "索米",
+        "콜펜",
+    ],
+)
+def test_multilingual_gfl2_text_routes_before_visual_matching(title):
+    bookmark = {
+        "type": "image",
+        "tags": ["ai:wdtag-1girl"],
+        "title": title,
+        "domain": "x.com",
+        "excerpt": "",
+    }
+
+    folder, reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder == "Art/GAMES/GFL2"
+    assert reason.startswith("calibrated_text:")
+
+
+def test_multilingual_character_text_does_not_route_non_art_bookmarks():
+    bookmark = {
+        "type": "article",
+        "tags": [],
+        "title": "Leva release notes",
+        "domain": "example.test",
+        "excerpt": "",
+    }
+
+    folder, reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder is None
+    assert reason == "no_rule"
+
+
+@pytest.mark.parametrize(
+    ("title", "expected_folder"),
+    [
+        ("Arknights: Endfield", "Art/GAMES/Arknights Endfield"),
+        ("アークナイツ：エンドフィールド", "Art/GAMES/Arknights Endfield"),
+        ("明日方舟：终末地", "Art/GAMES/Arknights Endfield"),
+        ("명일방주: 엔드필드", "Art/GAMES/Arknights Endfield"),
+        ("Genshin Impact", "Art/GAMES/GENSHIN"),
+        ("原神", "Art/GAMES/GENSHIN"),
+        ("원신", "Art/GAMES/GENSHIN"),
+        ("Blue Archive", "Art/GAMES/BA"),
+        ("ブルーアーカイブ", "Art/GAMES/BA"),
+        ("蔚蓝档案", "Art/GAMES/BA"),
+        ("블루 아카이브", "Art/GAMES/BA"),
+    ],
+)
+def test_multilingual_franchise_text_routes_art(title, expected_folder):
+    bookmark = {
+        "type": "image",
+        "tags": ["ai:wdtag-1girl"],
+        "title": title,
+        "domain": "x.com",
+        "excerpt": "",
+    }
+
+    folder, reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder == expected_folder
+    assert reason.startswith("calibrated_text:")
+
+
+@pytest.mark.parametrize(
     ("bookmark_id", "expected_folder"),
     [
         (1860416132, "Art/TOUHOU"),

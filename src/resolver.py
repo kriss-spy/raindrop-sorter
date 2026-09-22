@@ -7,7 +7,11 @@ from typing import Any, Protocol
 
 import numpy as np
 
-from src.calibrations import calibrated_bookmark_folder, calibrated_content_folder
+from src.calibrations import (
+    calibrated_bookmark_folder,
+    calibrated_content_folder,
+    calibrated_text_folder,
+)
 from src.destinations import canonical_destination
 from src.embeddings import Embedder, build_text_input
 from src.modality import bookmark_modality
@@ -253,6 +257,11 @@ def decide_folder_by_rule(
         return matched_series[0], f"series_rule:{matched_series[0]}"
     if len(matched_series) > 1:
         return crossover_folder, "crossover_fallback"
+
+    calibration = calibrated_text_folder(bookmark)
+    if calibration is not None:
+        return calibration
+
     visual_embedding = bookmark.get("_visual_embedding")
     if visual_index is not None and visual_embedding is not None:
         visual_match = classify_visual_embedding(

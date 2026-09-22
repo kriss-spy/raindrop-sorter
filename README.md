@@ -11,6 +11,7 @@ It monitors your `Unsorted` collection, learns your personal folder hierarchy fr
 3. **Sort.** New bookmarks are analyzed through a deterministic pipeline:
    - **Exact tag rules** — recognizes characters from cover images (e.g., `hatsune_miku` → `Art/Vocaloid/Hatsune Miku`)
    - **Series rules** — groups same-series items into group-aware destinations, using image/audio/video modality when names repeat across Art, Music, and Video
+   - **Localized text aliases** — recognizes distinctive character and franchise names in Chinese, English, Japanese, and Korean before vision
    - **Visual exemplars** — the local runner compares newer art with older images already sorted into the user's game folders
    - **Crossover fallback** — ambiguous art lands safely in `Art/ANIME`
    - **Centroid matching** — everything else is matched against folder embeddings; low-confidence items stay in `Unsorted` for your review

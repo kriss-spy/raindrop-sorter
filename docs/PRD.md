@@ -51,10 +51,11 @@ The Resolver is the single source of truth for all sorting decisions. It execute
 
 1. **Exact Tag Rules:** If WD14 tags contain a character tag that maps to a known exact rule (e.g., `hatsune_miku` → `Art/Vocaloid/Hatsune Miku`), sort there immediately.
 2. **Series Rules:** If WD14 tags contain multiple characters from the same series (detected via series tags like `vocaloid`, `touhou`), sort to the series folder. When the same terminal collection exists in multiple UI groups, the rule retains every canonical candidate and uses bookmark modality to choose among them (for example `Art/VOCALOID`, `Music/VOCALOID`, or `Video/VOCALOID`). A series tag without enough modality evidence remains unresolved.
-3. **Explicit Crossover Fallback:** If character/series rules identify multiple series, sort to `Art/ANIME` rather than overriding that evidence with image similarity.
-4. **Local Visual Exemplars:** In local runs, compare the cover against a bounded index of older, already-sorted images. Explicit character and series rules retain priority. A destination is accepted only when calibrated similarity and runner-up margin thresholds both pass; otherwise generic anime fallback or review remains in control.
-5. **Generic Art Fallback:** If visual art evidence remains but no specific route passes, sort to `Art/ANIME`.
-6. **Folder Centroid Matching:** For remaining bookmarks, embed the text features and compare against pre-computed folder centroids. Sort to the nearest centroid only if the gap between 1st and 2nd place exceeds the relative confidence threshold. Otherwise, leave in `Unsorted`.
+3. **Localized Text Aliases:** For art bookmarks, normalize title, excerpt, and notes with Unicode NFKC and case folding, then match curated character and franchise aliases in Chinese, English, Japanese, and Korean. User-defined tag and series rules retain priority; distinctive text routes before visual similarity, while non-art bookmarks do not use these routes.
+4. **Explicit Crossover Fallback:** If character/series rules identify multiple series, sort to `Art/ANIME` rather than overriding that evidence with image similarity.
+5. **Local Visual Exemplars:** In local runs, compare the cover against a bounded index of older, already-sorted images. Explicit character and series rules retain priority. A destination is accepted only when calibrated similarity and runner-up margin thresholds both pass; otherwise generic anime fallback or review remains in control.
+6. **Generic Art Fallback:** If visual art evidence remains but no specific route passes, sort to `Art/ANIME`.
+7. **Folder Centroid Matching:** For remaining bookmarks, embed the text features and compare against pre-computed folder centroids. Sort to the nearest centroid only if the gap between 1st and 2nd place exceeds the relative confidence threshold. Otherwise, leave in `Unsorted`.
 
 ### Text Embedding Strategy
 
