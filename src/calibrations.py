@@ -4,6 +4,7 @@ import re
 import unicodedata
 from typing import Any
 
+from src.character_aliases import CHARACTER_ALIAS_ROUTES
 from src.modality import bookmark_modality
 from src.wd14_tagger import semantic_tag_keys
 
@@ -180,6 +181,8 @@ TEXT_ROUTES: dict[str, str] = {
     "klukai": "Art/GAMES/GFL2",
     "furukawa nagisa": "Art/GAMES/GALGAME",
     "古河渚": "Art/GAMES/GALGAME",
+    "girlsfrontline2exilium": "Art/GAMES/GFL2",
+    "gfl2exilium": "Art/GAMES/GFL2",
 }
 SOURCE_ROUTES: dict[str, str] = {
     "x.com/bugcat_capoo_tw/": "Art/MISCE",
@@ -241,15 +244,41 @@ def calibrated_text_folder(
     """Route art from curated Unicode aliases after user-defined rules."""
     if bookmark_modality(bookmark) != "art":
         return None
-    searchable_text = unicodedata.normalize(
-        "NFKC",
-        "\n".join(
-            str(bookmark.get(field, "") or "")
-            for field in ("title", "excerpt", "note")
-        ),
-    ).casefold()
+    searchable_fields = [
+        unicodedata.normalize(
+            "NFKC", str(bookmark.get(field, "") or "")
+        ).casefold()
+        for field in ("title", "excerpt", "note")
+    ]
+    searchable_text = "\n".join(searchable_fields)
     for alias, target in TEXT_ROUTES.items():
         normalized_alias = unicodedata.normalize("NFKC", alias).casefold()
         if _contains_text_alias(searchable_text, normalized_alias):
             return target, f"calibrated_text:{normalized_alias}"
+
+    matched_characters: list[tuple[str, tuple[str, ...]]] = []
+    for normalized_alias, targets in CHARACTER_ALIAS_ROUTES.items():
+        alias_matches = (
+            normalized_alias in {field.strip() for field in searchable_fields}
+            if len(normalized_alias) == 1
+            else _contains_text_alias(searchable_text, normalized_alias)
+        )
+        if alias_matches:
+            matched_characters.append((normalized_alias, targets))
+    if matched_characters:
+        longest_length = max(len(alias) for alias, _targets in matched_characters)
+        longest_matches = [
+            (alias, targets)
+            for alias, targets in matched_characters
+            if len(alias) == longest_length
+        ]
+        longest_targets = {
+            target
+            for _alias, targets in longest_matches
+            for target in targets
+        }
+        if len(longest_targets) == 1:
+            target = next(iter(longest_targets))
+            longest_alias = longest_matches[0][0]
+            return target, f"character_text:{longest_alias}"
     return None

@@ -322,6 +322,20 @@ def test_user_confirmed_character_route_overrides_stale_learned_rule():
     assert reason == "calibrated_tag:hakurei_reimu"
 
 
+def _resolve_art_title(title, excerpt=""):
+    return decide_folder_by_rule(
+        {
+            "type": "image",
+            "tags": ["ai:wdtag-1girl"],
+            "title": title,
+            "domain": "x.com",
+            "excerpt": excerpt,
+        },
+        {},
+        series_rules={},
+    )
+
+
 @pytest.mark.parametrize(
     "title",
     [
@@ -352,6 +366,151 @@ def test_multilingual_gfl2_text_routes_before_visual_matching(title):
 
     assert folder == "Art/GAMES/GFL2"
     assert reason.startswith("calibrated_text:")
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Robella ❤",
+        "ミシュティ「萌え萌えきゅん」",
+        "로벨라",
+        "米什緹",
+        "洛贝拉",
+        "米什缇",
+    ],
+)
+def test_current_gfl2_roster_names_route_in_supported_languages(title):
+    folder, reason = _resolve_art_title(title)
+
+    assert folder == "Art/GAMES/GFL2"
+    assert reason.startswith("character_text:")
+
+
+@pytest.mark.parametrize(
+    ("title", "expected_folder"),
+    [
+        ("Typhoeus", "Art/GAMES/Arknights Endfield"),
+        ("ティフォロス", "Art/GAMES/Arknights Endfield"),
+        ("티프로스", "Art/GAMES/Arknights Endfield"),
+        ("提弗洛斯", "Art/GAMES/Arknights Endfield"),
+        ("Furina", "Art/GAMES/GENSHIN"),
+        ("フリーナ", "Art/GAMES/GENSHIN"),
+        ("푸리나", "Art/GAMES/GENSHIN"),
+        ("芙宁娜", "Art/GAMES/GENSHIN"),
+        ("Ako", "Art/GAMES/BA"),
+        ("アコ", "Art/GAMES/BA"),
+        ("아코", "Art/GAMES/BA"),
+        ("亚子", "Art/GAMES/BA"),
+    ],
+)
+def test_current_roster_names_route_across_supported_games(title, expected_folder):
+    folder, reason = _resolve_art_title(title)
+
+    assert folder == expected_folder
+    assert reason.startswith(("calibrated_text:", "character_text:"))
+
+
+def test_shared_character_name_requires_franchise_evidence():
+    folder, reason = _resolve_art_title("Mika")
+
+    assert folder == "Art/ANIME"
+    assert reason == "visual_art_fallback"
+
+    folder, reason = _resolve_art_title("Mika", "#BlueArchive Mika")
+
+    assert folder == "Art/GAMES/BA"
+    assert reason == "calibrated_text:bluearchive"
+
+
+def test_longer_character_name_disambiguates_a_shared_short_name():
+    folder, reason = _resolve_art_title("Misono Mika")
+
+    assert folder == "Art/GAMES/BA"
+    assert reason == "character_text:misono mika"
+
+
+@pytest.mark.parametrize(
+    ("title", "expected_folder"),
+    [("魈", "Art/GAMES/GENSHIN"), ("绯", "Art/GAMES/GFL2")],
+)
+def test_exact_single_character_cjk_names_route_safely(title, expected_folder):
+    folder, reason = _resolve_art_title(title)
+
+    assert folder == expected_folder
+    assert reason == f"character_text:{title.casefold()}"
+
+    folder, reason = _resolve_art_title(f"ordinary prose containing {title}")
+
+    assert folder == "Art/ANIME"
+    assert reason == "visual_art_fallback"
+
+
+@pytest.mark.parametrize(
+    ("bookmark_id", "title", "excerpt", "tags"),
+    [
+        (1494751684, "スオミちゃん", "スオミちゃん", ["Twitter", "Suomi"]),
+        (1497682262, "M200~", "M200~", ["Twitter", "Cheyanne"]),
+        (
+            1499125984,
+            "Cute Daughter Cheyanne",
+            "Cute Daughter Cheyanne #ドールズフロントライン #M200 #少女前線",
+            ["Twitter", "Cheyanne"],
+        ),
+        (1507543117, "Gmgm Lenna in a suit is hot :3", "", ["Twitter"]),
+        (
+            1509048999,
+            "Robella ❤",
+            "#GirlsFrontline2Exilium #robella",
+            ["Twitter"],
+        ),
+        (
+            1512621256,
+            "ミシュティ「萌え萌えきゅん🫶🏻」",
+            "",
+            ["Twitter"],
+        ),
+        (
+            1515148498,
+            "セクスタンスとセ…",
+            "【ドルフロ2／少女前线2】",
+            ["Twitter"],
+        ),
+        (
+            1516875878,
+            "Started drawing Colphne this year and also ended it with Colphne~",
+            "#GirlsFrontline2Exilium #GFL2Exilium",
+            ["Twitter"],
+        ),
+        (
+            1519714537,
+            "2026年も絳雨を宜しく頼みます！！",
+            "#ドルフロ2 #GirlsFrontline2Exilium",
+            ["Twitter"],
+        ),
+        (1522670974, "ドルフロ2", "煙を味わう春田", ["Twitter"]),
+        (
+            1522670965,
+            "Ms. Gyoza 💕",
+            "#GirlsFrontline #GirlsFrontline2Exilium",
+            ["Twitter"],
+        ),
+    ],
+)
+def test_supplied_gfl2_raindrops_all_resolve_from_their_real_text(
+    bookmark_id, title, excerpt, tags
+):
+    bookmark = {
+        "_id": bookmark_id,
+        "type": "image",
+        "domain": "x.com",
+        "title": title,
+        "excerpt": excerpt,
+        "tags": tags,
+    }
+
+    folder, _reason = decide_folder_by_rule(bookmark, {}, series_rules={})
+
+    assert folder == "Art/GAMES/GFL2"
 
 
 def test_multilingual_character_text_does_not_route_non_art_bookmarks():
