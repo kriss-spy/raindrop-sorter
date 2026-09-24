@@ -37,6 +37,8 @@ class VisualMatch:
     folder_path: str
     similarity: float
     margin: float
+    runner_up_folder: str | None = None
+    runner_up_similarity: float | None = None
 
 
 @dataclass(frozen=True)
@@ -315,9 +317,16 @@ def score_visual_embedding(
     scores.sort(key=lambda item: (-item[1], item[0]))
 
     folder, similarity = scores[0]
-    runner_up = scores[1][1] if len(scores) > 1 else -1.0
-    margin = similarity - runner_up
-    return VisualMatch(folder, similarity, margin)
+    runner_up_folder = scores[1][0] if len(scores) > 1 else None
+    runner_up_similarity = scores[1][1] if len(scores) > 1 else -1.0
+    margin = similarity - runner_up_similarity
+    return VisualMatch(
+        folder,
+        similarity,
+        margin,
+        runner_up_folder,
+        runner_up_similarity,
+    )
 
 
 def evaluate_visual_index(

@@ -1,49 +1,65 @@
-"""Structured routing records shared by the local runner and journal.
-
-The current resolver still returns its historical ``(target, tags, reason)`` tuple.
-This module is the compatibility seam that makes those results readable without
-changing the resolver's routing behaviour during the architecture migration.
-"""
+"""Native two-step routing policy for the revised local architecture."""
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+import re
+import unicodedata
+from dataclasses import asdict, dataclass
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
+
+import numpy as np
+
+from src.calibrations import BOOKMARK_ROUTES, CHARACTER_ALIAS_ROUTES, TAG_ROUTES, TEXT_ROUTES
+from src.destinations import canonical_destination
+from src.modality import bookmark_modality
+from src.tag_rules import RuleTarget
+from src.visual_exemplars import VisualExemplarIndex, score_visual_embedding
+from src.wd14_tagger import normalize_tag, semantic_tag_keys
 
 
 class RouteOutcome(StrEnum):
-    """Stable outcomes from the revised routing policy."""
-
     CONFIRMED = "confirmed"
     PROVISIONAL = "provisional"
     REVIEW = "review"
     CONFLICT = "conflict"
 
 
-class EvidenceKind(StrEnum):
-    """Evidence producers that can contribute to a route decision."""
-
-    USER_CONFIRMED_RULE = "user_confirmed_rule"
-    TAG_RULE = "tag_rule"
-    SERIES_RULE = "series_rule"
-    TEXT_ALIAS = "text_alias"
-    CENTROID = "centroid"
-    VISUAL_EXEMPLAR = "visual_exemplar"
-    VISUAL_CLASSIFIER = "visual_classifier"
-    SYSTEM = "system"
+TextStrength = Literal["strong", "contextual", "weak", "conflicting"]
+VisualStatus = Literal["pass", "inconclusive", "conflict", "unavailable", "not_applicable", "bypassed"]
 
 
 @dataclass(frozen=True)
-class RouteEvidence:
-    """One inspectable piece of evidence used by a decision."""
-
-    kind: EvidenceKind
-    destination: str | None = None
-    status: str | None = None
-    strength: str | None = None
+class TextEvidence:
+    kind: str
+    destination: str | None
+    strength: TextStrength | None
+    matched_value: str | None = None
+    entity: str | None = None
+    source: str | None = None
     explanation: str = ""
-    details: dict[str, Any] = field(default_factory=dict)
+    candidates: tuple[str, ...] = ()
+    schema_version: int = 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class VisualEvidence:
+    status: VisualStatus
+    destination: str | None
+    method: str
+    explanation: str
+    labels: tuple[str, ...] = ()
+    candidates: tuple[str, ...] = ()
+    winner: str | None = None
+    runner_up: str | None = None
+    similarity: float | None = None
+    runner_up_similarity: float | None = None
+    margin: float | None = None
+    min_similarity: float | None = None
+    min_margin: float | None = None
     schema_version: int = 1
 
     def to_dict(self) -> dict[str, Any]:
@@ -52,125 +68,222 @@ class RouteEvidence:
 
 @dataclass(frozen=True)
 class RouteDecision:
-    """A structured decision at the resolver/local-runner seam."""
-
     bookmark_id: int
     outcome: RouteOutcome
     destination: str | None
-    reason_code: str
+    text_evidence: tuple[TextEvidence, ...]
+    visual_evidence: tuple[VisualEvidence, ...]
     summary: str
-    text_evidence: tuple[RouteEvidence, ...] = ()
-    visual_evidence: tuple[RouteEvidence, ...] = ()
-    review_tag: str | None = None
     schema_version: int = 1
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
-def decision_from_legacy_result(
-    *,
-    bookmark_id: int,
-    destination: str | None,
-    reason: str,
-    resulting_tags: list[str],
-) -> RouteDecision:
-    """Translate the current resolver result into the revised public shape.
+class TextIdentifier:
+    """Identify destinations only from user-visible text and user tags."""
 
-    This deliberately preserves today's move/review policy. The future
-    ``RouteEngine`` can replace this adapter while callers and journal records stay
-    stable.
-    """
-    evidence = _evidence_from_reason(reason, destination)
-    visual = evidence.kind in {
-        EvidenceKind.VISUAL_EXEMPLAR,
-        EvidenceKind.VISUAL_CLASSIFIER,
-    }
-    outcome = (
-        RouteOutcome.CONFIRMED if destination is not None else RouteOutcome.REVIEW
-    )
-    review_tag = next(
-        (tag for tag in resulting_tags if tag.startswith("sorter-reviewed:")),
-        None,
-    )
-    if destination is None:
-        summary = f"Kept in Unsorted: {evidence.explanation}"
-    else:
-        summary = f"Move to {destination}: {evidence.explanation}"
-    return RouteDecision(
-        bookmark_id=bookmark_id,
-        outcome=outcome,
-        destination=destination,
-        reason_code=reason.partition(":")[0],
-        summary=summary,
-        text_evidence=() if visual else (evidence,),
-        visual_evidence=(evidence,) if visual else (),
-        review_tag=review_tag,
-    )
+    def __init__(self, tag_rules: dict[str, RuleTarget], series_rules: dict[str, RuleTarget]):
+        self.tag_rules = {normalize_tag(key): value for key, value in tag_rules.items()}
+        self.series_rules = {normalize_tag(key): value for key, value in series_rules.items()}
+
+    def identify(self, bookmark: dict[str, Any]) -> TextEvidence:
+        bookmark_id = _bookmark_id(bookmark)
+        if bookmark_id is not None and bookmark_id in BOOKMARK_ROUTES:
+            destination = canonical_destination(BOOKMARK_ROUTES[bookmark_id])
+            return TextEvidence(
+                kind="user_confirmed_rule", destination=destination, strength="strong",
+                matched_value=str(bookmark_id), source="bookmark_calibration",
+                explanation="A user-confirmed bookmark assignment matched exactly.",
+            )
+
+        modality = bookmark_modality(bookmark)
+        visible_tags = [str(tag) for tag in bookmark.get("tags", []) if not str(tag).startswith(("ai:", "sorter-"))]
+        fields = {field: unicodedata.normalize("NFKC", str(bookmark.get(field, "") or "")) for field in ("title", "excerpt", "note")}
+        hashtags = [match for value in fields.values() for match in re.findall(r"#([\w-]+)", value, flags=re.UNICODE)]
+        matches: list[TextEvidence] = []
+        for value in [*visible_tags, *hashtags]:
+            key = normalize_tag(value)
+            target = self.tag_rules.get(key) or self.series_rules.get(key)
+            destination = _resolve_target(target, modality)
+            if destination is not None:
+                matches.append(TextEvidence(
+                    kind="personal_interest_text", destination=destination, strength="strong",
+                    matched_value=value, source="user_tag_or_hashtag",
+                    explanation=f"Explicit tag or hashtag {value!r} matched.",
+                ))
+
+        searchable = "\n".join(fields.values()).casefold()
+        for alias, target in TEXT_ROUTES.items():
+            normalized_alias = unicodedata.normalize("NFKC", alias).casefold()
+            destination = _resolve_target(target, modality)
+            if destination and _contains_alias(searchable, normalized_alias):
+                matches.append(_alias_evidence(normalized_alias, destination, "curated_text"))
+        for alias, targets in CHARACTER_ALIAS_ROUTES.items():
+            if _contains_alias(searchable, alias):
+                matches.extend(
+                    _alias_evidence(alias, destination, "character_alias")
+                    for target in targets
+                    if (destination := _resolve_target(target, modality)) is not None
+                )
+
+        if not matches:
+            return TextEvidence(kind="no_match", destination=None, strength=None, explanation="No personal-interest text match was found.")
+        destinations = tuple(sorted({canonical_destination(match.destination) for match in matches if match.destination}))
+        if len(destinations) > 1:
+            return TextEvidence(
+                kind="personal_interest_text", destination=None, strength="conflicting",
+                explanation="Text matches lead to multiple destinations.", candidates=destinations,
+            )
+        strongest = max(matches, key=lambda match: _strength_rank(match.strength))
+        return TextEvidence(**{**strongest.to_dict(), "destination": destinations[0], "candidates": destinations})
 
 
-def _evidence_from_reason(reason: str, destination: str | None) -> RouteEvidence:
-    code, separator, value = reason.partition(":")
-    details = _parse_details(value) if separator else {}
-    if code == "user_calibration":
-        kind = EvidenceKind.USER_CONFIRMED_RULE
-        explanation = "a user-confirmed bookmark rule matched"
-        details["visual_verification"] = "bypassed_by_user_confirmed_rule"
-    elif code == "calibrated_tag":
-        kind = EvidenceKind.VISUAL_CLASSIFIER
-        explanation = "a user-confirmed visual tag rule matched"
-    elif code == "calibrated_source":
-        kind = EvidenceKind.USER_CONFIRMED_RULE
-        explanation = "a user-confirmed source rule matched"
-    elif code == "exact_tag_rule":
-        kind = EvidenceKind.TAG_RULE
-        explanation = f"exact tag rule {value!r} matched"
-    elif code in {"series_rule", "crossover_fallback"}:
-        kind = EvidenceKind.SERIES_RULE
-        explanation = (
-            "multiple series rules matched"
-            if code == "crossover_fallback"
-            else f"series rule {value!r} matched"
+class VisualVerifier:
+    """Turn WD14 labels and an optional exemplar embedding into visual evidence."""
+
+    def __init__(self, tag_rules: dict[str, RuleTarget], series_rules: dict[str, RuleTarget], exemplar_index: VisualExemplarIndex | None):
+        self.tag_rules = {normalize_tag(key): value for key, value in tag_rules.items()}
+        self.series_rules = {normalize_tag(key): value for key, value in series_rules.items()}
+        self.exemplar_index = exemplar_index
+
+    def verify(self, bookmark: dict[str, Any], *, labels: list[str], embedding: Any | None, bypass: bool = False) -> VisualEvidence:
+        if bypass:
+            return VisualEvidence(status="bypassed", destination=None, method="user_confirmed_rule", explanation="Visual verification was bypassed by a user-confirmed rule.")
+        if bookmark_modality(bookmark) != "art":
+            return VisualEvidence(status="not_applicable", destination=None, method="none", explanation="The bookmark is not visual art.")
+        if not _has_image_source(bookmark):
+            return VisualEvidence(status="unavailable", destination=None, method="cover", explanation="The bookmark has no cover image.")
+
+        normalized_labels = tuple(dict.fromkeys(semantic for raw in labels for semantic in semantic_tag_keys(str(raw).removeprefix("ai:wdtag-"))))
+        modality = bookmark_modality(bookmark)
+        wd_destinations: set[str] = set()
+        for label in normalized_labels:
+            target = TAG_ROUTES.get(label) or self.tag_rules.get(label) or self.series_rules.get(label)
+            destination = _resolve_target(target, modality)
+            if destination is not None:
+                wd_destinations.add(canonical_destination(destination))
+
+        exemplar = None
+        exemplar_pass = False
+        if self.exemplar_index is not None and embedding is not None:
+            exemplar = score_visual_embedding(np.asarray(embedding, dtype=np.float32), self.exemplar_index, neighbors_per_folder=self.exemplar_index.neighbors_per_folder)
+            exemplar_pass = bool(exemplar and exemplar.similarity >= self.exemplar_index.min_similarity and exemplar.margin >= self.exemplar_index.min_margin)
+
+        destinations = set(wd_destinations)
+        if exemplar_pass and exemplar is not None:
+            destinations.add(canonical_destination(exemplar.folder_path))
+        if len(destinations) > 1:
+            return _visual_result(status="conflict", destination=None, candidates=tuple(sorted(destinations)), labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation="WD14 and visual exemplar evidence disagree.")
+        if destinations:
+            destination = next(iter(destinations))
+            return _visual_result(status="pass", destination=destination, labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation=f"Visual evidence supports {destination}.")
+        return _visual_result(status="inconclusive", destination=None, labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation="No visual destination passed its calibrated thresholds.")
+
+
+class RouteEngine:
+    """Pure implementation of the decision table in ARCHITECTURE.md."""
+
+    def route(self, *, bookmark_id: int, text: TextEvidence, visual: VisualEvidence) -> RouteDecision:
+        text_destination = canonical_destination(text.destination) if text.destination else None
+        visual_destination = canonical_destination(visual.destination) if visual.destination else None
+        if text.kind == "user_confirmed_rule":
+            outcome, destination = RouteOutcome.CONFIRMED, text_destination
+        elif text.strength == "conflicting" or visual.status == "conflict":
+            outcome, destination = RouteOutcome.CONFLICT, None
+        elif text_destination and visual.status == "pass":
+            outcome, destination = ((RouteOutcome.CONFIRMED, text_destination) if text_destination == visual_destination else (RouteOutcome.CONFLICT, None))
+        elif text_destination and text.strength in {"strong", "contextual"}:
+            outcome, destination = RouteOutcome.PROVISIONAL, text_destination
+        elif text_destination:
+            outcome, destination = RouteOutcome.REVIEW, None
+        elif visual.status == "pass" and visual_destination:
+            outcome, destination = RouteOutcome.PROVISIONAL, visual_destination
+        else:
+            outcome, destination = RouteOutcome.REVIEW, None
+        return RouteDecision(
+            bookmark_id=bookmark_id, outcome=outcome, destination=destination,
+            text_evidence=(text,), visual_evidence=(visual,),
+            summary=_decision_summary(outcome, destination, text, visual),
         )
-    elif code in {"text_calibration", "calibrated_text", "character_text"}:
-        kind = EvidenceKind.TEXT_ALIAS
-        explanation = "a calibrated text alias matched"
-    elif code in {"centroid_match", "low_confidence", "no_centroids"}:
-        kind = EvidenceKind.CENTROID
-        explanation = {
-            "centroid_match": "the nearest folder centroid passed its gap threshold",
-            "low_confidence": "the nearest folder centroid did not pass its gap threshold",
-            "no_centroids": "no folder centroids were available",
-        }[code]
-    elif code == "visual_exemplar":
-        kind = EvidenceKind.VISUAL_EXEMPLAR
-        explanation = "the calibrated visual exemplar match passed its thresholds"
-    elif code == "visual_art_fallback":
-        kind = EvidenceKind.VISUAL_CLASSIFIER
-        explanation = "visual labels indicated art but no specific route matched"
-    else:
-        kind = EvidenceKind.SYSTEM
-        explanation = reason.replace("_", " ")
-    status = "pass" if destination is not None else "inconclusive"
-    if code == "visual_art_fallback":
-        status = "legacy_fallback"
-    return RouteEvidence(
-        kind=kind,
-        destination=destination,
-        status=status,
-        explanation=explanation,
-        details=details,
+
+
+def _bookmark_id(bookmark: dict[str, Any]) -> int | None:
+    try:
+        return int(bookmark["_id"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _has_image_source(bookmark: dict[str, Any]) -> bool:
+    return bool(bookmark.get("cover")) or any(
+        str(item.get("type", "")).casefold() == "image" and item.get("link")
+        for item in bookmark.get("media") or []
     )
 
 
-def _parse_details(value: str) -> dict[str, Any]:
-    details: dict[str, Any] = {}
-    for part in value.split(","):
-        key, separator, raw = part.partition("=")
-        if not separator:
-            continue
-        try:
-            details[key] = float(raw)
-        except ValueError:
-            details[key] = raw
-    return details
+def _resolve_target(target: RuleTarget | None, modality: str | None) -> str | None:
+    if target is None:
+        return None
+    candidates = [target] if isinstance(target, str) else list(target)
+    if len(candidates) == 1:
+        destination = canonical_destination(candidates[0])
+        group = destination.partition("/")[0].casefold()
+        if group in {"art", "music", "video", "post"} and group != modality:
+            return None
+        return destination
+    matches = [value for value in candidates if modality and value.partition("/")[0].casefold() == modality]
+    return canonical_destination(matches[0]) if len(matches) == 1 else None
+
+
+def _contains_alias(text: str, alias: str) -> bool:
+    if not alias:
+        return False
+    if not alias.isascii():
+        return text.strip() == alias if len(alias) == 1 else alias in text
+    return re.search(rf"(?<![\w]){re.escape(alias)}(?![\w])", text) is not None
+
+
+def _alias_evidence(alias: str, target: str, source: str) -> TextEvidence:
+    weak = (alias.isascii() and len(alias) <= 4) or (not alias.isascii() and len(alias) == 1)
+    return TextEvidence(
+        kind="personal_interest_text", destination=canonical_destination(target),
+        strength="weak" if weak else "strong", matched_value=alias, source=source,
+        explanation=f"Matched alias {alias!r} with Unicode-aware boundaries.",
+    )
+
+
+def _strength_rank(strength: TextStrength | None) -> int:
+    return {None: 0, "weak": 1, "contextual": 2, "strong": 3, "conflicting": 4}[strength]
+
+
+def _visual_result(*, status: VisualStatus, destination: str | None, labels: tuple[str, ...], exemplar: Any | None, index: VisualExemplarIndex | None, explanation: str, candidates: tuple[str, ...] = ()) -> VisualEvidence:
+    return VisualEvidence(
+        status=status, destination=destination, method="wd14+visual_exemplar",
+        explanation=explanation, labels=labels,
+        candidates=candidates or tuple(sorted({destination} if destination else set())),
+        winner=canonical_destination(exemplar.folder_path) if exemplar else None,
+        runner_up=getattr(exemplar, "runner_up_folder", None),
+        similarity=exemplar.similarity if exemplar else None,
+        runner_up_similarity=getattr(exemplar, "runner_up_similarity", None),
+        margin=exemplar.margin if exemplar else None,
+        min_similarity=index.min_similarity if index else None,
+        min_margin=index.min_margin if index else None,
+    )
+
+
+def _decision_summary(
+    outcome: RouteOutcome,
+    destination: str | None,
+    text: TextEvidence,
+    visual: VisualEvidence,
+) -> str:
+    if outcome is RouteOutcome.CONFIRMED:
+        if text.kind == "user_confirmed_rule" and visual.status == "bypassed":
+            return f"Confirmed {destination} by user rule; visual verification was bypassed."
+        return f"Confirmed {destination}: text and visual evidence agree."
+    if outcome is RouteOutcome.PROVISIONAL:
+        return f"Moved provisionally to {destination}; independent confirmation is incomplete."
+    if outcome is RouteOutcome.CONFLICT:
+        return "Kept in Unsorted because text and visual evidence conflict."
+    return "Kept in Unsorted because no destination met the routing policy."

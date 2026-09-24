@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from src.centroids import save_centroids
-from src.local_runner import find_local_work, run_local_bookmark
+from src.local_runner import backfill_unreviewed, find_local_work, run_local_bookmark
 from src.run_journal import SQLiteRunJournal
 from src.tag_rules import save_series_rules, save_tag_rules
 from src.visual_exemplars import (
@@ -30,6 +30,7 @@ class FakeRaindropClient:
 class FakeQueueClient:
     def __init__(self):
         self.searches = []
+        self.updates = []
 
     def get_tags(self, collection_id):
         assert collection_id == -1
@@ -48,6 +49,9 @@ class FakeQueueClient:
             return ([{"_id": 2}], False)
         return ([{"_id": 3}], False)
 
+    def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
+        self.updates.append((bookmark_id, collection_id, tags))
+
 
 class FailingUpdateClient(FakeRaindropClient):
     def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
@@ -59,7 +63,7 @@ def _write_state(path):
     save_tag_rules({"Hatsune Miku": "MIKU"}, {}, str(path))
     save_series_rules({"vocaloid": "VOCALOID"}, str(path))
     (path / "folder_id_map.json").write_text(
-        json.dumps({"MIKU": 42, "VOCALOID": 43}),
+        json.dumps({"Art/MIKU": 42, "VOCALOID": 43}),
         encoding="utf-8",
     )
 
@@ -70,6 +74,7 @@ def test_local_runner_executes_vision_and_resolution_without_writing(tmp_path):
         {
             "_id": 123,
             "title": "art",
+            "type": "image",
             "domain": "example.test",
             "cover": "https://example.test/cover.jpg",
             "tags": ["sorter-pending-vision:2026-09-17"],
@@ -85,8 +90,8 @@ def test_local_runner_executes_vision_and_resolution_without_writing(tmp_path):
 
     assert result["action"] == "move"
     assert result["target_collection_id"] == 42
-    assert result["target_folder"] == "MIKU"
-    assert result["reason"] == "exact_tag_rule:hatsune_miku"
+    assert result["target_folder"] == "Art/MIKU"
+    assert result["decision"]["outcome"] == "provisional"
     assert result["vision_tag_count"] == 1
     assert result["applied"] is False
     assert client.updates == []
@@ -98,6 +103,7 @@ def test_local_runner_writes_only_when_apply_is_explicit(tmp_path):
         {
             "_id": 123,
             "title": "art",
+            "type": "image",
             "domain": "example.test",
             "cover": "https://example.test/cover.jpg",
             "tags": ["sorter-pending-vision:2026-09-17"],
@@ -114,7 +120,7 @@ def test_local_runner_writes_only_when_apply_is_explicit(tmp_path):
 
     assert result["applied"] is True
     assert client.updates[0][0:2] == (123, 42)
-    assert any(tag.startswith("ai:sorted:") for tag in client.updates[0][2])
+    assert any(tag.startswith("sorter-needs-review:") for tag in client.updates[0][2])
 
 
 def test_local_runner_journals_a_structured_dry_run(tmp_path):
@@ -124,6 +130,7 @@ def test_local_runner_journals_a_structured_dry_run(tmp_path):
         {
             "_id": 123,
             "title": "art",
+            "type": "image",
             "domain": "example.test",
             "cover": "https://example.test/cover.jpg",
             "tags": ["sorter-pending-vision:2026-09-17"],
@@ -141,13 +148,14 @@ def test_local_runner_journals_a_structured_dry_run(tmp_path):
     trace = journal.explain(123)
     assert trace is not None
     assert result["attempt_id"] == trace["attempt"]["attempt_id"]
-    assert result["decision"]["outcome"] == "confirmed"
+    assert result["decision"]["outcome"] == "provisional"
     assert [event["phase"] for event in trace["events"]] == [
         "discovered",
+        "marked_unreviewed",
         "text_identified",
         "visual_queued",
         "visual_completed",
-        "decided_confirmed",
+        "decided_provisional",
         "dry_run_completed",
     ]
     assert trace["actions"][0]["status"] == "planned"
@@ -200,6 +208,24 @@ def test_find_local_work_prioritizes_queues_and_includes_new_items():
     )
 
 
+def test_backfill_unreviewed_preserves_user_tags_and_is_dry_run_by_default():
+    client = FakeQueueClient()
+
+    result = backfill_unreviewed(client, limit=3)
+
+    assert result["count"] == 1
+    assert result["items"][0]["tags"] == ["sorter-unreviewed"]
+    assert client.updates == []
+
+
+def test_backfill_unreviewed_applies_only_when_requested():
+    client = FakeQueueClient()
+
+    backfill_unreviewed(client, limit=3, apply=True)
+
+    assert client.updates == [(3, None, ["sorter-unreviewed"])]
+
+
 def test_local_runner_reports_an_incomplete_index_before_fetching(tmp_path):
     client = FakeRaindropClient({"_id": 123})
 
@@ -213,14 +239,15 @@ def test_local_runner_reports_an_incomplete_index_before_fetching(tmp_path):
     assert client.updates == []
 
 
-def test_local_runner_uses_explicit_hashtag_before_queued_vision(tmp_path):
+def test_local_runner_combines_explicit_hashtag_with_visual_verification(tmp_path):
     _write_state(tmp_path)
-    save_series_rules({"bluearchive": "VOCALOID"}, str(tmp_path))
+    save_series_rules({"vocaloid": "VOCALOID"}, str(tmp_path))
     client = FakeRaindropClient(
         {
             "_id": 123,
             "title": "Study",
-            "excerpt": "#BlueArchive",
+            "type": "image",
+            "excerpt": "#Vocaloid",
             "domain": "x.com",
             "cover": "https://example.test/cover.jpg",
             "tags": ["sorter-pending-vision:2026-09-18"],
@@ -231,12 +258,13 @@ def test_local_runner_uses_explicit_hashtag_before_queued_vision(tmp_path):
         client,
         bookmark_id=123,
         db_path=str(tmp_path),
-        analyze_vision=lambda _bookmark: pytest.fail("vision should not run"),
+        analyze_vision=lambda _bookmark: [],
     )
 
     assert result["action"] == "move"
     assert result["target_folder"] == "VOCALOID"
     assert result["vision_tag_count"] == 0
+    assert result["decision"]["outcome"] == "provisional"
 
 
 def test_local_runner_uses_visual_exemplars_before_anime_fallback(tmp_path):
@@ -282,10 +310,11 @@ def test_local_runner_uses_visual_exemplars_before_anime_fallback(tmp_path):
     )
 
     assert result["target_folder"] == "Art/GAMES/GFL2"
-    assert result["reason"].startswith("visual_exemplar:")
+    assert result["decision"]["outcome"] == "provisional"
+    assert result["decision"]["visual_evidence"][0]["winner"] == "Art/GAMES/GFL2"
 
 
-def test_local_runner_adds_visual_match_after_completed_vision(tmp_path):
+def test_local_runner_recomputes_visual_evidence_from_current_attempt(tmp_path):
     _write_state(tmp_path)
     (tmp_path / "folder_id_map.json").write_text(
         json.dumps(
@@ -324,11 +353,11 @@ def test_local_runner_adds_visual_match_after_completed_vision(tmp_path):
         client,
         bookmark_id=123,
         db_path=str(tmp_path),
-        analyze_vision=lambda _bookmark: pytest.fail("vision already completed"),
+        analyze_vision=lambda _bookmark: [],
         analyze_visual=lambda bookmark: calls.append(bookmark["_id"])
         or np.array([1.0, 0.0], dtype=np.float32),
     )
 
     assert calls == [123]
     assert result["target_folder"] == "Art/GAMES/GFL2"
-    assert result["reason"].startswith("visual_exemplar:")
+    assert result["decision"]["outcome"] == "provisional"

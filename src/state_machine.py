@@ -10,6 +10,17 @@ REVIEWED_PREFIX = "sorter-reviewed"
 SORTED_PREFIX = "ai:sorted"
 NEW_RULE_PREFIX = "ai:new-rule"
 VISION_ATTEMPTED = "sorter-vision-attempted"
+UNREVIEWED = "sorter-unreviewed"
+NEEDS_REVIEW_PREFIX = "sorter-needs-review"
+EDGE_CASE_PREFIX = "sorter-edge-case"
+CONFLICT_TAG = "sorter-edge-case:conflict"
+LIFECYCLE_PREFIXES = (
+    UNREVIEWED,
+    PENDING_VISION_PREFIX,
+    PENDING_RESOLUTION,
+    REVIEWED_PREFIX,
+    NEEDS_REVIEW_PREFIX,
+)
 
 
 def _today_tag(prefix: str) -> str:
@@ -128,3 +139,46 @@ def is_reviewed(bookmark: dict[str, Any]) -> bool:
 def strip_reviewed_tags(tags: list[str]) -> list[str]:
     """Remove sorter-reviewed tags so the Watcher retries the bookmark."""
     return remove_tags_by_prefix(tags, REVIEWED_PREFIX)
+
+
+def has_sorter_lifecycle(bookmark: dict[str, Any]) -> bool:
+    """Whether a bookmark has any explicit sorter lifecycle state."""
+    return any(
+        str(tag).startswith(LIFECYCLE_PREFIXES)
+        for tag in bookmark.get("tags", [])
+    )
+
+
+def tag_unreviewed(bookmark: dict[str, Any]) -> list[str]:
+    """Mark a newly discovered Unsorted bookmark without deciding it."""
+    tags = _without_final_lifecycle(bookmark.get("tags", []))
+    return add_tag(tags, UNREVIEWED)
+
+
+def tags_for_decision(bookmark: dict[str, Any], outcome: str) -> list[str]:
+    """Render the revised decision policy into mutually exclusive Raindrop tags."""
+    tags = cleanup_transient_tags(bookmark.get("tags", []))
+    tags = [
+        tag
+        for tag in tags
+        if not str(tag).startswith((*LIFECYCLE_PREFIXES, EDGE_CASE_PREFIX))
+        and tag != VISION_ATTEMPTED
+    ]
+    if outcome == "confirmed":
+        return add_tag(tags, _today_tag(SORTED_PREFIX))
+    if outcome == "provisional":
+        return add_tag(tags, _today_tag(NEEDS_REVIEW_PREFIX))
+    tags = add_tag(tags, _today_tag(REVIEWED_PREFIX))
+    if outcome == "conflict":
+        tags = add_tag(tags, CONFLICT_TAG)
+    return tags
+
+
+def _without_final_lifecycle(tags: list[str]) -> list[str]:
+    return [
+        tag
+        for tag in cleanup_transient_tags(tags)
+        if not str(tag).startswith(
+            (REVIEWED_PREFIX, NEEDS_REVIEW_PREFIX, SORTED_PREFIX, EDGE_CASE_PREFIX)
+        )
+    ]

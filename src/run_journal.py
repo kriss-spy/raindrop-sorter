@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from src.routing import RouteDecision, RouteEvidence
+from src.routing import RouteDecision, TextEvidence, VisualEvidence
 
 
 SCHEMA_VERSION = 1
@@ -384,8 +384,16 @@ class SQLiteRunJournal:
     def _insert_evidence(
         connection: sqlite3.Connection,
         attempt_id: str,
-        evidence: RouteEvidence,
+        evidence: TextEvidence | VisualEvidence,
     ) -> None:
+        if isinstance(evidence, TextEvidence):
+            source_kind = evidence.kind
+            status = "matched" if evidence.destination else "no_match"
+            strength = evidence.strength
+        else:
+            source_kind = evidence.method
+            status = evidence.status
+            strength = None
         connection.execute(
             """
             INSERT INTO evidence(
@@ -395,12 +403,12 @@ class SQLiteRunJournal:
             """,
             (
                 attempt_id,
-                evidence.kind.value,
+                source_kind,
                 evidence.destination,
-                evidence.status,
-                evidence.strength,
+                status,
+                strength,
                 evidence.explanation,
-                _json(evidence.details),
+                _json(evidence.to_dict()),
             ),
         )
 

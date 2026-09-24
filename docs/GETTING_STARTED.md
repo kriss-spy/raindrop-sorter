@@ -302,10 +302,14 @@ RAINDROP_TOKEN="your-token-here" uv run python local_run.py \
   --db-path chroma_db
 ```
 
-Review the JSON destination and reason first. To perform that exact class of
+Review the JSON destination and structured evidence first. To perform that exact class of
 operation against the current live bookmark, rerun with `--apply`. The command
 never deletes a bookmark or creates a folder; it can only update tags and move
 the bookmark to an existing collection from the local index.
+
+The local runner now uses the native two-step policy. Its JSON contains structured
+`text_evidence`, `visual_evidence`, and a `confirmed`, `provisional`, `review`, or
+`conflict` outcome; legacy resolver reason strings are no longer emitted.
 
 To process a bounded queue batch locally, use `--batch-size`. Pending vision
 items are selected first, followed by pending resolution and untouched Unsorted
@@ -330,6 +334,19 @@ uv run python local_journal.py explain 123456789
 The journal records the bounded bookmark snapshot, lifecycle events, structured
 evidence, intended or completed action, and any failure. Dry runs record a
 `planned` action and never write to Raindrop.
+
+Before the first native apply run, preview the bounded lifecycle migration for
+existing untagged bookmarks in `Unsorted`:
+
+```bash
+RAINDROP_TOKEN="your-token-here" uv run python local_run.py \
+  --backfill-unreviewed 50
+```
+
+After reviewing the proposed IDs and preserved user tags, add `--apply`. This only
+adds `sorter-unreviewed`; it does not move bookmarks. Current collection assignments
+continue to seed learned tag rules and visual exemplars, while final routing follows
+only the native decision table.
 
 ## Uninstall
 

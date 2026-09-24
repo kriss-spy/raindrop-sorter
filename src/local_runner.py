@@ -6,29 +6,32 @@ import os
 from collections.abc import Callable
 from typing import Any
 
-from src.centroids import load_centroids
-from src.resolver import decide_folder_by_rule, resolve_bookmark
-from src.routing import decision_from_legacy_result
+from src.routing import RouteEngine, TextIdentifier, VisualVerifier
 from src.run_journal import AttemptHandle, RunJournal, SQLiteRunJournal
+from src.modality import bookmark_modality
 from src.state_machine import (
+    NEEDS_REVIEW_PREFIX,
     PENDING_RESOLUTION,
     PENDING_VISION_PREFIX,
     REVIEWED_PREFIX,
-    has_completed_vision,
-    is_pending_vision,
-    tag_after_vision,
+    UNREVIEWED,
+    tag_unreviewed,
+    tags_for_decision,
 )
 from src.tag_rules import load_series_rules, load_tag_rules
-from src.vision_worker import run_vision_on_bookmark, run_visual_embedding_on_bookmark
+from src.vision_worker import download_cover, resolve_cover_url
 from src.visual_exemplars import create_visual_embedder, load_visual_exemplar_index
 from src.wd14_tagger import WD14Tagger
 
 REQUIRED_INDEX_FILES = (
-    "centroids.json",
     "folder_id_map.json",
     "tag_rules.json",
 )
-RUNNER_VERSION = "local-structured-journal-v1"
+RUNNER_VERSION = "native-two-step-v1"
+
+
+def _no_vision(_bookmark: dict[str, Any]) -> list[str]:
+    return []
 
 
 def validate_local_index(db_path: str) -> None:
@@ -55,8 +58,10 @@ def find_local_work(client: Any, *, limit: int) -> list[dict[str, Any]]:
         str(tag["_id"])
         for tag in client.get_tags(-1)
         if str(tag.get("_id", "")) == PENDING_RESOLUTION
+        or str(tag.get("_id", "")) == UNREVIEWED
         or str(tag.get("_id", "")).startswith(PENDING_VISION_PREFIX)
         or str(tag.get("_id", "")).startswith(REVIEWED_PREFIX)
+        or str(tag.get("_id", "")).startswith(NEEDS_REVIEW_PREFIX)
     }
     selected: list[dict[str, Any]] = []
     selected_ids: set[int] = set()
@@ -90,6 +95,9 @@ def find_local_work(client: Any, *, limit: int) -> list[dict[str, Any]]:
         pending_search = f"{pending_search} {vision_exclusions}"
     collect(pending_search)
 
+    if UNREVIEWED in state_tags:
+        collect(f'#"{UNREVIEWED}"')
+
     state_exclusions = " ".join(f'-#"{tag}"' for tag in sorted(state_tags))
     collect(state_exclusions)
     return selected
@@ -104,18 +112,63 @@ def _load_folder_map(db_path: str) -> dict[str, int]:
         return json.load(handle)
 
 
+def _has_image_source(bookmark: dict[str, Any]) -> bool:
+    return bool(bookmark.get("cover")) or any(
+        str(item.get("type", "")).casefold() == "image" and item.get("link")
+        for item in bookmark.get("media") or []
+    )
+
+
+def backfill_unreviewed(
+    client: Any,
+    *,
+    limit: int,
+    apply: bool = False,
+) -> dict[str, Any]:
+    """Boundedly migrate untagged Unsorted bookmarks to explicit lifecycle state."""
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    lifecycle_tags = sorted(
+        str(tag["_id"])
+        for tag in client.get_tags(-1)
+        if str(tag.get("_id", "")) == UNREVIEWED
+        or str(tag.get("_id", "")) == PENDING_RESOLUTION
+        or str(tag.get("_id", "")).startswith(
+            (PENDING_VISION_PREFIX, REVIEWED_PREFIX, NEEDS_REVIEW_PREFIX)
+        )
+    )
+    search = " ".join(f'-#"{tag}"' for tag in lifecycle_tags)
+    bookmarks, _has_more = client.get_raindrops(
+        -1,
+        perpage=limit,
+        search=search,
+    )
+    migrated = []
+    for bookmark in bookmarks:
+        tags = tag_unreviewed(bookmark)
+        if apply:
+            client.update_raindrop(bookmark["_id"], tags=tags)
+        migrated.append({"bookmark_id": bookmark["_id"], "tags": tags})
+    return {
+        "status": "ok",
+        "mode": "backfill_unreviewed",
+        "count": len(migrated),
+        "applied": apply,
+        "items": migrated,
+    }
+
+
 def run_local_bookmark(
     client: Any,
     *,
     bookmark_id: int,
     db_path: str,
-    analyze_vision: Callable[[dict[str, Any]], list[str]] = run_vision_on_bookmark,
+    analyze_vision: Callable[[dict[str, Any]], list[str]] = _no_vision,
     analyze_visual: Callable[[dict[str, Any]], Any | None] | None = None,
-    embedder: Any | None = None,
     apply: bool = False,
     journal: RunJournal | None = None,
 ) -> dict[str, Any]:
-    """Resolve one live bookmark locally; writes require ``apply=True``."""
+    """Run the native two-step route; writes require ``apply=True``."""
     validate_local_index(db_path)
     bookmark = client.get_raindrop(bookmark_id)
     attempt: AttemptHandle | None = None
@@ -123,150 +176,54 @@ def run_local_bookmark(
         attempt = journal.start_attempt(
             bookmark,
             mode="apply" if apply else "dry-run",
-            pinned_index_version="legacy-local-index",
+            pinned_index_version="native-local-index-v1",
             runner_version=RUNNER_VERSION,
         )
 
     try:
         candidate = dict(bookmark)
         folder_id_map = _load_folder_map(db_path)
-        candidate["_folder_id_map"] = folder_id_map
-        centroids = load_centroids(db_path)
         tag_rules, _mismatches = load_tag_rules(db_path)
         series_rules = load_series_rules(db_path)
         visual_index = load_visual_exemplar_index(db_path)
-        vision_tags: list[str] = []
-        visual_event_recorded = False
-
-        initial_rule_folder, initial_rule_reason = decide_folder_by_rule(
-            candidate,
-            tag_rules,
-            series_rules=series_rules,
-        )
+        text = TextIdentifier(tag_rules, series_rules).identify(candidate)
         if journal is not None and attempt is not None:
             journal.record_event(
                 attempt,
-                "text_identified",
-                {
-                    "destination": initial_rule_folder,
-                    "legacy_reason": initial_rule_reason,
-                },
+                "marked_unreviewed",
+                {"tags": tag_unreviewed(candidate)},
             )
+            journal.record_event(attempt, "text_identified", text.to_dict())
 
-        def run_vision() -> None:
-            nonlocal candidate, vision_tags, visual_event_recorded
+        verifier = VisualVerifier(tag_rules, series_rules, visual_index)
+        vision_tags: list[str] = []
+        visual_embedding = None
+        bypass = text.kind == "user_confirmed_rule"
+        if not bypass and _has_image_source(candidate) and bookmark_modality(candidate) == "art":
             if journal is not None and attempt is not None:
                 journal.record_event(attempt, "visual_queued")
             vision_tags = analyze_vision(candidate)
-            transitioned_tags = tag_after_vision(candidate)
-            for tag in vision_tags:
-                if tag not in transitioned_tags:
-                    transitioned_tags.append(tag)
-            candidate = dict(candidate)
-            candidate["tags"] = transitioned_tags
             if visual_index is not None and analyze_visual is not None:
                 visual_embedding = analyze_visual(candidate)
-                if visual_embedding is not None:
-                    candidate["_visual_embedding"] = visual_embedding
-            if journal is not None and attempt is not None:
-                journal.record_event(
-                    attempt,
-                    "visual_completed",
-                    {"status": "available", "labels": vision_tags},
-                )
-                visual_event_recorded = True
-
-        if is_pending_vision(candidate):
-            if initial_rule_folder is None:
-                run_vision()
-
-        target_id, new_tags, reason = resolve_bookmark(
+        visual = verifier.verify(
             candidate,
-            centroids,
-            tag_rules,
-            embedder=embedder,
-            series_rules=series_rules,
-            visual_index=visual_index,
+            labels=vision_tags,
+            embedding=visual_embedding,
+            bypass=bypass,
         )
+        if journal is not None and attempt is not None:
+            journal.record_event(attempt, "visual_completed", visual.to_dict())
 
-        if (
-            visual_index is not None
-            and analyze_visual is not None
-            and candidate.get("cover")
-            and candidate.get("_visual_embedding") is None
-            and (reason == "visual_art_fallback" or reason.startswith("low_confidence"))
-        ):
-            if journal is not None and attempt is not None:
-                journal.record_event(attempt, "visual_queued", {"kind": "exemplar"})
-            visual_embedding = analyze_visual(candidate)
-            if visual_embedding is not None:
-                candidate["_visual_embedding"] = visual_embedding
-                target_id, new_tags, reason = resolve_bookmark(
-                    candidate,
-                    centroids,
-                    tag_rules,
-                    embedder=embedder,
-                    series_rules=series_rules,
-                    visual_index=visual_index,
-                )
-            if journal is not None and attempt is not None:
-                journal.record_event(
-                    attempt,
-                    "visual_completed",
-                    {"kind": "exemplar", "embedding_available": visual_embedding is not None},
-                )
-                visual_event_recorded = True
-
-        if (
-            target_id is None
-            and reason.startswith("low_confidence")
-            and candidate.get("cover")
-            and not has_completed_vision(candidate)
-        ):
-            run_vision()
-            target_id, new_tags, reason = resolve_bookmark(
-                candidate,
-                centroids,
-                tag_rules,
-                embedder=embedder,
-                series_rules=series_rules,
-                visual_index=visual_index,
-            )
-
-        if journal is not None and attempt is not None and not visual_event_recorded:
-            existing_labels = [
-                tag for tag in candidate.get("tags", []) if tag.startswith("ai:wdtag-")
-            ]
-            if has_completed_vision(candidate):
-                visual_status = "preexisting"
-            elif initial_rule_reason.startswith(
-                ("user_calibration:", "calibrated_tag:", "calibrated_source:")
-            ):
-                visual_status = "bypassed_by_user_confirmed_rule"
-            elif not candidate.get("cover"):
-                visual_status = "not_applicable"
-            else:
-                visual_status = "not_run_by_legacy_policy"
-            journal.record_event(
-                attempt,
-                "visual_completed",
-                {"status": visual_status, "labels": existing_labels},
-            )
-
-        folder_by_id = {
-            collection_id: path for path, collection_id in folder_id_map.items()
-        }
-        target_folder = folder_by_id.get(target_id)
-        decision = decision_from_legacy_result(
-            bookmark_id=bookmark_id,
-            destination=target_folder,
-            reason=reason,
-            resulting_tags=new_tags,
-        )
+        decision = RouteEngine().route(bookmark_id=bookmark_id, text=text, visual=visual)
+        target_folder = decision.destination
+        target_id = folder_id_map.get(target_folder) if target_folder else None
+        if target_folder is not None and target_id is None:
+            raise ValueError(f"decision targets missing collection: {target_folder}")
+        new_tags = tags_for_decision(candidate, decision.outcome.value)
         if journal is not None and attempt is not None:
             journal.record_decision(attempt, decision)
 
-        action_kind = "move" if target_id is not None else "keep_unsorted"
+        action_kind = "move" if decision.destination is not None else "keep_unsorted"
         if apply:
             try:
                 client.update_raindrop(
@@ -311,7 +268,6 @@ def run_local_bookmark(
             "action": "move" if target_id is not None else "review",
             "target_collection_id": target_id,
             "target_folder": target_folder,
-            "reason": reason,
             "decision": decision.to_dict(),
             "vision_tag_count": len(vision_tags),
             "applied": apply,
@@ -326,7 +282,6 @@ def main(argv: list[str] | None = None) -> None:
     """Run one bookmark locally, defaulting to a safe read-only dry run."""
     from dotenv import load_dotenv
 
-    from src.embeddings import Embedder
     from src.raindrop_client import RaindropClient
 
     parser = argparse.ArgumentParser(
@@ -338,6 +293,12 @@ def main(argv: list[str] | None = None) -> None:
         "--batch-size",
         type=int,
         help="Process a bounded queue batch (vision, resolution, then new)",
+    )
+    target.add_argument(
+        "--backfill-unreviewed",
+        type=int,
+        metavar="LIMIT",
+        help="Mark a bounded set of untagged Unsorted bookmarks as sorter-unreviewed",
     )
     parser.add_argument("--db-path", default="chroma_db")
     parser.add_argument(
@@ -357,6 +318,16 @@ def main(argv: list[str] | None = None) -> None:
     if not token:
         parser.error("RAINDROP_TOKEN is required in the environment or .env")
 
+    client = RaindropClient(token=token)
+    if args.backfill_unreviewed is not None:
+        result = backfill_unreviewed(
+            client,
+            limit=args.backfill_unreviewed,
+            apply=args.apply,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+
     tagger = WD14Tagger(model_dir=args.model_dir)
     visual_index = load_visual_exemplar_index(args.db_path)
     visual_embedder = (
@@ -364,25 +335,32 @@ def main(argv: list[str] | None = None) -> None:
         if visual_index is not None
         else None
     )
-    client = RaindropClient(token=token)
-    embedder = Embedder()
     journal = SQLiteRunJournal(
         args.journal_path or os.path.join(args.db_path, "run-journal.sqlite")
     )
+    image_cache: dict[int, bytes | None] = {}
+
+    def image_bytes(bookmark: dict[str, Any]) -> bytes | None:
+        bookmark_id = int(bookmark["_id"])
+        if bookmark_id not in image_cache:
+            url = resolve_cover_url(bookmark)
+            image_cache[bookmark_id] = download_cover(url) if url else None
+        return image_cache[bookmark_id]
+
+    def visual_embedding(bookmark: dict[str, Any]) -> Any | None:
+        payload = image_bytes(bookmark)
+        if visual_embedder is None or payload is None:
+            return None
+        return visual_embedder.embed_image(payload)
+
     run_one = lambda bookmark_id: run_local_bookmark(
         client,
         bookmark_id=bookmark_id,
         db_path=args.db_path,
-        analyze_vision=lambda bookmark: run_vision_on_bookmark(bookmark, tagger=tagger),
-        analyze_visual=(
-            lambda bookmark: run_visual_embedding_on_bookmark(
-                bookmark,
-                visual_embedder,
-            )
-            if visual_embedder is not None
-            else None
-        ),
-        embedder=embedder,
+        analyze_vision=lambda bookmark: [
+            f"ai:wdtag-{tag}" for tag in tagger.predict(image_bytes(bookmark))
+        ] if image_bytes(bookmark) is not None else [],
+        analyze_visual=visual_embedding,
         apply=args.apply,
         journal=journal,
     )
