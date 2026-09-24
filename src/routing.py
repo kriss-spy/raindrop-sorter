@@ -112,10 +112,16 @@ def decision_from_legacy_result(
 def _evidence_from_reason(reason: str, destination: str | None) -> RouteEvidence:
     code, separator, value = reason.partition(":")
     details = _parse_details(value) if separator else {}
-    if code in {"user_calibration", "calibrated_tag", "calibrated_source"}:
+    if code == "user_calibration":
         kind = EvidenceKind.USER_CONFIRMED_RULE
-        explanation = "a user-confirmed rule matched"
+        explanation = "a user-confirmed bookmark rule matched"
         details["visual_verification"] = "bypassed_by_user_confirmed_rule"
+    elif code == "calibrated_tag":
+        kind = EvidenceKind.VISUAL_CLASSIFIER
+        explanation = "a user-confirmed visual tag rule matched"
+    elif code == "calibrated_source":
+        kind = EvidenceKind.USER_CONFIRMED_RULE
+        explanation = "a user-confirmed source rule matched"
     elif code == "exact_tag_rule":
         kind = EvidenceKind.TAG_RULE
         explanation = f"exact tag rule {value!r} matched"
