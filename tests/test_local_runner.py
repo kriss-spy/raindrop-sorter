@@ -5,6 +5,7 @@ import pytest
 
 from src.centroids import save_centroids
 from src.local_runner import find_local_work, run_local_bookmark
+from src.run_journal import SQLiteRunJournal
 from src.tag_rules import save_series_rules, save_tag_rules
 from src.visual_exemplars import (
     DEFAULT_CLIP_MODEL,
@@ -46,6 +47,11 @@ class FakeQueueClient:
         if search.startswith('#"sorter-pending-resolution"'):
             return ([{"_id": 2}], False)
         return ([{"_id": 3}], False)
+
+
+class FailingUpdateClient(FakeRaindropClient):
+    def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
+        raise RuntimeError("Raindrop unavailable")
 
 
 def _write_state(path):
@@ -109,6 +115,71 @@ def test_local_runner_writes_only_when_apply_is_explicit(tmp_path):
     assert result["applied"] is True
     assert client.updates[0][0:2] == (123, 42)
     assert any(tag.startswith("ai:sorted:") for tag in client.updates[0][2])
+
+
+def test_local_runner_journals_a_structured_dry_run(tmp_path):
+    _write_state(tmp_path)
+    journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
+    client = FakeRaindropClient(
+        {
+            "_id": 123,
+            "title": "art",
+            "domain": "example.test",
+            "cover": "https://example.test/cover.jpg",
+            "tags": ["sorter-pending-vision:2026-09-17"],
+        }
+    )
+
+    result = run_local_bookmark(
+        client,
+        bookmark_id=123,
+        db_path=str(tmp_path),
+        analyze_vision=lambda _bookmark: ["ai:wdtag-hatsune_miku"],
+        journal=journal,
+    )
+
+    trace = journal.explain(123)
+    assert trace is not None
+    assert result["attempt_id"] == trace["attempt"]["attempt_id"]
+    assert result["decision"]["outcome"] == "confirmed"
+    assert [event["phase"] for event in trace["events"]] == [
+        "discovered",
+        "text_identified",
+        "visual_queued",
+        "visual_completed",
+        "decided_confirmed",
+        "dry_run_completed",
+    ]
+    assert trace["actions"][0]["status"] == "planned"
+    assert client.updates == []
+
+
+def test_local_runner_journals_a_failed_apply(tmp_path):
+    _write_state(tmp_path)
+    journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
+    client = FailingUpdateClient(
+        {
+            "_id": 123,
+            "title": "art",
+            "domain": "example.test",
+            "tags": ["ai:wdtag-hatsune_miku"],
+        }
+    )
+
+    with pytest.raises(RuntimeError, match="Raindrop unavailable"):
+        run_local_bookmark(
+            client,
+            bookmark_id=123,
+            db_path=str(tmp_path),
+            apply=True,
+            journal=journal,
+        )
+
+    trace = journal.explain(123)
+    assert trace is not None
+    assert trace["attempt"]["current_phase"] == "failed"
+    assert trace["actions"][0]["status"] == "failed"
+    assert trace["actions"][0]["error_classification"] == "RuntimeError"
 
 
 def test_find_local_work_prioritizes_queues_and_includes_new_items():

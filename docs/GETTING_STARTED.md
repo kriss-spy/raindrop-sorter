@@ -317,6 +317,20 @@ RAINDROP_TOKEN="your-token-here" uv run python local_run.py \
   --db-path chroma_db
 ```
 
+Every local run now writes a structured trace to
+`chroma_db/run-journal.sqlite` (or the path supplied with `--journal-path`).
+Inspect the local history without a Raindrop token or model startup:
+
+```bash
+uv run python local_journal.py status
+uv run python local_journal.py recent --limit 10
+uv run python local_journal.py explain 123456789
+```
+
+The journal records the bounded bookmark snapshot, lifecycle events, structured
+evidence, intended or completed action, and any failure. Dry runs record a
+`planned` action and never write to Raindrop.
+
 ## Uninstall
 
 To stop the agent:
