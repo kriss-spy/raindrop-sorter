@@ -70,7 +70,13 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     with urlopen(base_url) as response:
         page = response.read().decode()
         assert "img-src 'self' blob:" in response.headers["Content-Security-Policy"]
-    assert "Raindrop Journal" in page
+    assert "Raindrop Sorter" in page
+    assert "Raindrop Journal" not in page
+    assert 'class="stats"' not in page
+    assert 'aria-label="Refresh dashboard"' in page
+    assert 'aria-label="Show attempt details"' in page
+    assert "updateOutcomeOptions" in page
+    assert "All outcomes ·" in page
     assert "Search bookmarks" in page
     assert "bookmark-preview" in page
     assert "Latest status" in page

@@ -264,7 +264,7 @@ def main(argv: list[str] | None = None) -> None:
     except FileNotFoundError as error:
         parser.error(str(error))
     url = f"http://{args.host}:{server.server_port}"
-    print(f"Raindrop Journal: {url}")
+    print(f"Raindrop Sorter dashboard: {url}")
     print(f"Reading: {Path(path).resolve()}")
     if not token:
         print("Image previews and review actions disabled: RAINDROP_TOKEN is not configured.")

@@ -2,21 +2,17 @@
 
 DASHBOARD_HTML = r"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Raindrop Journal</title>
+<title>Raindrop Sorter</title>
 <style>
 :root{color-scheme:dark;--bg:#0a0f14;--panel:#111820;--line:#26323d;--muted:#8fa0ae;--text:#edf4f7;--cyan:#61d7d7;--lime:#a8db67;--amber:#f2bd62;--red:#f07878;--violet:#b9a0ff}
 *{box-sizing:border-box}
 body{margin:0;background:radial-gradient(circle at 10% 0,#12252a 0,transparent 32rem),var(--bg);color:var(--text);font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
 button,input,select{font:inherit}
-.top{display:flex;justify-content:space-between;gap:24px}
-.eyebrow{color:var(--cyan);letter-spacing:.15em;text-transform:uppercase;font-size:11px}
+.top{display:flex;justify-content:space-between;gap:16px}
 .brand{font-family:system-ui;font-weight:700;line-height:1.1}
-.sub{color:var(--muted);max-width:650px}
 .live{display:flex;align-items:center;gap:8px;color:var(--muted);white-space:nowrap}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--lime);box-shadow:0 0 14px var(--lime)}
-.stat,.panel{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:12px}
-.stat b{display:block;font-family:system-ui;font-weight:700}
-.stat span{color:var(--muted);text-transform:uppercase;letter-spacing:.08em}
+.panel{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:12px}
 .toolbar{display:grid}
 .control{border:1px solid var(--line);background:#0e151c;color:var(--text);border-radius:9px;outline:none}
 .control:focus{border-color:var(--cyan)}
@@ -50,12 +46,11 @@ button.control{cursor:pointer;color:var(--cyan)}
 .skeleton{height:72px;background:linear-gradient(90deg,#111820,#18242c,#111820);background-size:200%;animation:p 1.2s infinite}
 @keyframes p{to{background-position:-200%}}
 .resolution{border:1px solid color-mix(in srgb,var(--amber) 55%,var(--line));border-radius:11px;padding:16px;margin:18px 0;background:#17150f}.resolution h3{margin:0 0 7px;font:700 16px system-ui}.choice-group{margin-top:14px}.choice-label{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}.choice-grid,.collection-results{display:flex;flex-wrap:wrap;gap:7px}.choice{border:1px solid var(--line);background:#101820;color:var(--text);border-radius:8px;padding:8px 10px;cursor:pointer;text-align:left}.choice:hover,.choice.selected{border-color:var(--cyan);color:var(--cyan);background:#102126}.choice:disabled{cursor:not-allowed;opacity:.45}.collection-search{width:100%;margin-bottom:8px}.collection-results{max-height:155px;overflow:auto}.selection{color:var(--cyan);margin:14px 0 9px}.apply-choice{width:100%;background:var(--cyan);color:#071013;border:0;border-radius:8px;padding:11px;font-weight:750;cursor:pointer}.apply-choice:disabled{cursor:not-allowed;opacity:.45}.resolution-error{color:var(--red);margin-top:9px}
-html,body{height:100%;overflow:hidden}.shell{height:100dvh;max-width:none;padding:18px 22px;display:grid;grid-template-rows:auto auto auto minmax(0,1fr);gap:10px}.top{align-items:center;margin:0}.brand{font-size:clamp(24px,3vw,34px);margin:2px 0}.sub{font-size:12px}.stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:0}.stat{padding:8px 12px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-radius:9px}.stat b{font-size:19px;margin:0;order:-1}.stat span{font-size:9px}.toolbar{grid-template-columns:minmax(220px,1fr) 150px 180px 150px auto auto;gap:8px;margin:0}.control{padding:8px 10px}.workspace{display:block;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}.panel-head{padding:9px 12px}.attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));grid-auto-rows:min-content;align-content:start;align-items:start;gap:9px;max-height:none}.attempt{align-self:start;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:#0d141a}.attempt:hover,.attempt.active{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.detail-panel{position:absolute;z-index:5;inset:0 0 0 auto;width:min(720px,52vw);display:grid;grid-template-rows:auto minmax(0,1fr);background:#10171f;box-shadow:-18px 0 44px #05080bad;transform:translateX(calc(100% + 24px));transition:transform .2s ease;pointer-events:none}.workspace.detail-open .detail-panel{transform:translateX(0);pointer-events:auto}.detail-panel-head{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--muted)}.icon-button{border:1px solid var(--line);background:#0e151c;color:var(--text);width:30px;height:30px;border-radius:8px;cursor:pointer}.detail-toggle[hidden]{display:none}#detail{padding:18px;max-height:none;overflow:auto;min-height:0}.detail-title{font-size:21px}.bookmark-preview{max-height:330px;margin:14px 0}.empty{min-height:0}.drawer-scrim{position:absolute;z-index:4;inset:0;background:#05080b99;opacity:0;pointer-events:none;transition:opacity .2s;border:0}.workspace.detail-open .drawer-scrim{opacity:1;pointer-events:auto}@media(max-width:950px){.shell{padding:12px}.top .sub{display:none}.stats{grid-template-columns:repeat(3,1fr)}.toolbar{grid-template-columns:1fr 1fr 1fr}.toolbar #search{grid-column:span 3}.toolbar button{grid-column:auto}.detail-panel{width:min(680px,92vw)}}@media(max-width:600px){.live{display:none}.stats{display:flex;overflow:auto}.stat{min-width:105px}.toolbar{grid-template-columns:1fr 1fr}.toolbar #search{grid-column:span 2}.attempt-grid{grid-template-columns:1fr}.detail-panel{width:100%}}@media(max-height:520px){html,body{overflow:auto}.shell{height:auto;min-height:520px}.workspace{min-height:260px}.eyebrow,.sub{display:none}}
+html,body{height:100%;overflow:hidden}.shell{height:100dvh;max-width:none;padding:10px 16px;display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:8px}.top{align-items:center;min-height:32px}.brand{font-size:20px;margin:0}.toolbar{grid-template-columns:minmax(220px,1fr) 190px 210px 150px 36px 36px;grid-template-areas:"search outcome phase scope refresh detail";gap:8px;margin:0}.toolbar #search{grid-area:search}.toolbar #outcome{grid-area:outcome}.toolbar #phase{grid-area:phase}.toolbar #scope{grid-area:scope}.toolbar button[type="submit"]{grid-area:refresh}.toolbar #detail-toggle{grid-area:detail}.control{padding:8px 10px}.icon-button{display:inline-grid;place-items:center;border:1px solid var(--line);background:#0e151c;color:var(--cyan);width:36px;height:36px;padding:0;border-radius:9px;cursor:pointer}.icon-button:hover,.icon-button:focus-visible{border-color:var(--cyan);background:#122129}.icon-button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.icon-button.active{color:var(--lime);border-color:var(--lime)}.workspace{display:block;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}.panel-head{padding:9px 12px}.attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));grid-auto-rows:min-content;align-content:start;align-items:start;gap:9px;max-height:none}.attempt{align-self:start;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:#0d141a}.attempt:hover,.attempt.active{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.detail-panel{position:absolute;z-index:5;inset:0 0 0 auto;width:min(720px,52vw);display:grid;grid-template-rows:auto minmax(0,1fr);background:#10171f;box-shadow:-18px 0 44px #05080bad;transform:translateX(calc(100% + 24px));transition:transform .2s ease;pointer-events:none}.workspace.detail-open .detail-panel{transform:translateX(0);pointer-events:auto}.detail-panel-head{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--muted)}.detail-panel-head .icon-button{width:30px;height:30px}.detail-toggle[hidden]{display:none}#detail{padding:18px;max-height:none;overflow:auto;min-height:0}.detail-title{font-size:21px}.bookmark-preview{max-height:330px;margin:14px 0}.empty{min-height:0}.drawer-scrim{position:absolute;z-index:4;inset:0;background:#05080b99;opacity:0;pointer-events:none;transition:opacity .2s;border:0}.workspace.detail-open .drawer-scrim{opacity:1;pointer-events:auto}@media(max-width:950px){.shell{padding:8px 10px}.toolbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 36px 36px;grid-template-areas:"search search search refresh detail" "outcome phase scope . ."}.detail-panel{width:min(680px,92vw)}}@media(max-width:600px){.live{display:none}.toolbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 36px;grid-template-areas:"search search search refresh" "outcome outcome outcome detail" "phase phase scope scope"}.attempt-grid{grid-template-columns:1fr}.detail-panel{width:100%}}@media(max-height:520px){html,body{overflow:auto}.shell{height:auto;min-height:520px}.workspace{min-height:260px}}
 </style></head><body><main class="shell">
-<header class="top"><div><div class="eyebrow">local operator view</div><h1 class="brand">Raindrop Journal</h1><div class="sub">Every routing decision, its evidence, and what the sorter did next.</div></div><div class="live"><i class="dot"></i><span id="updated">Connecting…</span></div></header>
-<section class="stats" id="stats"></section>
-<form class="toolbar" id="filters"><input class="control" id="search" placeholder="Search bookmarks, destinations, summaries"><select class="control" id="outcome"><option value="">All outcomes</option><option>confirmed</option><option>provisional</option><option>review</option><option>conflict</option><option>pending</option></select><select class="control" id="phase"><option value="">All lifecycle phases</option></select><select class="control" id="scope" aria-label="Journal view"><option value="latest">Latest status</option><option value="history">Attempt history</option></select><button class="control" type="submit">Refresh</button><button class="control detail-toggle" id="detail-toggle" type="button" hidden>Details</button></form>
-<section class="workspace" id="workspace"><div class="panel attempt-panel"><div class="panel-head"><span id="list-title">Latest Raindrop status</span><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details">×</button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
+<header class="top"><h1 class="brand">Raindrop Sorter</h1><div class="live"><i class="dot"></i><span id="updated">Connecting…</span></div></header>
+<form class="toolbar" id="filters"><input class="control" id="search" placeholder="Search bookmarks, destinations, summaries"><select class="control" id="outcome" aria-label="Filter by outcome"><option value="">All outcomes</option></select><select class="control" id="phase"><option value="">All lifecycle phases</option></select><select class="control" id="scope" aria-label="Dashboard view"><option value="latest">Latest status</option><option value="history">Attempt history</option></select><button class="icon-button" type="submit" aria-label="Refresh dashboard" title="Refresh dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a7.5 7.5 0 1 0 .2 5"/></svg></button><button class="icon-button detail-toggle" id="detail-toggle" type="button" aria-label="Show attempt details" title="Show attempt details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button></form>
+<section class="workspace" id="workspace"><div class="panel attempt-panel"><div class="panel-head"><span id="list-title">Latest Raindrop status</span><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
 </main><script>
 const select = selector => document.querySelector(selector);
 const element = (tag, className, text) => {
@@ -164,8 +159,12 @@ function setDetailOpen(open) {
   const panel = select('#detail-panel');
   panel.setAttribute('aria-hidden', String(!open));
   panel.inert = !open;
-  select('#detail-toggle').hidden = !selectedAttemptId;
-  select('#detail-toggle').textContent = open ? 'Hide details' : 'Show details';
+  const toggle = select('#detail-toggle');
+  toggle.hidden = !selectedAttemptId;
+  toggle.classList.toggle('active', open);
+  toggle.setAttribute('aria-pressed', String(open));
+  toggle.setAttribute('aria-label', open ? 'Hide attempt details' : 'Show attempt details');
+  toggle.title = open ? 'Hide attempt details' : 'Show attempt details';
   if (!open && panel.contains(document.activeElement)) {
     [...document.querySelectorAll('.attempt')]
       .find(button => button.dataset.attemptId === selectedAttemptId)?.focus();
@@ -179,25 +178,29 @@ function markSelectedAttempt() {
 function outcomeBadge(value) {
   return element('span', `badge ${value || 'pending'}`, value || 'pending');
 }
+function updateOutcomeOptions(outcomes, total) {
+  const outcomeSelect = select('#outcome');
+  const selectedOutcome = outcomeSelect.value;
+  const preferredOrder = ['confirmed', 'provisional', 'review', 'conflict', 'pending', 'failed'];
+  const outcomeNames = [...new Set([...preferredOrder, ...Object.keys(outcomes)])];
+  outcomeSelect.replaceChildren(new Option(`All outcomes · ${total}`, ''));
+  outcomeNames.forEach(outcome => {
+    outcomeSelect.append(new Option(`${outcome} · ${outcomes[outcome] || 0}`, outcome));
+  });
+  outcomeSelect.value = selectedOutcome;
+}
 async function renderOverview() {
   const overviewData = await fetchJson('/api/overview');
-  const statsPanel = select('#stats');
-  statsPanel.replaceChildren();
   const latestOnly = select('#scope').value === 'latest';
   const outcomes = latestOnly ? overviewData.outcomes : overviewData.attempt_outcomes;
   const phases = latestOnly ? overviewData.phases : overviewData.attempt_phases;
-  const stats = [[latestOnly ? 'Raindrops' : 'Attempts', latestOnly ? overviewData.total_bookmarks : overviewData.total_attempts], ['Confirmed', outcomes.confirmed || 0], ['Provisional', outcomes.provisional || 0], ['Review', outcomes.review || 0], ['Conflict', outcomes.conflict || 0], ['Failed', outcomes.failed || 0]];
-  stats.forEach(([label, value]) => {
-    const card = element('div', 'stat');
-    card.append(element('span', '', label), element('b', '', value));
-    statsPanel.append(card);
-  });
+  updateOutcomeOptions(outcomes, latestOnly ? overviewData.total_bookmarks : overviewData.total_attempts);
   const phaseSelect = select('#phase');
   const selectedPhase = phaseSelect.value;
   [...phaseSelect.options].slice(1).forEach(option => option.remove());
   Object.keys(phases).forEach(phase => phaseSelect.append(new Option(`${phase} · ${phases[phase]}`, phase)));
   phaseSelect.value = selectedPhase;
-  select('#updated').textContent = overviewData.latest_at ? `Latest ${formatTime(overviewData.latest_at)}` : 'Journal is empty';
+  select('#updated').textContent = overviewData.latest_at ? `Latest ${formatTime(overviewData.latest_at)}` : 'No sorter runs yet';
 }
 async function renderAttempts() {
   const params = new URLSearchParams({limit:'500'});
