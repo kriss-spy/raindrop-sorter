@@ -48,6 +48,7 @@ class RunJournal(Protocol):
         mode: str,
         pinned_index_version: str | None = None,
         runner_version: str | None = None,
+        initial_event: tuple[str, dict[str, Any]] | None = None,
     ) -> AttemptHandle: ...
 
     def record_event(
@@ -178,6 +179,7 @@ class SQLiteRunJournal:
         mode: str,
         pinned_index_version: str | None = None,
         runner_version: str | None = None,
+        initial_event: tuple[str, dict[str, Any]] | None = None,
     ) -> AttemptHandle:
         attempt = AttemptHandle(str(uuid.uuid4()), int(bookmark["_id"]))
         snapshot = _bookmark_snapshot(bookmark)
@@ -203,6 +205,13 @@ class SQLiteRunJournal:
                 ),
             )
             self._append_event(connection, attempt.attempt_id, "discovered", snapshot)
+            if initial_event is not None:
+                phase, payload = initial_event
+                self._append_event(connection, attempt.attempt_id, phase, payload)
+                connection.execute(
+                    "UPDATE attempts SET current_phase = ? WHERE attempt_id = ?",
+                    (phase, attempt.attempt_id),
+                )
         return attempt
 
     def record_event(
@@ -320,7 +329,7 @@ class SQLiteRunJournal:
                 """
                 SELECT * FROM attempts
                 WHERE bookmark_id = ?
-                ORDER BY started_at DESC LIMIT 1
+                ORDER BY started_at DESC, attempt_id DESC LIMIT 1
                 """,
                 (bookmark_id,),
             ).fetchone()
@@ -402,15 +411,26 @@ class SQLiteRunJournal:
             rows = connection.execute(
                 f"""
                 {_LATEST_ATTEMPTS_CTE}
-                SELECT COALESCE(outcome, 'pending') AS outcome, COUNT(*) AS count
-                FROM latest_attempts WHERE bookmark_rank = 1
-                GROUP BY outcome ORDER BY outcome
+                SELECT display_outcome AS outcome, COUNT(*) AS count
+                FROM (
+                    SELECT CASE WHEN current_phase = 'failed' THEN 'failed'
+                                ELSE COALESCE(outcome, 'pending')
+                           END AS display_outcome
+                    FROM latest_attempts WHERE bookmark_rank = 1
+                )
+                GROUP BY display_outcome ORDER BY display_outcome
                 """
             ).fetchall()
             attempt_outcome_rows = connection.execute(
                 """
-                SELECT COALESCE(outcome, 'pending') AS outcome, COUNT(*) AS count
-                FROM attempts GROUP BY outcome ORDER BY outcome
+                SELECT display_outcome AS outcome, COUNT(*) AS count
+                FROM (
+                    SELECT CASE WHEN current_phase = 'failed' THEN 'failed'
+                                ELSE COALESCE(outcome, 'pending')
+                           END AS display_outcome
+                    FROM attempts
+                )
+                GROUP BY display_outcome ORDER BY display_outcome
                 """
             ).fetchall()
             attempt_phase_rows = connection.execute(

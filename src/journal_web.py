@@ -1,4 +1,4 @@
-"""Local, read-only HTTP server for the sorter run journal dashboard."""
+"""Local HTTP server for journal inspection and explicit human review actions."""
 
 from __future__ import annotations
 
@@ -9,18 +9,28 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 from dotenv import load_dotenv
 
 from src.bookmark_preview import BookmarkPreviewService, PreviewLoader
 from src.journal_dashboard import DASHBOARD_HTML
+from src.journal_review import (
+    IneligibleReviewAttempt,
+    InvalidReviewDestination,
+    JournalReviewService,
+    ReviewAttemptNotFound,
+    StaleReviewAttempt,
+)
+from src.raindrop_client import RaindropClient
 from src.run_journal import SQLiteRunJournal
 
 
 class JournalHTTPServer(ThreadingHTTPServer):
     journal: SQLiteRunJournal
     preview_loader: PreviewLoader | None
+    reviewer: JournalReviewService | None
 
 
 def create_server(
@@ -29,12 +39,26 @@ def create_server(
     host: str = "127.0.0.1",
     port: int = 8765,
     preview_loader: PreviewLoader | None = None,
+    raindrop_client: Any | None = None,
 ) -> JournalHTTPServer:
-    if preview_loader is not None and host not in {"127.0.0.1", "localhost", "::1"}:
-        raise ValueError("image previews require a loopback host")
+    journal_path = Path(journal_path)
+    if not journal_path.is_file():
+        raise FileNotFoundError(f"journal does not exist: {journal_path}")
+    if (preview_loader is not None or raindrop_client is not None) and host not in {
+        "127.0.0.1", "localhost", "::1"
+    }:
+        raise ValueError("image previews and review actions require a loopback host")
     server = JournalHTTPServer((host, port), JournalRequestHandler)
-    server.journal = SQLiteRunJournal(journal_path, read_only=True)
+    server.journal = SQLiteRunJournal(
+        journal_path,
+        read_only=raindrop_client is None,
+    )
     server.preview_loader = preview_loader
+    server.reviewer = (
+        JournalReviewService(server.journal, raindrop_client)
+        if raindrop_client is not None
+        else None
+    )
     return server
 
 
@@ -50,6 +74,8 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, self.server.journal.overview())
             elif request.path == "/api/attempts":
                 self._attempts(parse_qs(request.query))
+            elif request.path == "/api/review/collections":
+                self._review_collections()
             elif request.path.startswith("/api/bookmarks/") and request.path.endswith("/preview"):
                 self._preview(request.path)
             elif request.path.startswith("/api/attempts/"):
@@ -63,6 +89,76 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
         except (TypeError, ValueError) as error:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+
+    def _review_collections(self) -> None:
+        if self.server.reviewer is None:
+            self._send_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "review actions require RAINDROP_TOKEN"},
+            )
+            return
+        try:
+            items = self.server.reviewer.art_collections()
+        except Exception as error:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {"error": f"could not load Art collections: {type(error).__name__}"},
+            )
+            return
+        self._send_json(HTTPStatus.OK, {"items": items})
+
+    def do_POST(self) -> None:  # noqa: N802 - BaseHTTPRequestHandler API
+        request = urlparse(self.path)
+        try:
+            self._assert_same_origin()
+            prefix = "/api/attempts/"
+            suffix = "/resolve"
+            if request.path.startswith(prefix) and request.path.endswith(suffix):
+                attempt_id = request.path[len(prefix):-len(suffix)]
+                if not attempt_id:
+                    raise ValueError("attempt ID is required")
+                if self.server.reviewer is None:
+                    self._send_json(
+                        HTTPStatus.SERVICE_UNAVAILABLE,
+                        {"error": "review actions require RAINDROP_TOKEN"},
+                    )
+                    return
+                payload = self._read_json()
+                result = self.server.reviewer.resolve(
+                    attempt_id,
+                    collection_id=int(payload["collection_id"]),
+                    selection_source=str(payload.get("selection_source", "custom")),
+                )
+                self._send_json(HTTPStatus.OK, result)
+            else:
+                self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
+        except ReviewAttemptNotFound as error:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": str(error)})
+        except (StaleReviewAttempt, IneligibleReviewAttempt) as error:
+            self._send_json(HTTPStatus.CONFLICT, {"error": str(error)})
+        except (InvalidReviewDestination, KeyError, TypeError, ValueError) as error:
+            self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+        except Exception as error:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {"error": f"Raindrop update failed: {type(error).__name__}"},
+            )
+
+    def _read_json(self) -> dict[str, Any]:
+        if not self.headers.get("Content-Type", "").startswith("application/json"):
+            raise ValueError("Content-Type must be application/json")
+        length = int(self.headers.get("Content-Length", "0"))
+        if length < 1 or length > 10_000:
+            raise ValueError("request body must be between 1 and 10000 bytes")
+        payload = json.loads(self.rfile.read(length))
+        if not isinstance(payload, dict):
+            raise ValueError("request body must be a JSON object")
+        return payload
+
+    def _assert_same_origin(self) -> None:
+        origin = self.headers.get("Origin")
+        if origin is not None and origin != f"http://{self.headers.get('Host')}":
+            raise ValueError("cross-origin review actions are not allowed")
 
     def _attempts(self, query: dict[str, list[str]]) -> None:
         limit = int(query.get("limit", ["50"])[0])
@@ -141,12 +237,14 @@ def main(argv: list[str] | None = None) -> None:
     load_dotenv()
     path = args.journal_path or os.path.join(args.db_path, "run-journal.sqlite")
     token = os.environ.get("RAINDROP_TOKEN")
+    client = RaindropClient(token=token) if token else None
     try:
         server = create_server(
             path,
             host=args.host,
             port=args.port,
             preview_loader=BookmarkPreviewService(token) if token else None,
+            raindrop_client=client,
         )
     except FileNotFoundError as error:
         parser.error(str(error))
@@ -154,7 +252,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"Raindrop Journal: {url}")
     print(f"Reading: {Path(path).resolve()}")
     if not token:
-        print("Image previews disabled: RAINDROP_TOKEN is not configured.")
+        print("Image previews and review actions disabled: RAINDROP_TOKEN is not configured.")
     print("Press Ctrl+C to stop.")
     if args.open:
         webbrowser.open(url)

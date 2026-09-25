@@ -124,3 +124,22 @@ def test_dashboard_queries_include_snapshot_summary_and_filters(tmp_path):
     assert trace["attempt"]["bookmark_snapshot"]["title"] == "Mini's new outfit"
     assert journal.has_bookmark(123)
     assert not journal.has_bookmark(999)
+
+
+def test_overview_keeps_failed_and_pending_manual_reviews_separate(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    failed = journal.start_attempt(
+        {"_id": 123},
+        mode="manual-review",
+        initial_event=("manual_destination_selected", {"destination": "Art/TOUHOU"}),
+    )
+    journal.fail(failed, RuntimeError("offline"))
+    journal.start_attempt(
+        {"_id": 456},
+        mode="manual-review",
+        initial_event=("manual_destination_selected", {"destination": "Art/MIKU"}),
+    )
+
+    overview = journal.overview()
+    assert overview["outcomes"] == {"failed": 1, "pending": 1}
+    assert overview["attempt_outcomes"] == {"failed": 1, "pending": 1}

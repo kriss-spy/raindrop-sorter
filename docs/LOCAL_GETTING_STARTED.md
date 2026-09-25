@@ -219,11 +219,18 @@ The dashboard stays on your computer at <http://127.0.0.1:8765>. The default
 retries and dry runs do not clutter the list. Choose **Attempt history** in the view
 selector to show recent older attempts again. The dashboard also shows outcome counts,
 search and filters, the evidence behind each decision, the action taken, a live
-bookmark image preview, and the full event timeline. It is read-only: it cannot move
-bookmarks or change tags. Image previews use the configured
-`RAINDROP_TOKEN` to resolve the current cover through the localhost server; the token
-and cover URL are not stored in the journal or sent to the browser. Leave the command
-running while using the page, and press `Ctrl+C` to stop it.
+bookmark image preview, and the full event timeline. For a provisional or conflicting
+latest status, use the review panel to choose the text-evidence destination, the
+visual-evidence destination, or search any live collection in the Art group. **Move &
+confirm** moves that Raindrop, replaces review/conflict lifecycle tags with a confirmed
+sorted tag, and records a new `manual-review` attempt. The server rejects stale attempts
+and collections outside Art. A failed Raindrop update remains as an audited, retryable
+manual-review status; it is never counted as confirmed.
+
+Image previews and review actions use the configured `RAINDROP_TOKEN`; the token and
+cover URL are not stored in the journal or sent to the browser. Without a token, the
+dashboard remains usable for journal inspection but cannot preview or resolve items.
+Leave the command running while using the page, and press `Ctrl+C` to stop it.
 
 If port 8765 is already in use, choose another one with `--port 8766`. Use
 `--journal-path /another/path.sqlite` when the sorter writes its journal somewhere

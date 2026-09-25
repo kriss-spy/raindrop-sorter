@@ -1,7 +1,7 @@
 import json
 import threading
 from urllib.error import HTTPError
-from urllib.request import urlopen
+from urllib.request import Request, urlopen
 
 import pytest
 
@@ -54,6 +54,17 @@ def _json(url):
         return json.load(response)
 
 
+def _post_json(url, payload, headers=None):
+    request = Request(
+        url,
+        data=json.dumps(payload).encode(),
+        headers={"Content-Type": "application/json", **(headers or {})},
+        method="POST",
+    )
+    with urlopen(request) as response:
+        return json.load(response)
+
+
 def test_dashboard_serves_browser_app_and_overview(dashboard):
     base_url, _ = dashboard
     with urlopen(base_url) as response:
@@ -62,6 +73,8 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "Search bookmarks" in page
     assert "bookmark-preview" in page
     assert "Latest status" in page
+    assert "Search Art collections" in page
+    assert "Move & confirm" in page
 
     overview = _json(f"{base_url}/api/overview")
     assert overview["total_attempts"] == 2
@@ -153,3 +166,78 @@ def test_dashboard_rejects_non_loopback_preview_binding(tmp_path):
             port=0,
             preview_loader=lambda bookmark_id: None,
         )
+
+
+def test_dashboard_exposes_art_picker_and_resolves_attempt(tmp_path):
+    class FakeClient:
+        def __init__(self):
+            self.updates = []
+
+        def get_collections(self):
+            return [
+                {"_id": 10, "title": "TOUHOU", "parent": None},
+                {"_id": 20, "title": "Music", "parent": None},
+            ]
+
+        def get_collection_groups(self):
+            return [
+                {"title": "Art", "collections": [10]},
+                {"title": "Music", "collections": [20]},
+            ]
+
+        def get_raindrop(self, bookmark_id):
+            return {"_id": bookmark_id, "title": "Conflict", "tags": []}
+
+        def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
+            self.updates.append((bookmark_id, collection_id, tags))
+            return {"result": True}
+
+    path = tmp_path / "journal.sqlite"
+    journal = SQLiteRunJournal(path)
+    attempt = journal.start_attempt({"_id": 123, "title": "Conflict"}, mode="dry-run")
+    journal.record_decision(
+        attempt,
+        RouteDecision(
+            bookmark_id=123,
+            outcome=RouteOutcome.PROVISIONAL,
+            destination="Art/TOUHOU",
+            text_evidence=(TextEvidence(
+                kind="personal_interest_text",
+                destination="Art/TOUHOU",
+                strength="strong",
+                explanation="Matched Reimu.",
+            ),),
+            visual_evidence=(),
+            summary="Provisional text route.",
+        ),
+    )
+    journal.complete(attempt, phase="dry_run_completed")
+    client = FakeClient()
+    server = create_server(path, host="127.0.0.1", port=0, raindrop_client=client)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        collections = _json(f"{base_url}/api/review/collections")
+        assert collections["items"] == [
+            {"collection_id": 10, "path": "Art/TOUHOU"}
+        ]
+        with pytest.raises(HTTPError) as cross_origin:
+            _post_json(
+                f"{base_url}/api/attempts/{attempt.attempt_id}/resolve",
+                {"collection_id": 10, "selection_source": "text"},
+                headers={"Origin": "https://attacker.example"},
+            )
+        assert cross_origin.value.code == 400
+        assert client.updates == []
+        resolved = _post_json(
+            f"{base_url}/api/attempts/{attempt.attempt_id}/resolve",
+            {"collection_id": 10, "selection_source": "text"},
+        )
+        assert resolved["outcome"] == "confirmed"
+        assert resolved["selection_source"] == "text"
+        assert client.updates[0][0:2] == (123, 10)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
