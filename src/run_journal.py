@@ -64,19 +64,30 @@ class RunJournal(Protocol):
 class SQLiteRunJournal:
     """Durable local implementation of the revised ``RunJournal`` seam."""
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, *, read_only: bool = False):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+        self.read_only = read_only
+        if read_only:
+            if not self.path.is_file():
+                raise FileNotFoundError(f"journal does not exist: {self.path}")
+        else:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._initialize()
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
-        connection = sqlite3.connect(self.path)
+        if self.read_only:
+            connection = sqlite3.connect(
+                f"file:{self.path.resolve()}?mode=ro", uri=True
+            )
+        else:
+            connection = sqlite3.connect(self.path)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         try:
             yield connection
-            connection.commit()
+            if not self.read_only:
+                connection.commit()
         finally:
             connection.close()
 
@@ -304,41 +315,94 @@ class SQLiteRunJournal:
                 """,
                 (bookmark_id,),
             ).fetchone()
-            if row is None:
-                return None
-            attempt_id = row["attempt_id"]
-            events = connection.execute(
-                "SELECT * FROM events WHERE attempt_id = ? ORDER BY sequence",
-                (attempt_id,),
-            ).fetchall()
-            evidence = connection.execute(
-                "SELECT * FROM evidence WHERE attempt_id = ? ORDER BY evidence_id",
-                (attempt_id,),
-            ).fetchall()
-            actions = connection.execute(
-                "SELECT * FROM actions WHERE attempt_id = ? ORDER BY action_id",
-                (attempt_id,),
-            ).fetchall()
-        return {
-            "attempt": _decode_row(row),
-            "events": [_decode_row(item) for item in events],
-            "evidence": [_decode_row(item) for item in evidence],
-            "actions": [_decode_row(item) for item in actions],
-        }
+            return self._trace(connection, row)
 
-    def recent(self, *, limit: int = 20) -> list[dict[str, Any]]:
+    def explain_attempt(self, attempt_id: str) -> dict[str, Any] | None:
+        """Return one exact attempt trace, including historical attempts."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT * FROM attempts WHERE attempt_id = ?", (attempt_id,)
+            ).fetchone()
+            return self._trace(connection, row)
+
+    def recent(
+        self,
+        *,
+        limit: int = 20,
+        outcome: str | None = None,
+        phase: str | None = None,
+        query: str | None = None,
+    ) -> list[dict[str, Any]]:
         if limit < 1:
             raise ValueError("limit must be at least 1")
         with self._connect() as connection:
+            clauses: list[str] = []
+            parameters: list[Any] = []
+            if outcome:
+                clauses.append("outcome = ?")
+                parameters.append(outcome)
+            if phase:
+                clauses.append("current_phase = ?")
+                parameters.append(phase)
+            where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+            rows = connection.execute(
+                f"""
+                SELECT attempt_id, bookmark_id, started_at, ended_at, current_phase,
+                       outcome, destination, mode, bookmark_snapshot_json, decision_json
+                FROM attempts {where} ORDER BY started_at DESC
+                """,
+                parameters,
+            ).fetchall()
+
+        needle = (query or "").strip().casefold()
+        results = []
+        for row in rows:
+            decoded = _decode_row(row)
+            snapshot = decoded.pop("bookmark_snapshot", {})
+            decision = decoded.pop("decision", {}) or {}
+            decoded.update(
+                title=snapshot.get("title") or f"Bookmark {decoded['bookmark_id']}",
+                link=snapshot.get("link"),
+                excerpt=snapshot.get("excerpt"),
+                summary=decision.get("summary"),
+                duration_ms=_duration_ms(decoded["started_at"], decoded["ended_at"]),
+            )
+            if needle and not any(
+                needle in str(decoded.get(key) or "").casefold()
+                for key in ("bookmark_id", "title", "destination", "summary", "current_phase")
+            ):
+                continue
+            results.append(decoded)
+            if len(results) == limit:
+                break
+        return results
+
+    def overview(self) -> dict[str, Any]:
+        """Return compact aggregate data for operator dashboards."""
+        with self._connect() as connection:
+            total, latest_at = connection.execute(
+                "SELECT COUNT(*), MAX(started_at) FROM attempts"
+            ).fetchone()
             rows = connection.execute(
                 """
-                SELECT attempt_id, bookmark_id, started_at, ended_at, current_phase,
-                       outcome, destination, mode
-                FROM attempts ORDER BY started_at DESC LIMIT ?
-                """,
-                (limit,),
+                WITH latest AS (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY bookmark_id
+                        ORDER BY started_at DESC, attempt_id DESC
+                    ) AS rank
+                    FROM attempts
+                )
+                SELECT COALESCE(outcome, 'pending') AS outcome, COUNT(*) AS count
+                FROM latest WHERE rank = 1
+                GROUP BY outcome ORDER BY outcome
+                """
             ).fetchall()
-        return [dict(row) for row in rows]
+        return {
+            "total_attempts": int(total),
+            "latest_at": latest_at,
+            "phases": self.status(),
+            "outcomes": {str(row["outcome"]): int(row["count"]) for row in rows},
+        }
 
     def status(self) -> dict[str, int]:
         with self._connect() as connection:
@@ -357,6 +421,32 @@ class SQLiteRunJournal:
                 """
             ).fetchall()
         return {str(row["current_phase"]): int(row["count"]) for row in rows}
+
+    @staticmethod
+    def _trace(
+        connection: sqlite3.Connection, row: sqlite3.Row | None
+    ) -> dict[str, Any] | None:
+        if row is None:
+            return None
+        attempt_id = row["attempt_id"]
+        events = connection.execute(
+            "SELECT * FROM events WHERE attempt_id = ? ORDER BY sequence",
+            (attempt_id,),
+        ).fetchall()
+        evidence = connection.execute(
+            "SELECT * FROM evidence WHERE attempt_id = ? ORDER BY evidence_id",
+            (attempt_id,),
+        ).fetchall()
+        actions = connection.execute(
+            "SELECT * FROM actions WHERE attempt_id = ? ORDER BY action_id",
+            (attempt_id,),
+        ).fetchall()
+        return {
+            "attempt": _decode_row(row),
+            "events": [_decode_row(item) for item in events],
+            "evidence": [_decode_row(item) for item in evidence],
+            "actions": [_decode_row(item) for item in actions],
+        }
 
     @staticmethod
     def _append_event(
@@ -438,6 +528,16 @@ def _bookmark_snapshot(bookmark: dict[str, Any]) -> dict[str, Any]:
 
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _duration_ms(started_at: str, ended_at: str | None) -> float | None:
+    if ended_at is None:
+        return None
+    return round(
+        (datetime.fromisoformat(ended_at) - datetime.fromisoformat(started_at)).total_seconds()
+        * 1000,
+        1,
+    )
 
 
 def _decode_row(row: sqlite3.Row) -> dict[str, Any]:

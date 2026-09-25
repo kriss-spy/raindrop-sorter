@@ -208,6 +208,24 @@ and dry-run it first.
 The default journal is `chroma_db/run-journal.sqlite`. Journal commands do not need
 a Raindrop token and do not initialize the vision models.
 
+For the browser interface, run:
+
+```bash
+uv run python local_dashboard.py --db-path chroma_db --open
+```
+
+The dashboard stays on your computer at <http://127.0.0.1:8765>. It shows outcome
+counts, searchable and filterable attempts, the evidence behind each decision, the
+action taken, and the full event timeline. It is read-only: it cannot move bookmarks
+or change tags. Leave the command running while using the page, and press `Ctrl+C`
+to stop it.
+
+If port 8765 is already in use, choose another one with `--port 8766`. Use
+`--journal-path /another/path.sqlite` when the sorter writes its journal somewhere
+other than the selected database directory.
+
+The command-line views remain available for scripts and quick checks:
+
 ```bash
 # Latest attempt count by lifecycle phase
 uv run python local_journal.py --db-path chroma_db status
