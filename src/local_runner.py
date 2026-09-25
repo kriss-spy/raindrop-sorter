@@ -158,6 +158,89 @@ def backfill_unreviewed(
     }
 
 
+class LocalBatchProcessor:
+    """Keep local vision models warm while processing bounded applied batches."""
+
+    def __init__(
+        self,
+        client: Any,
+        *,
+        db_path: str,
+        model_dir: str,
+        journal: RunJournal,
+        apply: bool = True,
+        mutation_lock: Any | None = None,
+    ):
+        self.client = client
+        self.db_path = db_path
+        self.journal = journal
+        self.apply = apply
+        self.mutation_lock = mutation_lock
+        self.tagger = WD14Tagger(model_dir=model_dir)
+        self.visual_index = load_visual_exemplar_index(db_path)
+        self.visual_embedder = (
+            create_visual_embedder(self.visual_index.model_name)
+            if self.visual_index is not None
+            else None
+        )
+
+    def run_one(self, bookmark_id: int) -> dict[str, Any]:
+        image: bytes | None | object = _IMAGE_NOT_LOADED
+
+        def image_bytes(bookmark: dict[str, Any]) -> bytes | None:
+            nonlocal image
+            if image is _IMAGE_NOT_LOADED:
+                url = resolve_cover_url(bookmark)
+                image = download_cover(url) if url else None
+            return image if isinstance(image, bytes) else None
+
+        def visual_embedding(bookmark: dict[str, Any]) -> Any | None:
+            payload = image_bytes(bookmark)
+            if self.visual_embedder is None or payload is None:
+                return None
+            return self.visual_embedder.embed_image(payload)
+
+        return run_local_bookmark(
+            self.client,
+            bookmark_id=bookmark_id,
+            db_path=self.db_path,
+            analyze_vision=lambda bookmark: [
+                f"ai:wdtag-{tag}" for tag in self.tagger.predict(image_bytes(bookmark))
+            ] if image_bytes(bookmark) is not None else [],
+            analyze_visual=visual_embedding,
+            apply=self.apply,
+            journal=self.journal,
+            mutation_lock=self.mutation_lock,
+        )
+
+    def __call__(self, limit: int) -> dict[str, Any]:
+        work = find_local_work(self.client, limit=limit)
+        results = []
+        errors = []
+        for item in work:
+            try:
+                results.append(self.run_one(int(item["_id"])))
+            except Exception as error:
+                errors.append({
+                    "bookmark_id": int(item["_id"]),
+                    "type": type(error).__name__,
+                    "message": str(error),
+                })
+        return {
+            "status": "ok",
+            "mode": "batch",
+            "count": len(work),
+            "succeeded": len(results),
+            "failed": len(errors),
+            "applied": self.apply,
+            "results": results,
+            "errors": errors,
+        }
+
+
+_IMAGE_NOT_LOADED = object()
+
+
 def run_local_bookmark(
     client: Any,
     *,
@@ -167,6 +250,7 @@ def run_local_bookmark(
     analyze_visual: Callable[[dict[str, Any]], Any | None] | None = None,
     apply: bool = False,
     journal: RunJournal | None = None,
+    mutation_lock: Any | None = None,
 ) -> dict[str, Any]:
     """Run the native two-step route; writes require ``apply=True``."""
     validate_local_index(db_path)
@@ -226,11 +310,43 @@ def run_local_bookmark(
         action_kind = "move" if decision.destination is not None else "keep_unsorted"
         if apply:
             try:
-                client.update_raindrop(
-                    bookmark_id,
-                    collection_id=target_id,
-                    tags=new_tags,
-                )
+                if mutation_lock is None:
+                    client.update_raindrop(
+                        bookmark_id,
+                        collection_id=target_id,
+                        tags=new_tags,
+                    )
+                else:
+                    with mutation_lock:
+                        current = client.get_raindrop(bookmark_id)
+                        current_collection = (current.get("collection") or {}).get("$id")
+                        if current_collection not in {None, -1}:
+                            if journal is not None and attempt is not None:
+                                journal.record_action(
+                                    attempt,
+                                    action_kind="skip_stale",
+                                    status="succeeded",
+                                    destination=target_folder,
+                                    request_count=1,
+                                    payload={"current_collection_id": current_collection},
+                                )
+                                journal.complete(attempt, phase="skipped_stale")
+                            return {
+                                "status": "skipped",
+                                "bookmark_id": bookmark_id,
+                                "attempt_id": attempt.attempt_id if attempt is not None else None,
+                                "action": "skip",
+                                "target_collection_id": None,
+                                "target_folder": None,
+                                "decision": decision.to_dict(),
+                                "vision_tag_count": len(vision_tags),
+                                "applied": False,
+                            }
+                        client.update_raindrop(
+                            bookmark_id,
+                            collection_id=target_id,
+                            tags=tags_for_decision(current, decision.outcome.value),
+                        )
             except BaseException as error:
                 if journal is not None and attempt is not None:
                     journal.record_action(
@@ -328,52 +444,18 @@ def main(argv: list[str] | None = None) -> None:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
-    tagger = WD14Tagger(model_dir=args.model_dir)
-    visual_index = load_visual_exemplar_index(args.db_path)
-    visual_embedder = (
-        create_visual_embedder(visual_index.model_name)
-        if visual_index is not None
-        else None
-    )
     journal = SQLiteRunJournal(
         args.journal_path or os.path.join(args.db_path, "run-journal.sqlite")
     )
-    image_cache: dict[int, bytes | None] = {}
-
-    def image_bytes(bookmark: dict[str, Any]) -> bytes | None:
-        bookmark_id = int(bookmark["_id"])
-        if bookmark_id not in image_cache:
-            url = resolve_cover_url(bookmark)
-            image_cache[bookmark_id] = download_cover(url) if url else None
-        return image_cache[bookmark_id]
-
-    def visual_embedding(bookmark: dict[str, Any]) -> Any | None:
-        payload = image_bytes(bookmark)
-        if visual_embedder is None or payload is None:
-            return None
-        return visual_embedder.embed_image(payload)
-
-    run_one = lambda bookmark_id: run_local_bookmark(
+    processor = LocalBatchProcessor(
         client,
-        bookmark_id=bookmark_id,
         db_path=args.db_path,
-        analyze_vision=lambda bookmark: [
-            f"ai:wdtag-{tag}" for tag in tagger.predict(image_bytes(bookmark))
-        ] if image_bytes(bookmark) is not None else [],
-        analyze_visual=visual_embedding,
-        apply=args.apply,
+        model_dir=args.model_dir,
         journal=journal,
+        apply=args.apply,
     )
     if args.bookmark_id is not None:
-        result: dict[str, Any] = run_one(args.bookmark_id)
+        result: dict[str, Any] = processor.run_one(args.bookmark_id)
     else:
-        work = find_local_work(client, limit=args.batch_size)
-        results = [run_one(item["_id"]) for item in work]
-        result = {
-            "status": "ok",
-            "mode": "batch",
-            "count": len(results),
-            "applied": args.apply,
-            "results": results,
-        }
+        result = processor(args.batch_size)
     print(json.dumps(result, ensure_ascii=False, indent=2))

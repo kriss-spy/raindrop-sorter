@@ -217,9 +217,11 @@ uv run python local_dashboard.py --db-path chroma_db --open
 The dashboard stays on your computer at <http://127.0.0.1:8765>. The default
 **Latest status** view shows only the newest attempt for each Raindrop, so completed
 retries and dry runs do not clutter the list. Choose **Attempt history** in the view
-selector to show recent older attempts again. The dashboard also shows outcome counts,
-search and filters, the evidence behind each decision, the action taken, a live
-bookmark image preview, and the full event timeline. For a provisional or conflicting
+selector to show recent older attempts again. Switch between image-cover cards and a
+compact table with the layout icons. Each row or card can open the matching item in
+Raindrop.io. The dashboard also shows outcome counts, search and filters, the evidence
+behind each decision, the action taken, a live bookmark image preview, and the full
+event timeline. For a provisional or conflicting
 latest status, use the review panel to choose the text-evidence destination, the
 visual-evidence destination, or search any live collection in the Art group. For a
 `review` status, use its custom picker to search and select an Art collection. **Move &
@@ -228,6 +230,18 @@ sorted tag, and records a new `manual-review` attempt. The server rejects stale 
 non-custom choices for `review` statuses, and collections outside Art. A failed Raindrop
 update remains as an audited, retryable manual-review status; it is never counted as
 confirmed.
+
+Select multiple unresolved cards or table rows to assign one Art destination to the
+whole selection. Every successful item still receives its own audited manual-review
+attempt; failures are reported without discarding successful assignments.
+
+The sliders icon opens local sorter controls. **Process all** drains bounded batches
+until no actionable Unsorted items remain. **Start automatic sorter** keeps the same
+warm local model alive, drains current work, and checks for new Unsorted items every 15
+seconds. **Pause** disables automatic polling after any in-flight automatic batch;
+a separately requested **Process all** drain continues to completion. These controls
+run with `--apply`: they can update tags and move Raindrops. They are available
+only on the loopback dashboard when `RAINDROP_TOKEN` is configured.
 
 Image previews and review actions use the configured `RAINDROP_TOKEN`; the token and
 cover URL are not stored in the journal or sent to the browser. Without a token, the

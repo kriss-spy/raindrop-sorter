@@ -49,10 +49,15 @@ class ReviewSelectionSource(StrEnum):
 class JournalReviewService:
     """Apply explicit human choices while preserving an append-only audit trail."""
 
-    def __init__(self, journal: SQLiteRunJournal, client: Any):
+    def __init__(
+        self,
+        journal: SQLiteRunJournal,
+        client: Any,
+        mutation_lock: threading.RLock | None = None,
+    ):
         self.journal = journal
         self.client = client
-        self._lock = threading.RLock()
+        self._lock = mutation_lock or threading.RLock()
 
     def art_collections(self) -> list[dict[str, Any]]:
         with self._lock:

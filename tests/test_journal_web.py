@@ -75,6 +75,15 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert 'class="stats"' not in page
     assert 'aria-label="Refresh dashboard"' in page
     assert 'aria-label="Show attempt details"' in page
+    assert 'aria-label="Image card layout"' in page
+    assert 'aria-label="Table layout"' in page
+    assert 'aria-label="Assign selected Raindrops"' in page
+    assert 'aria-label="Process all Unsorted Raindrops"' in page
+    assert "https://app.raindrop.io/my/0/item/" in page
+    assert "/api/attempts/resolve-batch" in page
+    assert "/api/sorter/${action}" in page
+    assert "Process every actionable Raindrop in Unsorted now?" in page
+    assert "Start the automatic sorter?" in page
     assert "updateOutcomeOptions" in page
     assert "All outcomes ·" in page
     assert "Search bookmarks" in page
@@ -265,3 +274,161 @@ def test_dashboard_exposes_art_picker_and_resolves_attempt(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def test_dashboard_batch_resolves_selected_attempts(tmp_path):
+    class FakeClient:
+        def __init__(self):
+            self.updates = []
+
+        def get_collections(self):
+            return [{"_id": 10, "title": "TOUHOU", "parent": None}]
+
+        def get_collection_groups(self):
+            return [{"title": "Art", "collections": [10]}]
+
+        def get_raindrop(self, bookmark_id):
+            return {"_id": bookmark_id, "title": str(bookmark_id), "tags": []}
+
+        def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
+            self.updates.append((bookmark_id, collection_id, tags))
+            return {"result": True}
+
+    path = tmp_path / "journal.sqlite"
+    journal = SQLiteRunJournal(path)
+    attempt_ids = []
+    for bookmark_id in (101, 102):
+        attempt = journal.start_attempt(
+            {"_id": bookmark_id, "title": str(bookmark_id)}, mode="dry-run"
+        )
+        journal.record_decision(
+            attempt,
+            RouteDecision(
+                bookmark_id=bookmark_id,
+                outcome=RouteOutcome.REVIEW,
+                destination=None,
+                text_evidence=(),
+                visual_evidence=(),
+                summary="Needs review.",
+            ),
+        )
+        journal.complete(attempt, phase="dry_run_completed")
+        attempt_ids.append(attempt.attempt_id)
+
+    client = FakeClient()
+    server = create_server(path, host="127.0.0.1", port=0, raindrop_client=client)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = _post_json(
+            f"http://127.0.0.1:{server.server_port}/api/attempts/resolve-batch",
+            {"attempt_ids": attempt_ids, "collection_id": 10},
+        )
+        assert result["resolved"] == 2
+        assert result["failed"] == 0
+        assert [update[:2] for update in client.updates] == [(101, 10), (102, 10)]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_dashboard_batch_resolution_reports_partial_failure(tmp_path):
+    class FakeClient:
+        def get_collections(self):
+            return [{"_id": 10, "title": "TOUHOU", "parent": None}]
+
+        def get_collection_groups(self):
+            return [{"title": "Art", "collections": [10]}]
+
+        def get_raindrop(self, bookmark_id):
+            return {"_id": bookmark_id, "title": str(bookmark_id), "tags": []}
+
+        def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
+            if bookmark_id == 102:
+                raise RuntimeError("unavailable")
+            return {"result": True}
+
+    path = tmp_path / "journal.sqlite"
+    journal = SQLiteRunJournal(path)
+    attempt_ids = []
+    for bookmark_id in (101, 102):
+        attempt = journal.start_attempt({"_id": bookmark_id}, mode="dry-run")
+        journal.record_decision(
+            attempt,
+            RouteDecision(
+                bookmark_id=bookmark_id,
+                outcome=RouteOutcome.REVIEW,
+                destination=None,
+                text_evidence=(),
+                visual_evidence=(),
+                summary="Needs review.",
+            ),
+        )
+        journal.complete(attempt, phase="dry_run_completed")
+        attempt_ids.append(attempt.attempt_id)
+
+    server = create_server(
+        path, host="127.0.0.1", port=0, raindrop_client=FakeClient()
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = _post_json(
+            f"http://127.0.0.1:{server.server_port}/api/attempts/resolve-batch",
+            {"attempt_ids": attempt_ids, "collection_id": 10},
+        )
+        assert result["status"] == "partial"
+        assert result["resolved"] == 1
+        assert result["failed"] == 1
+        assert result["errors"][0]["attempt_id"] == attempt_ids[1]
+        assert result["errors"][0]["retry_attempt_id"] != attempt_ids[1]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_dashboard_exposes_sorter_controls(tmp_path):
+    class FakeController:
+        def __init__(self):
+            self.calls = []
+
+        def status(self):
+            return {"available": True, "state": "paused", "automatic": False}
+
+        def process_all(self):
+            self.calls.append("process-all")
+            return {"available": True, "state": "running", "automatic": False}
+
+        def start_automatic(self):
+            self.calls.append("start")
+            return {"available": True, "state": "running", "automatic": True}
+
+        def pause_automatic(self):
+            self.calls.append("pause")
+            return {"available": True, "state": "paused", "automatic": False}
+
+        def close(self):
+            self.calls.append("close")
+
+    path = tmp_path / "journal.sqlite"
+    SQLiteRunJournal(path)
+    controller = FakeController()
+    server = create_server(
+        path, host="127.0.0.1", port=0, sorter_controller=controller
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        assert _json(f"{base_url}/api/sorter/status")["state"] == "paused"
+        assert _post_json(f"{base_url}/api/sorter/process-all", {})["state"] == "running"
+        assert _post_json(f"{base_url}/api/sorter/start", {})["automatic"] is True
+        assert _post_json(f"{base_url}/api/sorter/pause", {})["state"] == "paused"
+        assert controller.calls == ["process-all", "start", "pause"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    assert controller.calls[-1] == "close"

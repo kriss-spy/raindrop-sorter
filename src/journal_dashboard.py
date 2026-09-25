@@ -46,10 +46,27 @@ button.control{cursor:pointer;color:var(--cyan)}
 .skeleton{height:72px;background:linear-gradient(90deg,#111820,#18242c,#111820);background-size:200%;animation:p 1.2s infinite}
 @keyframes p{to{background-position:-200%}}
 .resolution{border:1px solid color-mix(in srgb,var(--amber) 55%,var(--line));border-radius:11px;padding:16px;margin:18px 0;background:#17150f}.resolution h3{margin:0 0 7px;font:700 16px system-ui}.choice-group{margin-top:14px}.choice-label{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}.choice-grid,.collection-results{display:flex;flex-wrap:wrap;gap:7px}.choice{border:1px solid var(--line);background:#101820;color:var(--text);border-radius:8px;padding:8px 10px;cursor:pointer;text-align:left}.choice:hover,.choice.selected{border-color:var(--cyan);color:var(--cyan);background:#102126}.choice:disabled{cursor:not-allowed;opacity:.45}.collection-search{width:100%;margin-bottom:8px}.collection-results{max-height:155px;overflow:auto}.selection{color:var(--cyan);margin:14px 0 9px}.apply-choice{width:100%;background:var(--cyan);color:#071013;border:0;border-radius:8px;padding:11px;font-weight:750;cursor:pointer}.apply-choice:disabled{cursor:not-allowed;opacity:.45}.resolution-error{color:var(--red);margin-top:9px}
-html,body{height:100%;overflow:hidden}.shell{height:100dvh;max-width:none;padding:10px 16px;display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:8px}.top{align-items:center;min-height:32px}.brand{font-size:20px;margin:0}.toolbar{grid-template-columns:minmax(220px,1fr) 190px 210px 150px 36px 36px;grid-template-areas:"search outcome phase scope refresh detail";gap:8px;margin:0}.toolbar #search{grid-area:search}.toolbar #outcome{grid-area:outcome}.toolbar #phase{grid-area:phase}.toolbar #scope{grid-area:scope}.toolbar button[type="submit"]{grid-area:refresh}.toolbar #detail-toggle{grid-area:detail}.control{padding:8px 10px}.icon-button{display:inline-grid;place-items:center;border:1px solid var(--line);background:#0e151c;color:var(--cyan);width:36px;height:36px;padding:0;border-radius:9px;cursor:pointer}.icon-button:hover,.icon-button:focus-visible{border-color:var(--cyan);background:#122129}.icon-button svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.icon-button.active{color:var(--lime);border-color:var(--lime)}.workspace{display:block;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}.panel-head{padding:9px 12px}.attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));grid-auto-rows:min-content;align-content:start;align-items:start;gap:9px;max-height:none}.attempt{align-self:start;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:#0d141a}.attempt:hover,.attempt.active{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.detail-panel{position:absolute;z-index:5;inset:0 0 0 auto;width:min(720px,52vw);display:grid;grid-template-rows:auto minmax(0,1fr);background:#10171f;box-shadow:-18px 0 44px #05080bad;transform:translateX(calc(100% + 24px));transition:transform .2s ease;pointer-events:none}.workspace.detail-open .detail-panel{transform:translateX(0);pointer-events:auto}.detail-panel-head{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--muted)}.detail-panel-head .icon-button{width:30px;height:30px}.detail-toggle[hidden]{display:none}#detail{padding:18px;max-height:none;overflow:auto;min-height:0}.detail-title{font-size:21px}.bookmark-preview{max-height:330px;margin:14px 0}.empty{min-height:0}.drawer-scrim{position:absolute;z-index:4;inset:0;background:#05080b99;opacity:0;pointer-events:none;transition:opacity .2s;border:0}.workspace.detail-open .drawer-scrim{opacity:1;pointer-events:auto}@media(max-width:950px){.shell{padding:8px 10px}.toolbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 36px 36px;grid-template-areas:"search search search refresh detail" "outcome phase scope . ."}.detail-panel{width:min(680px,92vw)}}@media(max-width:600px){.live{display:none}.toolbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr) 36px;grid-template-areas:"search search search refresh" "outcome outcome outcome detail" "phase phase scope scope"}.attempt-grid{grid-template-columns:1fr}.detail-panel{width:100%}}@media(max-height:520px){html,body{overflow:auto}.shell{height:auto;min-height:520px}.workspace{min-height:260px}}
+html,body{height:100%;overflow:hidden}
+.shell{height:100dvh;max-width:none;padding:10px 16px;display:grid;grid-template-rows:auto auto auto auto minmax(0,1fr);gap:8px}
+.top{align-items:center;min-height:32px}.brand{font-size:20px;margin:0}
+.toolbar{grid-template-columns:minmax(220px,1fr) 180px 190px 140px 76px repeat(3,36px);grid-template-areas:"search outcome phase scope view refresh control detail";gap:8px;margin:0}
+.toolbar #search{grid-area:search}.toolbar #outcome{grid-area:outcome}.toolbar #phase{grid-area:phase}.toolbar #scope{grid-area:scope}.toolbar .view-switch{grid-area:view}.toolbar button[type="submit"]{grid-area:refresh}.toolbar #sorter-toggle{grid-area:control}.toolbar #detail-toggle{grid-area:detail}
+.control{padding:8px 10px}.icon-button{display:inline-grid;place-items:center;border:1px solid var(--line);background:#0e151c;color:var(--cyan);width:36px;height:36px;padding:0;border-radius:9px;cursor:pointer}.icon-button:hover,.icon-button:focus-visible{border-color:var(--cyan);background:#122129}.icon-button svg,.icon-link svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.icon-button.active{color:var(--lime);border-color:var(--lime)}
+.view-switch{display:flex}.view-switch .icon-button{border-radius:0}.view-switch .icon-button:first-child{border-radius:9px 0 0 9px}.view-switch .icon-button:last-child{border-radius:0 9px 9px 0;margin-left:-1px}
+.action-bar,.sorter-panel{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#101820}.action-bar[hidden],.sorter-panel[hidden]{display:none}.action-bar .control{min-width:260px}.action-message{color:var(--muted);margin-left:auto}.sorter-panel{justify-content:flex-end}.sorter-status{margin-right:auto}.sorter-status strong{color:var(--lime)}.sorter-panel .explain{margin:0}
+.workspace{display:block;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}.panel-head{padding:9px 12px}
+.attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));grid-auto-rows:min-content;align-content:start;align-items:start;gap:10px;max-height:none}.attempt{position:relative;align-self:start;padding:0;border:1px solid var(--line);border-radius:11px;background:#0d141a;overflow:hidden}.attempt:hover,.attempt.active{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.attempt-body{display:flex;flex-direction:column;gap:5px;padding:9px 10px 10px;min-width:0}.attempt-cover{display:block;width:100%;height:100%;object-fit:cover;background:linear-gradient(135deg,#111d25,#0a1015)}.attempt-cover-wrap{position:relative;background:linear-gradient(135deg,#111d25,#080d11)}.card-cover-wrap{aspect-ratio:16/9}.attempt-cover{position:absolute;inset:0;z-index:1}.attempt-cover-wrap.missing img{display:none}.attempt-select{position:absolute;z-index:3;top:8px;left:8px;width:18px;height:18px;accent-color:var(--cyan)}.attempt-tools{display:flex;align-items:center;gap:7px}.icon-link{display:inline-grid;place-items:center;color:var(--cyan);width:25px;height:25px;border:1px solid var(--line);border-radius:7px;text-decoration:none}.attempt-head .attempt-tools{margin-left:auto}.attempt-head .badge{margin-left:0}
+.attempt-table-wrap{padding:0;overflow:auto}.attempt-table{width:100%;border-collapse:collapse;table-layout:fixed}.attempt-table th,.attempt-table td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.attempt-table th{position:sticky;top:0;z-index:2;background:#111820;color:var(--muted);font-size:10px;text-transform:uppercase}.attempt-table tbody tr{cursor:pointer}.attempt-table tbody tr:hover,.attempt-table tbody tr.active{background:#17232b}.attempt-table .col-check{width:42px}.attempt-table .col-cover{width:76px}.attempt-table .col-outcome{width:110px}.attempt-table .col-run{width:145px}.attempt-table .col-time{width:135px}.attempt-table .col-open{width:48px}.table-cover{width:58px;height:42px;object-fit:cover;border-radius:6px;background:#080d11}.table-title{font:650 14px system-ui;overflow-wrap:anywhere}.table-destination{color:var(--cyan);overflow-wrap:anywhere}
+.attempt-table .attempt-select{position:static}.table-cover-wrap{width:58px;height:42px;border-radius:6px;overflow:hidden}.icon-button:disabled{cursor:not-allowed;opacity:.35}
+.detail-panel{position:absolute;z-index:5;inset:0 0 0 auto;width:min(720px,52vw);display:grid;grid-template-rows:auto minmax(0,1fr);background:#10171f;box-shadow:-18px 0 44px #05080bad;transform:translateX(calc(100% + 24px));transition:transform .2s ease;pointer-events:none}.workspace.detail-open .detail-panel{transform:translateX(0);pointer-events:auto}.detail-panel-head{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--muted)}.detail-panel-head .icon-button{width:30px;height:30px}.detail-toggle[hidden]{display:none}#detail{padding:18px;max-height:none;overflow:auto;min-height:0}.detail-title{font-size:21px}.detail-links{display:flex;gap:8px;margin-top:7px}.detail-links .icon-link{width:32px;height:32px}.bookmark-preview{max-height:330px;margin:14px 0}.empty{min-height:0}.drawer-scrim{position:absolute;z-index:4;inset:0;background:#05080b99;opacity:0;pointer-events:none;transition:opacity .2s;border:0}.workspace.detail-open .drawer-scrim{opacity:1;pointer-events:auto}
+@media(max-width:1100px){.toolbar{grid-template-columns:minmax(0,1fr) repeat(3,minmax(130px,1fr)) 76px repeat(3,36px);grid-template-areas:"search search search search view refresh control detail" "outcome phase scope . . . . ."}.detail-panel{width:min(680px,92vw)}}
+@media(max-width:700px){.shell{padding:8px 10px}.live{display:none}.toolbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 76px repeat(3,36px);grid-template-areas:"search search view refresh control detail" "outcome outcome phase phase phase phase" "scope scope scope scope scope scope"}.attempt-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}.action-bar,.sorter-panel{flex-wrap:wrap}.action-bar .control{min-width:0;flex:1}.attempt-table{min-width:760px}.detail-panel{width:100%}}
+@media(max-height:520px){html,body{overflow:auto}.shell{height:auto;min-height:520px}.workspace{min-height:260px}}
 </style></head><body><main class="shell">
 <header class="top"><h1 class="brand">Raindrop Sorter</h1><div class="live"><i class="dot"></i><span id="updated">Connecting…</span></div></header>
-<form class="toolbar" id="filters"><input class="control" id="search" placeholder="Search bookmarks, destinations, summaries"><select class="control" id="outcome" aria-label="Filter by outcome"><option value="">All outcomes</option></select><select class="control" id="phase"><option value="">All lifecycle phases</option></select><select class="control" id="scope" aria-label="Dashboard view"><option value="latest">Latest status</option><option value="history">Attempt history</option></select><button class="icon-button" type="submit" aria-label="Refresh dashboard" title="Refresh dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a7.5 7.5 0 1 0 .2 5"/></svg></button><button class="icon-button detail-toggle" id="detail-toggle" type="button" aria-label="Show attempt details" title="Show attempt details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button></form>
+<form class="toolbar" id="filters"><input class="control" id="search" placeholder="Search bookmarks, destinations, summaries"><select class="control" id="outcome" aria-label="Filter by outcome"><option value="">All outcomes</option></select><select class="control" id="phase"><option value="">All lifecycle phases</option></select><select class="control" id="scope" aria-label="Dashboard view"><option value="latest">Latest status</option><option value="history">Attempt history</option></select><div class="view-switch" role="group" aria-label="Results layout"><button class="icon-button active" id="card-view" type="button" aria-label="Image card layout" title="Image card layout"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button><button class="icon-button" id="table-view" type="button" aria-label="Table layout" title="Table layout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v16"/></svg></button></div><button class="icon-button" type="submit" aria-label="Refresh dashboard" title="Refresh dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a7.5 7.5 0 1 0 .2 5"/></svg></button><button class="icon-button" id="sorter-toggle" type="button" aria-label="Show sorter controls" title="Show sorter controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg></button><button class="icon-button detail-toggle" id="detail-toggle" type="button" aria-label="Show attempt details" title="Show attempt details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button></form>
+<section class="action-bar" id="batch-bar" hidden><strong id="selection-count">0 selected</strong><select class="control" id="batch-destination" aria-label="Batch destination"><option value="">Choose Art destination…</option></select><button class="icon-button" id="batch-assign" type="button" aria-label="Assign selected Raindrops" title="Assign selected Raindrops" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><path d="M5 5v14"/></svg></button><button class="icon-button" id="selection-clear" type="button" aria-label="Clear selection" title="Clear selection"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><span class="action-message" id="batch-message"></span></section>
+<section class="sorter-panel" id="sorter-panel" hidden><div class="sorter-status"><strong id="sorter-state">Loading…</strong><div class="explain" id="sorter-summary">Reading local sorter status</div></div><button class="icon-button" id="process-all" type="button" aria-label="Process all Unsorted Raindrops" title="Process all Unsorted Raindrops"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/><path d="m15 15 3 3 4-5"/></svg></button><button class="icon-button" id="sorter-start" type="button" aria-label="Start automatic sorter" title="Start automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg></button><button class="icon-button" id="sorter-pause" type="button" aria-label="Pause automatic sorter" title="Pause automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg></button></section>
 <section class="workspace" id="workspace"><div class="panel attempt-panel"><div class="panel-head"><span id="list-title">Latest Raindrop status</span><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
 </main><script>
 const select = selector => document.querySelector(selector);
@@ -65,6 +82,16 @@ const attemptTraceCache = new Map();
 const previewUrlCache = new Map();
 let previewCacheGeneration = 0;
 let artCollectionsPromise = null;
+let resultLayout = localStorage.getItem('sorter-result-layout') === 'table' ? 'table' : 'cards';
+let renderedAttempts = [];
+const selectedAttempts = new Set();
+const previewObserver = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
+  entries.filter(entry => entry.isIntersecting).forEach(entry => {
+    const image = entry.target;
+    previewObserver.unobserve(image);
+    image.src = image.dataset.src;
+  });
+}, {rootMargin:'240px'}) : null;
 const shortDateTime = new Intl.DateTimeFormat('en-US', {
   year:'2-digit', month:'2-digit', day:'2-digit',
   hour:'numeric', minute:'2-digit', hour12:true,
@@ -75,6 +102,35 @@ const formatTime = timestamp => timestamp
 const formatDuration = milliseconds => milliseconds == null
   ? 'running'
   : milliseconds < 1000 ? `${Math.round(milliseconds)} ms` : `${(milliseconds / 1000).toFixed(1)} s`;
+const raindropItemUrl = bookmarkId => `https://app.raindrop.io/my/0/item/${encodeURIComponent(bookmarkId)}`;
+function svgIcon(markup) {
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', '0 0 24 24');
+  svg.setAttribute('aria-hidden', 'true');
+  svg.innerHTML = markup;
+  return svg;
+}
+function raindropLink(bookmarkId, label = 'Open in Raindrop.io') {
+  const link = element('a', 'icon-link');
+  link.href = raindropItemUrl(bookmarkId);
+  link.target = '_blank';
+  link.rel = 'noreferrer';
+  link.setAttribute('aria-label', label);
+  link.title = label;
+  link.append(svgIcon('<path d="M14 4h6v6"/><path d="m20 4-9 9"/><path d="M18 13v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h6"/>'));
+  link.onclick = event => event.stopPropagation();
+  return link;
+}
+function previewImage(bookmarkId, title, className) {
+  const image = element('img', className);
+  image.alt = title ? `Preview of ${title}` : `Preview of Raindrop ${bookmarkId}`;
+  image.loading = 'lazy';
+  image.dataset.src = `/api/bookmarks/${encodeURIComponent(bookmarkId)}/preview`;
+  image.onerror = () => image.parentElement?.classList.add('missing');
+  if (previewObserver) previewObserver.observe(image);
+  else image.src = image.dataset.src;
+  return image;
+}
 async function fetchJson(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error((await response.json()).error || response.statusText);
@@ -150,6 +206,9 @@ function clearCaches() {
   });
   previewUrlCache.clear();
   artCollectionsPromise = null;
+  const batchDestination = select('#batch-destination');
+  batchDestination.dataset.loaded = 'false';
+  batchDestination.replaceChildren(new Option('Choose Art destination…', ''));
 }
 function invalidateDetailSelection() {
   detailSelectionRevision += 1;
@@ -166,12 +225,12 @@ function setDetailOpen(open) {
   toggle.setAttribute('aria-label', open ? 'Hide attempt details' : 'Show attempt details');
   toggle.title = open ? 'Hide attempt details' : 'Show attempt details';
   if (!open && panel.contains(document.activeElement)) {
-    [...document.querySelectorAll('.attempt')]
+    [...document.querySelectorAll('[data-attempt-id]')]
       .find(button => button.dataset.attemptId === selectedAttemptId)?.focus();
   }
 }
 function markSelectedAttempt() {
-  document.querySelectorAll('.attempt').forEach(button => {
+  document.querySelectorAll('[data-attempt-id]').forEach(button => {
     button.classList.toggle('active', button.dataset.attemptId === selectedAttemptId);
   });
 }
@@ -202,6 +261,132 @@ async function renderOverview() {
   phaseSelect.value = selectedPhase;
   select('#updated').textContent = overviewData.latest_at ? `Latest ${formatTime(overviewData.latest_at)}` : 'No sorter runs yet';
 }
+function isAssignable(attempt) {
+  const retrying = attempt.mode === 'manual-review' && !attempt.outcome
+    && ['failed', 'manual_destination_selected'].includes(attempt.current_phase);
+  return select('#scope').value === 'latest'
+    && (['review', 'provisional', 'conflict'].includes(attempt.outcome) || retrying);
+}
+function openAttempt(attemptId) {
+  invalidateDetailSelection();
+  renderDetail(attemptId);
+}
+function selectionCheckbox(attempt) {
+  const checkbox = element('input', 'attempt-select');
+  checkbox.type = 'checkbox';
+  checkbox.checked = selectedAttempts.has(attempt.attempt_id);
+  checkbox.setAttribute('aria-label', `Select ${attempt.title || 'Raindrop ' + attempt.bookmark_id}`);
+  checkbox.onclick = event => event.stopPropagation();
+  checkbox.onchange = () => {
+    if (checkbox.checked) selectedAttempts.add(attempt.attempt_id);
+    else selectedAttempts.delete(attempt.attempt_id);
+    if (checkbox.checked) void loadBatchDestinations();
+    syncSelectionUi();
+  };
+  return checkbox;
+}
+function activateAttempt(container, attempt) {
+  container.dataset.attemptId = attempt.attempt_id;
+  container.tabIndex = 0;
+  container.onclick = () => openAttempt(attempt.attempt_id);
+  container.onkeydown = event => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openAttempt(attempt.attempt_id);
+    }
+  };
+}
+function renderCard(attempt) {
+  const card = element('article', 'attempt' + (attempt.attempt_id === selectedAttemptId ? ' active' : ''));
+  activateAttempt(card, attempt);
+  const cover = element('div', 'attempt-cover-wrap card-cover-wrap');
+  cover.append(previewImage(attempt.bookmark_id, attempt.title, 'attempt-cover'));
+  if (isAssignable(attempt)) card.append(selectionCheckbox(attempt));
+  const body = element('div', 'attempt-body');
+  const header = element('div', 'attempt-head');
+  const tools = element('div', 'attempt-tools');
+  tools.append(outcomeBadge(attempt.current_phase === 'failed' ? 'failed' : attempt.outcome), raindropLink(attempt.bookmark_id));
+  header.append(element('div', 'attempt-title', attempt.title), tools);
+  const meta = element('div', 'meta attempt-meta', `#${attempt.bookmark_id} · ${attempt.mode} · ${formatDuration(attempt.duration_ms)}`);
+  const footer = element('div', 'attempt-footer');
+  if (attempt.destination) footer.append(element('div', 'destination attempt-destination', '→ ' + attempt.destination));
+  const startedAt = element('time', 'attempt-time', formatTime(attempt.started_at));
+  if (attempt.started_at) startedAt.dateTime = attempt.started_at;
+  footer.append(startedAt);
+  body.append(header, meta, footer);
+  card.append(cover, body);
+  return card;
+}
+function renderTable(attempts) {
+  const wrap = element('div', 'attempt-table-wrap');
+  const table = element('table', 'attempt-table');
+  const head = document.createElement('thead');
+  const headRow = document.createElement('tr');
+  const eligible = attempts.filter(isAssignable);
+  const selectAll = element('input');
+  selectAll.type = 'checkbox'; selectAll.setAttribute('aria-label', 'Select all assignable Raindrops');
+  selectAll.checked = eligible.length > 0 && eligible.every(item => selectedAttempts.has(item.attempt_id));
+  selectAll.onchange = () => {
+    eligible.forEach(item => selectAll.checked ? selectedAttempts.add(item.attempt_id) : selectedAttempts.delete(item.attempt_id));
+    renderAttemptResults(); syncSelectionUi();
+  };
+  const headings = [['col-check', selectAll], ['col-cover', 'Image'], ['', 'Title'], ['col-outcome', 'Outcome'], ['', 'Destination'], ['col-run', 'Run'], ['col-time', 'Time'], ['col-open', '']];
+  headings.forEach(([className, content]) => {
+    const cell = element('th', className);
+    cell.scope = 'col';
+    if (typeof content === 'string') cell.textContent = content; else cell.append(content);
+    headRow.append(cell);
+  });
+  head.append(headRow); table.append(head);
+  const body = document.createElement('tbody');
+  attempts.forEach(attempt => {
+    const row = element('tr', attempt.attempt_id === selectedAttemptId ? 'active' : '');
+    activateAttempt(row, attempt);
+    const checkCell = element('td');
+    if (isAssignable(attempt)) checkCell.append(selectionCheckbox(attempt));
+    const coverCell = element('td');
+    const coverWrap = element('div', 'attempt-cover-wrap table-cover-wrap');
+    coverWrap.append(previewImage(attempt.bookmark_id, attempt.title, 'table-cover'));
+    coverCell.append(coverWrap);
+    const titleCell = element('td');
+    titleCell.append(element('div', 'table-title', attempt.title), element('div', 'meta', `#${attempt.bookmark_id}`));
+    const outcomeCell = element('td'); outcomeCell.append(outcomeBadge(attempt.current_phase === 'failed' ? 'failed' : attempt.outcome));
+    const destinationCell = element('td', 'table-destination', attempt.destination ? '→ ' + attempt.destination : '—');
+    const runCell = element('td', 'meta', `${attempt.mode} · ${formatDuration(attempt.duration_ms)}`);
+    const timeCell = element('td', 'meta', formatTime(attempt.started_at));
+    const openCell = element('td'); openCell.append(raindropLink(attempt.bookmark_id));
+    row.append(checkCell, coverCell, titleCell, outcomeCell, destinationCell, runCell, timeCell, openCell);
+    body.append(row);
+  });
+  table.append(body); wrap.append(table); return wrap;
+}
+function renderAttemptResults() {
+  const attemptList = select('#attempts');
+  attemptList.replaceChildren();
+  attemptList.className = resultLayout === 'cards' ? 'attempt-grid' : 'attempt-table-wrap';
+  if (!renderedAttempts.length) {
+    attemptList.append(element('div', 'empty', 'No attempts match these filters.'));
+  } else if (resultLayout === 'cards') {
+    renderedAttempts.forEach(attempt => attemptList.append(renderCard(attempt)));
+  } else {
+    attemptList.append(renderTable(renderedAttempts));
+  }
+  select('#card-view').classList.toggle('active', resultLayout === 'cards');
+  select('#table-view').classList.toggle('active', resultLayout === 'table');
+}
+function syncSelectionUi() {
+  const visibleIds = new Set(renderedAttempts.map(item => item.attempt_id));
+  [...selectedAttempts].filter(id => !visibleIds.has(id)).forEach(id => selectedAttempts.delete(id));
+  const count = selectedAttempts.size;
+  select('#batch-bar').hidden = count === 0;
+  if (count) void loadBatchDestinations();
+  select('#selection-count').textContent = `${count} selected`;
+  select('#batch-assign').disabled = !count || !select('#batch-destination').value;
+  document.querySelectorAll('.attempt-select').forEach(checkbox => {
+    const item = checkbox.closest('[data-attempt-id]');
+    if (item) checkbox.checked = selectedAttempts.has(item.dataset.attemptId);
+  });
+}
 async function renderAttempts() {
   const params = new URLSearchParams({limit:'500'});
   const latestOnly = select('#scope').value === 'latest';
@@ -211,33 +396,12 @@ async function renderAttempts() {
   if (select('#phase').value) params.set('phase', select('#phase').value);
   const result = await fetchJson('/api/attempts?' + params);
   if (selectedAttemptId && !result.items.some(attempt => attempt.attempt_id === selectedAttemptId)) clearDetail();
-  const attemptList = select('#attempts');
-  attemptList.replaceChildren();
+  renderedAttempts = result.items;
+  [...selectedAttempts].filter(id => !result.items.some(attempt => attempt.attempt_id === id)).forEach(id => selectedAttempts.delete(id));
   select('#list-title').textContent = latestOnly ? 'Latest Raindrop status' : 'Attempt history';
   select('#count').textContent = `${result.count} shown`;
-  if (!result.items.length) {
-    attemptList.append(element('div', 'empty', 'No attempts match these filters.'));
-    return;
-  }
-  result.items.forEach(attempt => {
-    const button = element('button', 'attempt' + (attempt.attempt_id === selectedAttemptId ? ' active' : ''));
-    button.type = 'button';
-    button.dataset.attemptId = attempt.attempt_id;
-    const header = element('div', 'attempt-head');
-    header.append(element('div', 'attempt-title', attempt.title), outcomeBadge(attempt.current_phase === 'failed' ? 'failed' : attempt.outcome));
-    const meta = element('div', 'meta attempt-meta', `#${attempt.bookmark_id} · ${attempt.mode} · ${formatDuration(attempt.duration_ms)}`);
-    const footer = element('div', 'attempt-footer');
-    if (attempt.destination) footer.append(element('div', 'destination attempt-destination', '→ ' + attempt.destination));
-    const startedAt = element('time', 'attempt-time', formatTime(attempt.started_at));
-    if (attempt.started_at) startedAt.dateTime = attempt.started_at;
-    footer.append(startedAt);
-    button.append(header, meta, footer);
-    button.onclick = () => {
-      invalidateDetailSelection();
-      renderDetail(attempt.attempt_id);
-    };
-    attemptList.append(button);
-  });
+  renderAttemptResults();
+  syncSelectionUi();
 }
 function clearDetail() {
   selectedAttemptId = null;
@@ -384,11 +548,16 @@ async function renderDetail(attemptId) {
     detailPanel.replaceChildren();
     detailPanel.append(outcomeBadge(attempt.current_phase === 'failed' ? 'failed' : attempt.outcome), element('h2', 'detail-title', snapshot.title || `Bookmark ${attempt.bookmark_id}`));
     detailPanel.append(element('div', 'meta', `#${attempt.bookmark_id} · ${attempt.mode} · ${attempt.current_phase} · ${formatTime(attempt.started_at)}`));
+    const links = element('div', 'detail-links');
+    links.append(raindropLink(attempt.bookmark_id));
     if (snapshot.link) {
-      const originalLink = element('a', 'external', 'Open original ↗');
+      const originalLink = element('a', 'icon-link');
       originalLink.href = snapshot.link; originalLink.target = '_blank'; originalLink.rel = 'noreferrer';
-      detailPanel.append(originalLink);
+      originalLink.setAttribute('aria-label', 'Open original bookmark'); originalLink.title = 'Open original bookmark';
+      originalLink.append(svgIcon('<path d="M5 12h14M13 6l6 6-6 6"/>'));
+      links.append(originalLink);
     }
+    detailPanel.append(links);
     const preview = element('img', 'bookmark-preview');
     preview.alt = snapshot.title ? `Preview of ${snapshot.title}` : `Preview of bookmark ${attempt.bookmark_id}`;
     preview.loading = 'lazy';
@@ -441,6 +610,67 @@ async function refreshDashboard() {
   try { await renderOverview(); await renderAttempts(); }
   catch (error) { select('#attempts').replaceChildren(element('div', 'error', error.message)); }
 }
+async function loadBatchDestinations() {
+  const destination = select('#batch-destination');
+  if (destination.dataset.loaded === 'true') return;
+  try {
+    const collections = await artCollections();
+    const selected = destination.value;
+    destination.replaceChildren(new Option('Choose Art destination…', ''));
+    collections.forEach(item => destination.append(new Option(item.path, item.collection_id)));
+    destination.value = selected;
+    destination.dataset.loaded = 'true';
+  } catch (error) {
+    select('#batch-message').textContent = error.message;
+  }
+}
+async function assignSelected() {
+  const collectionId = Number(select('#batch-destination').value);
+  if (!collectionId || !selectedAttempts.size) return;
+  const button = select('#batch-assign');
+  button.disabled = true;
+  select('#batch-message').textContent = 'Assigning…';
+  try {
+    const result = await postJson('/api/attempts/resolve-batch', {
+      attempt_ids:[...selectedAttempts], collection_id:collectionId,
+    });
+    selectedAttempts.clear();
+    result.errors.forEach(item => selectedAttempts.add(item.retry_attempt_id || item.attempt_id));
+    clearCaches();
+    select('#batch-message').textContent = result.failed
+      ? `${result.resolved} assigned · ${result.failed} failed`
+      : `${result.resolved} assigned`;
+    await refreshDashboard();
+  } catch (error) {
+    select('#batch-message').textContent = error.message;
+  } finally {
+    syncSelectionUi();
+  }
+}
+function renderSorterStatus(status) {
+  const state = status.state || 'unknown';
+  select('#sorter-state').textContent = state;
+  const summary = status.available
+    ? `${status.processed || 0} processed this session${status.last_count == null ? '' : ` · last batch ${status.last_count}`}${status.last_error ? ` · ${status.last_error}` : ''}`
+    : (status.error || 'Sorter controls unavailable');
+  select('#sorter-summary').textContent = summary;
+  select('#process-all').disabled = !status.available || status.processing_all || state === 'running';
+  select('#sorter-start').disabled = !status.available || status.automatic;
+  select('#sorter-pause').disabled = !status.available || !status.automatic;
+  select('#sorter-start').classList.toggle('active', Boolean(status.automatic));
+}
+async function refreshSorterStatus() {
+  try { renderSorterStatus(await fetchJson('/api/sorter/status')); }
+  catch (error) { renderSorterStatus({available:false, state:'error', error:error.message}); }
+}
+async function sorterAction(action) {
+  try {
+    renderSorterStatus(await postJson(`/api/sorter/${action}`, {}));
+    setTimeout(refreshSorterStatus, 300);
+  } catch (error) {
+    select('#sorter-summary').textContent = error.message;
+  }
+}
 select('#filters').onsubmit = event => {
   event.preventDefault();
   invalidateDetailSelection();
@@ -457,9 +687,33 @@ select('#outcome').onchange = () => { invalidateDetailSelection(); renderAttempt
 select('#phase').onchange = () => { invalidateDetailSelection(); renderAttempts(); };
 select('#scope').onchange = () => {
   invalidateDetailSelection();
+  selectedAttempts.clear();
   clearDetail();
   refreshDashboard();
 };
+select('#card-view').onclick = () => {
+  resultLayout = 'cards'; localStorage.setItem('sorter-result-layout', resultLayout); renderAttemptResults(); syncSelectionUi();
+};
+select('#table-view').onclick = () => {
+  resultLayout = 'table'; localStorage.setItem('sorter-result-layout', resultLayout); renderAttemptResults(); syncSelectionUi();
+};
+select('#batch-destination').onchange = syncSelectionUi;
+select('#batch-assign').onclick = assignSelected;
+select('#selection-clear').onclick = () => { selectedAttempts.clear(); renderAttemptResults(); syncSelectionUi(); };
+select('#sorter-toggle').onclick = () => {
+  const panel = select('#sorter-panel');
+  panel.hidden = !panel.hidden;
+  select('#sorter-toggle').classList.toggle('active', !panel.hidden);
+  select('#sorter-toggle').setAttribute('aria-label', panel.hidden ? 'Show sorter controls' : 'Hide sorter controls');
+  if (!panel.hidden) refreshSorterStatus();
+};
+select('#process-all').onclick = () => {
+  if (confirm('Process every actionable Raindrop in Unsorted now? This applies tags and may move items.')) sorterAction('process-all');
+};
+select('#sorter-start').onclick = () => {
+  if (confirm('Start the automatic sorter? It applies tags and may move current and future Unsorted items.')) sorterAction('start');
+};
+select('#sorter-pause').onclick = () => sorterAction('pause');
 select('#detail-toggle').onclick = () => {
   const opening = !select('#workspace').classList.contains('detail-open');
   if (!opening) invalidateDetailSelection();
@@ -474,5 +728,7 @@ document.addEventListener('keydown', event => {
   }
 });
 refreshDashboard();
-setInterval(refreshDashboard, 15000);
+refreshSorterStatus();
+void loadBatchDestinations();
+setInterval(() => { refreshDashboard(); refreshSorterStatus(); }, 15000);
 </script></body></html>"""

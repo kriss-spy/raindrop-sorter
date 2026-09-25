@@ -1,10 +1,16 @@
 import json
+import threading
 
 import numpy as np
 import pytest
 
 from src.centroids import save_centroids
-from src.local_runner import backfill_unreviewed, find_local_work, run_local_bookmark
+from src.local_runner import (
+    LocalBatchProcessor,
+    backfill_unreviewed,
+    find_local_work,
+    run_local_bookmark,
+)
 from src.run_journal import SQLiteRunJournal
 from src.tag_rules import save_series_rules, save_tag_rules
 from src.visual_exemplars import (
@@ -152,6 +158,65 @@ def test_local_runner_writes_only_when_apply_is_explicit(tmp_path):
     assert result["applied"] is True
     assert client.updates[0][0:2] == (123, 42)
     assert any(tag.startswith("sorter-needs-review:") for tag in client.updates[0][2])
+
+
+def test_coordinated_apply_skips_bookmark_moved_out_of_unsorted(tmp_path):
+    _write_state(tmp_path)
+    journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
+    client = FakeRaindropClient(
+        {
+            "_id": 123,
+            "title": "art",
+            "type": "image",
+            "domain": "example.test",
+            "cover": "https://example.test/cover.jpg",
+            "collection": {"$id": 42},
+            "tags": ["sorter-unreviewed"],
+        }
+    )
+
+    result = run_local_bookmark(
+        client,
+        bookmark_id=123,
+        db_path=str(tmp_path),
+        analyze_vision=lambda _bookmark: ["ai:wdtag-hatsune_miku"],
+        apply=True,
+        journal=journal,
+        mutation_lock=threading.RLock(),
+    )
+
+    assert result["status"] == "skipped"
+    assert result["action"] == "skip"
+    assert client.updates == []
+    assert journal.explain(123)["attempt"]["current_phase"] == "skipped_stale"
+
+
+def test_batch_processor_reports_partial_failures_without_losing_successes(
+    tmp_path, monkeypatch
+):
+    _write_state(tmp_path)
+    processor = LocalBatchProcessor(
+        FakeQueueClient(),
+        db_path=str(tmp_path),
+        model_dir=str(tmp_path / "model"),
+        journal=SQLiteRunJournal(tmp_path / "run-journal.sqlite"),
+    )
+
+    def run_one(bookmark_id):
+        if bookmark_id == 2:
+            raise RuntimeError("boom")
+        return {"bookmark_id": bookmark_id}
+
+    monkeypatch.setattr(processor, "run_one", run_one)
+    result = processor(3)
+
+    assert result["count"] == 3
+    assert result["succeeded"] == 2
+    assert result["failed"] == 1
+    assert [item["bookmark_id"] for item in result["results"]] == [1, 3]
+    assert result["errors"] == [
+        {"bookmark_id": 2, "type": "RuntimeError", "message": "boom"}
+    ]
 
 
 def test_local_runner_journals_a_structured_dry_run(tmp_path):

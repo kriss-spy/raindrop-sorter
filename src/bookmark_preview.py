@@ -65,7 +65,9 @@ class BookmarkPreviewService:
         with self._client_lock:
             bookmark = self._client.get_raindrop(bookmark_id)
             cover_url = resolve_cover_url(bookmark)
-            image = download_cover(cover_url) if cover_url else None
+        # Download outside the API-client lock so visible card covers can load
+        # concurrently without sharing the requests session.
+        image = download_cover(cover_url) if cover_url else None
         if not image:
             return None
         return image, _image_content_type(image)
