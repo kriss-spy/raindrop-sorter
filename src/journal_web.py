@@ -275,6 +275,7 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             return
         actions = {
             "/api/sorter/process-all": controller.process_all,
+            "/api/sorter/stop": controller.stop_processing_all,
             "/api/sorter/start": controller.start_automatic,
             "/api/sorter/pause": controller.pause_automatic,
         }
@@ -421,6 +422,7 @@ def main(argv: list[str] | None = None) -> None:
             sorter_client = RaindropClient(token=token)
             processor_lock = threading.Lock()
             processor: LocalBatchProcessor | None = None
+            controller: LocalSorterController | None = None
 
             def process_batch(limit: int) -> dict[str, Any]:
                 nonlocal processor
@@ -434,7 +436,10 @@ def main(argv: list[str] | None = None) -> None:
                             apply=True,
                             mutation_lock=mutation_lock,
                         )
-                    return processor(limit)
+                    return processor(
+                        limit,
+                        should_stop=(controller.stop_requested if controller else None),
+                    )
 
             controller = LocalSorterController(
                 process_batch,

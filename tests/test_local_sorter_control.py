@@ -1,6 +1,8 @@
 import threading
 import time
 
+import pytest
+
 from src.local_sorter_control import LocalSorterController
 
 
@@ -30,6 +32,62 @@ def test_process_all_runs_batches_until_unsorted_is_empty():
         assert status["processed"] == 3
         assert status["automatic"] is False
     finally:
+        controller.close()
+
+
+def test_process_all_can_be_stopped_after_the_inflight_batch():
+    started = threading.Event()
+    release = threading.Event()
+    calls = []
+
+    def process_batch(limit):
+        calls.append(limit)
+        started.set()
+        release.wait(timeout=1)
+        return {"count": limit}
+
+    controller = LocalSorterController(process_batch, batch_size=25)
+    try:
+        controller.process_all()
+        assert started.wait(timeout=1)
+        status = controller.stop_processing_all()
+        assert status["state"] == "stopping"
+        assert status["processing_all"] is False
+        release.set()
+        _wait_for(lambda: controller.status()["state"] == "idle")
+        assert calls == [25]
+    finally:
+        release.set()
+        controller.close()
+
+
+def test_process_all_and_automatic_modes_cannot_be_mixed():
+    started = threading.Event()
+    release = threading.Event()
+    block_next = [False]
+
+    def process_batch(_limit):
+        if block_next[0]:
+            started.set()
+            release.wait(timeout=1)
+        return {"count": 0}
+
+    controller = LocalSorterController(process_batch, poll_seconds=60)
+    try:
+        controller.start_automatic()
+        _wait_for(lambda: controller.status()["state"] == "watching")
+        with pytest.raises(RuntimeError, match="automatic sorter is running"):
+            controller.process_all()
+        controller.pause_automatic()
+        _wait_for(lambda: controller.status()["state"] == "paused")
+
+        block_next[0] = True
+        controller.process_all()
+        assert started.wait(timeout=1)
+        with pytest.raises(RuntimeError, match="already processing"):
+            controller.start_automatic()
+    finally:
+        release.set()
         controller.close()
 
 

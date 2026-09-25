@@ -239,10 +239,11 @@ The sliders icon opens local sorter controls. **Process all** drains bounded bat
 until no actionable Unsorted items remain. **Start automatic sorter** keeps the same
 warm local model alive, drains full batches without waiting between them, and checks
 for new Unsorted items every 15 seconds after the backlog is clear. **Pause** disables
-automatic polling after any in-flight automatic batch;
-a separately requested **Process all** drain continues to completion. These controls
-run with `--apply`: they can update tags and move Raindrops. They are available
-only on the loopback dashboard when `RAINDROP_TOKEN` is configured.
+automatic polling after the current Raindrop. While a **Process all** drain is active,
+the square stop button cancels the remaining queue after the current Raindrop finishes;
+it does not interrupt a Raindrop update halfway through. These controls run with
+`--apply`: they can update tags and move Raindrops. They are available only on the
+loopback dashboard when `RAINDROP_TOKEN` is configured.
 
 For an always-on local session, opt in to applied automatic sorting at startup:
 

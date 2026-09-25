@@ -237,6 +237,33 @@ def test_batch_processor_reports_partial_failures_without_losing_successes(
     ]
 
 
+def test_batch_processor_stops_before_the_next_bookmark_when_cancelled(
+    tmp_path, monkeypatch
+):
+    class QueueClient(FakeQueueClient):
+        def get_raindrops(self, collection_id, perpage, search):
+            if search.startswith('#"sorter-pending-vision:'):
+                return ([{"_id": 1}, {"_id": 2}], False)
+            return ([], False)
+
+    _write_state(tmp_path)
+    monkeypatch.setattr("src.local_runner.WD14Tagger", lambda **_kwargs: object())
+    processor = LocalBatchProcessor(
+        QueueClient(),
+        db_path=str(tmp_path),
+        model_dir=str(tmp_path / "model"),
+        journal=SQLiteRunJournal(tmp_path / "run-journal.sqlite"),
+    )
+    calls = []
+    processor.run_one = lambda bookmark_id: calls.append(bookmark_id) or {"status": "ok"}
+
+    result = processor(25, should_stop=lambda: bool(calls))
+
+    assert calls == [1]
+    assert result["count"] == 1
+    assert result["selected_count"] == 2
+
+
 def test_local_runner_journals_a_structured_dry_run(tmp_path):
     _write_state(tmp_path)
     journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")

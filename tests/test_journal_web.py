@@ -79,6 +79,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert 'aria-label="Table layout"' in page
     assert 'aria-label="Assign selected Raindrops"' in page
     assert 'aria-label="Process all Unsorted Raindrops"' in page
+    assert 'aria-label="Stop processing Unsorted Raindrops"' in page
     assert "https://app.raindrop.io/my/0/item/" in page
     assert "/api/attempts/resolve-batch" in page
     assert "/api/sorter/${action}" in page
@@ -422,6 +423,10 @@ def test_dashboard_exposes_sorter_controls(tmp_path):
             self.calls.append("start")
             return {"available": True, "state": "running", "automatic": True}
 
+        def stop_processing_all(self):
+            self.calls.append("stop")
+            return {"available": True, "state": "stopping", "automatic": False}
+
         def pause_automatic(self):
             self.calls.append("pause")
             return {"available": True, "state": "paused", "automatic": False}
@@ -442,9 +447,10 @@ def test_dashboard_exposes_sorter_controls(tmp_path):
         assert _json(f"{base_url}/api/ready")["status"] == "ready"
         assert _json(f"{base_url}/api/sorter/status")["state"] == "paused"
         assert _post_json(f"{base_url}/api/sorter/process-all", {})["state"] == "running"
+        assert _post_json(f"{base_url}/api/sorter/stop", {})["state"] == "stopping"
         assert _post_json(f"{base_url}/api/sorter/start", {})["automatic"] is True
         assert _post_json(f"{base_url}/api/sorter/pause", {})["state"] == "paused"
-        assert controller.calls == ["process-all", "start", "pause"]
+        assert controller.calls == ["process-all", "stop", "start", "pause"]
     finally:
         server.shutdown()
         server.server_close()

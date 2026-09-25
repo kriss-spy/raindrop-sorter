@@ -33,6 +33,7 @@ class LocalSorterController:
         self._paused = False
         self._drain_unsorted = False
         self._closed = False
+        self._stop_requested = False
         self._processing = False
         self._state = "idle"
         self._processed = 0
@@ -52,9 +53,12 @@ class LocalSorterController:
 
     def process_all(self) -> dict[str, Any]:
         with self._condition:
+            if self._automatic:
+                raise RuntimeError("the automatic sorter is running; pause it first")
             if self._processing or self._drain_unsorted:
                 raise RuntimeError("the sorter is already processing")
             self._drain_unsorted = True
+            self._stop_requested = False
             self._last_error = None
             self._state = "running"
             self._touch_locked()
@@ -63,8 +67,11 @@ class LocalSorterController:
 
     def start_automatic(self) -> dict[str, Any]:
         with self._condition:
+            if self._processing or self._drain_unsorted:
+                raise RuntimeError("the sorter is already processing")
             self._automatic = True
             self._paused = False
+            self._stop_requested = False
             self._last_error = None
             self._state = "running"
             self._touch_locked()
@@ -75,11 +82,29 @@ class LocalSorterController:
         with self._condition:
             self._automatic = False
             self._paused = True
+            self._stop_requested = True
             if not self._processing and not self._drain_unsorted:
                 self._state = "paused"
             self._touch_locked()
             self._condition.notify_all()
             return self._status_locked()
+
+    def stop_processing_all(self) -> dict[str, Any]:
+        """Stop a one-shot drain at the next cooperative batch boundary."""
+        with self._condition:
+            if not self._drain_unsorted:
+                raise RuntimeError("process all is not running")
+            self._drain_unsorted = False
+            self._stop_requested = True
+            self._state = "stopping" if self._processing else "idle"
+            self._touch_locked()
+            self._condition.notify_all()
+            return self._status_locked()
+
+    def stop_requested(self) -> bool:
+        """Return whether an in-flight cooperative batch should stop early."""
+        with self._condition:
+            return self._stop_requested or self._closed
 
     def close(self) -> None:
         with self._condition:
@@ -88,6 +113,7 @@ class LocalSorterController:
             self._closed = True
             self._automatic = False
             self._drain_unsorted = False
+            self._stop_requested = True
             self._state = "stopping"
             self._condition.notify_all()
         self._thread.join()
@@ -146,6 +172,7 @@ class LocalSorterController:
                     self._touch_locked()
                     continue
                 if not self._automatic:
+                    self._stop_requested = False
                     self._state = "paused" if self._paused else "idle"
                     self._touch_locked()
                     continue

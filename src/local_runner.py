@@ -261,11 +261,18 @@ class LocalBatchProcessor:
             mutation_lock=self.mutation_lock,
         )
 
-    def __call__(self, limit: int) -> dict[str, Any]:
+    def __call__(
+        self,
+        limit: int,
+        *,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> dict[str, Any]:
         work = find_local_work(self.client, limit=limit)
         results = []
         errors = []
         for item in work:
+            if should_stop is not None and should_stop():
+                break
             try:
                 results.append(self.run_one(int(item["_id"])))
             except Exception as error:
@@ -277,7 +284,8 @@ class LocalBatchProcessor:
         return {
             "status": "ok",
             "mode": "batch",
-            "count": len(work),
+            "count": len(results) + len(errors),
+            "selected_count": len(work),
             "succeeded": len(results),
             "failed": len(errors),
             "applied": self.apply,
