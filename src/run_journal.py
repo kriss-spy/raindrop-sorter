@@ -17,6 +17,15 @@ from src.routing import RouteDecision, TextEvidence, VisualEvidence
 
 
 SCHEMA_VERSION = 1
+_LATEST_ATTEMPTS_CTE = """
+    WITH latest_attempts AS (
+        SELECT *, ROW_NUMBER() OVER (
+            PARTITION BY bookmark_id
+            ORDER BY started_at DESC, attempt_id DESC
+        ) AS bookmark_rank
+        FROM attempts
+    )
+"""
 
 
 def _utc_now() -> str:
@@ -332,6 +341,7 @@ class SQLiteRunJournal:
         outcome: str | None = None,
         phase: str | None = None,
         query: str | None = None,
+        latest_per_bookmark: bool = False,
     ) -> list[dict[str, Any]]:
         if limit < 1:
             raise ValueError("limit must be at least 1")
@@ -344,12 +354,18 @@ class SQLiteRunJournal:
             if phase:
                 clauses.append("current_phase = ?")
                 parameters.append(phase)
+            source = "attempts"
+            if latest_per_bookmark:
+                source = "latest_attempts"
+                clauses.insert(0, "bookmark_rank = 1")
             where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+            latest_cte = _LATEST_ATTEMPTS_CTE if latest_per_bookmark else ""
             rows = connection.execute(
                 f"""
+                {latest_cte}
                 SELECT attempt_id, bookmark_id, started_at, ended_at, current_phase,
                        outcome, destination, mode, bookmark_snapshot_json, decision_json
-                FROM attempts {where} ORDER BY started_at DESC
+                FROM {source} {where} ORDER BY started_at DESC, attempt_id DESC
                 """,
                 parameters,
             ).fetchall()
@@ -380,28 +396,43 @@ class SQLiteRunJournal:
     def overview(self) -> dict[str, Any]:
         """Return compact aggregate data for operator dashboards."""
         with self._connect() as connection:
-            total, latest_at = connection.execute(
-                "SELECT COUNT(*), MAX(started_at) FROM attempts"
+            total, total_bookmarks, latest_at = connection.execute(
+                "SELECT COUNT(*), COUNT(DISTINCT bookmark_id), MAX(started_at) FROM attempts"
             ).fetchone()
             rows = connection.execute(
-                """
-                WITH latest AS (
-                    SELECT *, ROW_NUMBER() OVER (
-                        PARTITION BY bookmark_id
-                        ORDER BY started_at DESC, attempt_id DESC
-                    ) AS rank
-                    FROM attempts
-                )
+                f"""
+                {_LATEST_ATTEMPTS_CTE}
                 SELECT COALESCE(outcome, 'pending') AS outcome, COUNT(*) AS count
-                FROM latest WHERE rank = 1
+                FROM latest_attempts WHERE bookmark_rank = 1
                 GROUP BY outcome ORDER BY outcome
+                """
+            ).fetchall()
+            attempt_outcome_rows = connection.execute(
+                """
+                SELECT COALESCE(outcome, 'pending') AS outcome, COUNT(*) AS count
+                FROM attempts GROUP BY outcome ORDER BY outcome
+                """
+            ).fetchall()
+            attempt_phase_rows = connection.execute(
+                """
+                SELECT current_phase, COUNT(*) AS count
+                FROM attempts GROUP BY current_phase ORDER BY current_phase
                 """
             ).fetchall()
         return {
             "total_attempts": int(total),
+            "total_bookmarks": int(total_bookmarks),
             "latest_at": latest_at,
             "phases": self.status(),
             "outcomes": {str(row["outcome"]): int(row["count"]) for row in rows},
+            "attempt_phases": {
+                str(row["current_phase"]): int(row["count"])
+                for row in attempt_phase_rows
+            },
+            "attempt_outcomes": {
+                str(row["outcome"]): int(row["count"])
+                for row in attempt_outcome_rows
+            },
         }
 
     def has_bookmark(self, bookmark_id: int) -> bool:
@@ -416,16 +447,10 @@ class SQLiteRunJournal:
     def status(self) -> dict[str, int]:
         with self._connect() as connection:
             rows = connection.execute(
-                """
-                WITH latest AS (
-                    SELECT *, ROW_NUMBER() OVER (
-                        PARTITION BY bookmark_id
-                        ORDER BY started_at DESC, attempt_id DESC
-                    ) AS rank
-                    FROM attempts
-                )
+                f"""
+                {_LATEST_ATTEMPTS_CTE}
                 SELECT current_phase, COUNT(*) AS count
-                FROM latest WHERE rank = 1
+                FROM latest_attempts WHERE bookmark_rank = 1
                 GROUP BY current_phase ORDER BY current_phase
                 """
             ).fetchall()

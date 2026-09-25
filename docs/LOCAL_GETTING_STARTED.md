@@ -214,10 +214,13 @@ For the browser interface, run:
 uv run python local_dashboard.py --db-path chroma_db --open
 ```
 
-The dashboard stays on your computer at <http://127.0.0.1:8765>. It shows outcome
-counts, searchable and filterable attempts, the evidence behind each decision, the
-action taken, a live bookmark image preview, and the full event timeline. It is
-read-only: it cannot move bookmarks or change tags. Image previews use the configured
+The dashboard stays on your computer at <http://127.0.0.1:8765>. The default
+**Latest status** view shows only the newest attempt for each Raindrop, so completed
+retries and dry runs do not clutter the list. Choose **Attempt history** in the view
+selector to show recent older attempts again. The dashboard also shows outcome counts,
+search and filters, the evidence behind each decision, the action taken, a live
+bookmark image preview, and the full event timeline. It is read-only: it cannot move
+bookmarks or change tags. Image previews use the configured
 `RAINDROP_TOKEN` to resolve the current cover through the localhost server; the token
 and cover URL are not stored in the journal or sent to the browser. Leave the command
 running while using the page, and press `Ctrl+C` to stop it.

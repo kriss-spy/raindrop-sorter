@@ -68,11 +68,15 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         limit = int(query.get("limit", ["50"])[0])
         if limit > 500:
             raise ValueError("limit must not exceed 500")
+        latest = query.get("latest", ["0"])[0].casefold()
+        if latest not in {"0", "1", "false", "true"}:
+            raise ValueError("latest must be 0, 1, false, or true")
         items = self.server.journal.recent(
             limit=limit,
             outcome=query.get("outcome", [None])[0] or None,
             phase=query.get("phase", [None])[0] or None,
             query=query.get("q", [None])[0] or None,
+            latest_per_bookmark=latest in {"1", "true"},
         )
         self._send_json(HTTPStatus.OK, {"items": items, "count": len(items)})
 

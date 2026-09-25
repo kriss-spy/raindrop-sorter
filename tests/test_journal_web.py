@@ -14,6 +14,10 @@ from src.run_journal import SQLiteRunJournal
 def dashboard(tmp_path):
     path = tmp_path / "journal.sqlite"
     journal = SQLiteRunJournal(path)
+    older = journal.start_attempt(
+        {"_id": 1864496693, "title": "Earlier Pixiv check"}, mode="dry-run"
+    )
+    journal.complete(older, phase="dry_run_completed")
     attempt = journal.start_attempt(
         {"_id": 1864496693, "title": "Pixiv illustration", "link": "https://example.test/art"},
         mode="dry-run",
@@ -57,10 +61,13 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "Raindrop Journal" in page
     assert "Search bookmarks" in page
     assert "bookmark-preview" in page
+    assert "Latest status" in page
 
     overview = _json(f"{base_url}/api/overview")
-    assert overview["total_attempts"] == 1
+    assert overview["total_attempts"] == 2
+    assert overview["total_bookmarks"] == 1
     assert overview["outcomes"] == {"review": 1}
+    assert overview["attempt_outcomes"] == {"pending": 1, "review": 1}
 
 
 def test_dashboard_filters_attempts_and_returns_exact_trace(dashboard):
@@ -72,6 +79,15 @@ def test_dashboard_filters_attempts_and_returns_exact_trace(dashboard):
     trace = _json(f"{base_url}/api/attempts/{attempt_id}")
     assert trace["attempt"]["attempt_id"] == attempt_id
     assert trace["evidence"][0]["source_kind"] == "no_match"
+
+
+def test_dashboard_can_hide_older_attempts_for_each_bookmark(dashboard):
+    base_url, _ = dashboard
+    latest = _json(f"{base_url}/api/attempts?latest=1")
+    history = _json(f"{base_url}/api/attempts?latest=0")
+    assert latest["count"] == 1
+    assert latest["items"][0]["title"] == "Pixiv illustration"
+    assert history["count"] == 2
 
 
 def test_dashboard_reports_bad_limits_and_missing_attempts(dashboard):
