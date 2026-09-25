@@ -9,6 +9,7 @@ from src.local_runner import (
     LocalBatchProcessor,
     backfill_unreviewed,
     find_local_work,
+    rerun_latest_outcomes,
     run_local_bookmark,
     validate_local_index,
 )
@@ -226,11 +227,14 @@ def test_batch_processor_reports_partial_failures_without_losing_successes(
         return {"bookmark_id": bookmark_id}
 
     monkeypatch.setattr(processor, "run_one", run_one)
-    result = processor(3)
+    progress = []
+    result = processor(3, on_progress=progress.append)
 
     assert result["count"] == 3
     assert result["succeeded"] == 2
     assert result["failed"] == 1
+    assert result["progress_reported"] is True
+    assert progress == [True, False, True]
     assert [item["bookmark_id"] for item in result["results"]] == [1, 3]
     assert result["errors"] == [
         {"bookmark_id": 2, "type": "RuntimeError", "message": "boom"}
@@ -262,6 +266,82 @@ def test_batch_processor_stops_before_the_next_bookmark_when_cancelled(
     assert calls == [1]
     assert result["count"] == 1
     assert result["selected_count"] == 2
+
+
+def test_rerun_latest_outcomes_only_processes_requested_latest_results():
+    attempts = {
+        "provisional": [
+            {"bookmark_id": 1, "started_at": "2026-09-25T10:00:00", "attempt_id": "a"},
+        ],
+        "conflict": [
+            {"bookmark_id": 2, "started_at": "2026-09-25T11:00:00", "attempt_id": "b"},
+            {
+                "bookmark_id": 3,
+                "started_at": "2026-09-25T12:00:00",
+                "attempt_id": "c",
+                "current_phase": "skipped_stale",
+            },
+        ],
+    }
+
+    class Journal:
+        def recent(self, *, outcome, mode, exclude_phase, **_kwargs):
+            assert mode == ("apply", "manual-review")
+            assert exclude_phase == "skipped_stale"
+            return [
+                attempt
+                for attempt in attempts[outcome]
+                if attempt.get("current_phase") != exclude_phase
+            ]
+
+    class Processor:
+        apply = False
+
+        def __init__(self):
+            self.ids = []
+
+        def run_one(self, bookmark_id, *, expected_collection_ids):
+            assert expected_collection_ids == {None}
+            self.ids.append(bookmark_id)
+            return {"bookmark_id": bookmark_id}
+
+    processor = Processor()
+    result = rerun_latest_outcomes(
+        processor,
+        Journal(),
+        outcomes=["provisional", "conflict"],
+        limit=10,
+    )
+
+    assert processor.ids == [2, 1]
+    assert result["count"] == 2
+    assert result["applied"] is False
+
+
+def test_applied_rerun_skips_bookmark_moved_since_recorded_attempt(tmp_path):
+    _write_state(tmp_path)
+    journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
+    client = FakeRaindropClient(
+        {
+            "_id": 123,
+            "type": "image",
+            "collection": {"$id": 999},
+            "tags": [],
+        }
+    )
+
+    result = run_local_bookmark(
+        client,
+        bookmark_id=123,
+        db_path=str(tmp_path),
+        apply=True,
+        journal=journal,
+        expected_collection_ids={-1},
+    )
+
+    assert result["status"] == "skipped"
+    assert result["action"] == "skip"
+    assert client.updates == []
 
 
 def test_local_runner_journals_a_structured_dry_run(tmp_path):

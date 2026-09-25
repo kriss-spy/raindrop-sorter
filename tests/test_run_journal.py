@@ -96,6 +96,13 @@ def test_recent_can_return_only_latest_attempt_per_bookmark(tmp_path):
         limit=10, latest_per_bookmark=True, outcome="provisional"
     ) == []
 
+    latest_applied = journal.recent(
+        limit=10,
+        latest_per_bookmark=True,
+        mode="apply",
+    )
+    assert [item["bookmark_id"] for item in latest_applied] == [123]
+
 
 def test_dashboard_queries_include_snapshot_summary_and_filters(tmp_path):
     journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
@@ -124,6 +131,55 @@ def test_dashboard_queries_include_snapshot_summary_and_filters(tmp_path):
     assert trace["attempt"]["bookmark_snapshot"]["title"] == "Mini's new outfit"
     assert journal.has_bookmark(123)
     assert not journal.has_bookmark(999)
+
+
+def test_latest_mutating_attempt_does_not_resurrect_pre_manual_outcome(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    older = journal.start_attempt({"_id": 123}, mode="apply")
+    journal.record_decision(older, _decision())
+    journal.complete(older)
+
+    manual = journal.start_attempt({"_id": 123}, mode="manual-review")
+    journal.record_decision(
+        manual,
+        RouteDecision(
+            bookmark_id=123,
+            outcome=RouteOutcome.CONFIRMED,
+            destination="Art/TOUHOU",
+            text_evidence=(),
+            visual_evidence=(),
+            summary="Manually confirmed.",
+        ),
+    )
+    journal.complete(manual)
+
+    assert journal.recent(
+        limit=10,
+        outcome="provisional",
+        latest_per_bookmark=True,
+        mode=("apply", "manual-review"),
+    ) == []
+
+
+def test_recent_excludes_stale_skip_before_applying_limit(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    valid = journal.start_attempt({"_id": 123}, mode="apply")
+    journal.record_decision(valid, _decision())
+    journal.complete(valid)
+
+    skipped = journal.start_attempt({"_id": 456}, mode="apply")
+    journal.record_decision(skipped, _decision())
+    journal.complete(skipped, phase="skipped_stale")
+
+    recent = journal.recent(
+        limit=1,
+        outcome="provisional",
+        latest_per_bookmark=True,
+        mode=("apply", "manual-review"),
+        exclude_phase="skipped_stale",
+    )
+
+    assert [item["bookmark_id"] for item in recent] == [123]
 
 
 def test_overview_keeps_failed_and_pending_manual_reviews_separate(tmp_path):

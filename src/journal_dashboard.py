@@ -102,7 +102,7 @@ const formatTime = timestamp => timestamp
 const formatDuration = milliseconds => milliseconds == null
   ? 'running'
   : milliseconds < 1000 ? `${Math.round(milliseconds)} ms` : `${(milliseconds / 1000).toFixed(1)} s`;
-const raindropItemUrl = bookmarkId => `https://app.raindrop.io/my/0/item/${encodeURIComponent(bookmarkId)}`;
+const raindropItemUrl = bookmarkId => `https://app.raindrop.io/my/0/item/${encodeURIComponent(bookmarkId)}/edit`;
 function svgIcon(markup) {
   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   svg.setAttribute('viewBox', '0 0 24 24');
@@ -650,8 +650,9 @@ async function assignSelected() {
 function renderSorterStatus(status) {
   const state = status.state || 'unknown';
   select('#sorter-state').textContent = state;
+  const completed = status.attempted == null ? (status.processed || 0) : status.attempted;
   const summary = status.available
-    ? `${status.processed || 0} processed this session${status.last_count == null ? '' : ` · last batch ${status.last_count}`}${status.last_error ? ` · ${status.last_error}` : ''}`
+    ? `${completed} completed · ${status.processed || 0} succeeded${status.failed ? ` · ${status.failed} failed` : ''}${status.last_count == null ? '' : ` · last batch ${status.last_count}`}${status.last_error ? ` · ${status.last_error}` : ''}`
     : (status.error || 'Sorter controls unavailable');
   select('#sorter-summary').textContent = summary;
   select('#process-all').disabled = !status.available || status.automatic || status.processing_all || state === 'running';
@@ -732,5 +733,6 @@ document.addEventListener('keydown', event => {
 refreshDashboard();
 refreshSorterStatus();
 void loadBatchDestinations();
-setInterval(() => { refreshDashboard(); refreshSorterStatus(); }, 15000);
+setInterval(refreshDashboard, 15000);
+setInterval(refreshSorterStatus, 1000);
 </script></body></html>"""

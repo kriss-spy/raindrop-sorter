@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+
+import numpy as np
 import pytest
 
 from src.routing import (
@@ -152,6 +155,60 @@ def test_text_identifier_preserves_independent_character_conflicts():
         "Art/ANIME/Date a Live",
         "Art/ANIME/Non Non Biyori",
     )
+
+
+def test_explicit_work_name_beats_ambiguous_collaboration_character():
+    evidence = TextIdentifier({}, {}).identify(
+        {
+            "_id": 1850572932,
+            "type": "image",
+            "title": "VOCALOID, hatsune miku, MIKU / 2016 MIKU EXPO china tour - pixiv",
+            "tags": [],
+        }
+    )
+
+    assert evidence.destination == "Art/VOCALOID"
+    assert evidence.strength == "strong"
+    assert evidence.source == "curated_text"
+    assert evidence.candidates == ("Art/VOCALOID",)
+
+
+def test_visual_identity_label_beats_generic_learned_tag_and_exemplar(monkeypatch):
+    exemplar = SimpleNamespace(
+        folder_path="Art/GAMES/Arknights Endfield",
+        similarity=0.84,
+        margin=0.14,
+        runner_up_folder="Art/GAMES/GFL2",
+        runner_up_similarity=0.70,
+    )
+    monkeypatch.setattr("src.routing.score_visual_embedding", lambda *_args, **_kwargs: exemplar)
+    index = SimpleNamespace(min_similarity=0.0, min_margin=0.05, neighbors_per_folder=3)
+
+    evidence = VisualVerifier(
+        {"scarf": "Art/TOUHOU"},
+        {},
+        index,
+    ).verify(
+        {"_id": 1851809656, "type": "image", "cover": "https://example.test/a.jpg"},
+        labels=["scarf", "shiroko_(blue_archive)", "blue_archive"],
+        embedding=np.array([1.0], dtype=np.float32),
+    )
+
+    assert evidence.status == "pass"
+    assert evidence.destination == "Art/GAMES/BA"
+    assert evidence.candidates == ("Art/GAMES/BA",)
+    assert evidence.winner == "Art/GAMES/Arknights Endfield"
+
+
+def test_visual_learned_tag_remains_a_last_resort():
+    evidence = VisualVerifier({"distinctive_tag": "Art/TOUHOU"}, {}, None).verify(
+        {"_id": 999, "type": "image", "cover": "https://example.test/a.jpg"},
+        labels=["distinctive_tag"],
+        embedding=None,
+    )
+
+    assert evidence.status == "pass"
+    assert evidence.destination == "Art/TOUHOU"
 
 
 def test_text_identifier_prunes_only_overlapping_short_alias_occurrences():

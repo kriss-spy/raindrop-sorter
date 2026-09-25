@@ -439,6 +439,7 @@ def main(argv: list[str] | None = None) -> None:
                     return processor(
                         limit,
                         should_stop=(controller.stop_requested if controller else None),
+                        on_progress=(controller.record_item if controller else None),
                     )
 
             controller = LocalSorterController(

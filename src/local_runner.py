@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from collections.abc import Callable
+from contextlib import nullcontext
 from typing import Any
 
 from src.destinations import is_art_destination
@@ -232,7 +233,12 @@ class LocalBatchProcessor:
             else None
         )
 
-    def run_one(self, bookmark_id: int) -> dict[str, Any]:
+    def run_one(
+        self,
+        bookmark_id: int,
+        *,
+        expected_collection_ids: set[int | None] | None = None,
+    ) -> dict[str, Any]:
         image: bytes | None | object = _IMAGE_NOT_LOADED
 
         def image_bytes(bookmark: dict[str, Any]) -> bytes | None:
@@ -259,6 +265,7 @@ class LocalBatchProcessor:
             apply=self.apply,
             journal=self.journal,
             mutation_lock=self.mutation_lock,
+            expected_collection_ids=expected_collection_ids,
         )
 
     def __call__(
@@ -266,6 +273,7 @@ class LocalBatchProcessor:
         limit: int,
         *,
         should_stop: Callable[[], bool] | None = None,
+        on_progress: Callable[[bool], None] | None = None,
     ) -> dict[str, Any]:
         work = find_local_work(self.client, limit=limit)
         results = []
@@ -275,12 +283,16 @@ class LocalBatchProcessor:
                 break
             try:
                 results.append(self.run_one(int(item["_id"])))
+                if on_progress is not None:
+                    on_progress(True)
             except Exception as error:
                 errors.append({
                     "bookmark_id": int(item["_id"]),
                     "type": type(error).__name__,
                     "message": str(error),
                 })
+                if on_progress is not None:
+                    on_progress(False)
         return {
             "status": "ok",
             "mode": "batch",
@@ -288,10 +300,70 @@ class LocalBatchProcessor:
             "selected_count": len(work),
             "succeeded": len(results),
             "failed": len(errors),
+            "progress_reported": on_progress is not None,
             "applied": self.apply,
             "results": results,
             "errors": errors,
         }
+
+
+def rerun_latest_outcomes(
+    processor: LocalBatchProcessor,
+    journal: SQLiteRunJournal,
+    *,
+    outcomes: list[str],
+    limit: int,
+) -> dict[str, Any]:
+    """Re-evaluate bookmarks whose latest journal outcome needs another pass."""
+    if limit < 1:
+        raise ValueError("limit must be at least 1")
+    candidates: dict[int, dict[str, Any]] = {}
+    for outcome in outcomes:
+        for attempt in journal.recent(
+            limit=limit,
+            outcome=outcome,
+            latest_per_bookmark=True,
+            mode=("apply", "manual-review"),
+            exclude_phase="skipped_stale",
+        ):
+            candidates[int(attempt["bookmark_id"])] = attempt
+    selected = sorted(
+        candidates.values(),
+        key=lambda attempt: (attempt["started_at"], attempt["attempt_id"]),
+        reverse=True,
+    )[:limit]
+    results = []
+    errors = []
+    for attempt in selected:
+        bookmark_id = int(attempt["bookmark_id"])
+        expected_collection_ids = {attempt.get("collection_id")}
+        destination = attempt.get("destination")
+        if destination:
+            destination_id = _load_folder_map(processor.db_path).get(destination)
+            if destination_id is not None:
+                expected_collection_ids.add(destination_id)
+        try:
+            results.append(processor.run_one(
+                bookmark_id,
+                expected_collection_ids=expected_collection_ids,
+            ))
+        except Exception as error:
+            errors.append({
+                "bookmark_id": bookmark_id,
+                "type": type(error).__name__,
+                "message": str(error),
+            })
+    return {
+        "status": "ok",
+        "mode": "rerun_outcomes",
+        "outcomes": outcomes,
+        "count": len(results) + len(errors),
+        "succeeded": len(results),
+        "failed": len(errors),
+        "applied": processor.apply,
+        "results": results,
+        "errors": errors,
+    }
 
 
 _IMAGE_NOT_LOADED = object()
@@ -307,6 +379,7 @@ def run_local_bookmark(
     apply: bool = False,
     journal: RunJournal | None = None,
     mutation_lock: Any | None = None,
+    expected_collection_ids: set[int | None] | None = None,
 ) -> dict[str, Any]:
     """Run the native two-step route; writes require ``apply=True``."""
     validate_local_index(db_path)
@@ -366,17 +439,16 @@ def run_local_bookmark(
         action_kind = "move" if decision.destination is not None else "keep_unsorted"
         if apply:
             try:
-                if mutation_lock is None:
-                    client.update_raindrop(
-                        bookmark_id,
-                        collection_id=target_id,
-                        tags=new_tags,
-                    )
-                else:
-                    with mutation_lock:
+                if mutation_lock is not None or expected_collection_ids is not None:
+                    with mutation_lock if mutation_lock is not None else nullcontext():
                         current = client.get_raindrop(bookmark_id)
                         current_collection = (current.get("collection") or {}).get("$id")
-                        if current_collection not in {None, -1}:
+                        allowed_collections = (
+                            expected_collection_ids
+                            if expected_collection_ids is not None
+                            else {None, -1}
+                        )
+                        if current_collection not in allowed_collections:
                             if journal is not None and attempt is not None:
                                 journal.record_action(
                                     attempt,
@@ -403,6 +475,12 @@ def run_local_bookmark(
                             collection_id=target_id,
                             tags=tags_for_decision(current, decision.outcome.value),
                         )
+                else:
+                    client.update_raindrop(
+                        bookmark_id,
+                        collection_id=target_id,
+                        tags=new_tags,
+                    )
             except BaseException as error:
                 if journal is not None and attempt is not None:
                     journal.record_action(
@@ -456,6 +534,12 @@ def main(argv: list[str] | None = None) -> None:
 
     from src.raindrop_client import RaindropClient
 
+    def positive_integer(value: str) -> int:
+        parsed = int(value)
+        if parsed < 1:
+            raise argparse.ArgumentTypeError("must be at least 1")
+        return parsed
+
     parser = argparse.ArgumentParser(
         description="Resolve one Raindrop bookmark locally without Modal",
     )
@@ -471,6 +555,18 @@ def main(argv: list[str] | None = None) -> None:
         type=int,
         metavar="LIMIT",
         help="Mark a bounded set of untagged Unsorted bookmarks as sorter-unreviewed",
+    )
+    target.add_argument(
+        "--rerun-outcomes",
+        nargs="+",
+        choices=("provisional", "conflict"),
+        help="Re-evaluate bookmarks whose latest outcome is provisional or conflict",
+    )
+    parser.add_argument(
+        "--rerun-limit",
+        type=positive_integer,
+        default=100,
+        help="Maximum bookmarks selected by --rerun-outcomes (default: 100)",
     )
     parser.add_argument("--db-path", default="chroma_db")
     parser.add_argument(
@@ -510,7 +606,14 @@ def main(argv: list[str] | None = None) -> None:
         journal=journal,
         apply=args.apply,
     )
-    if args.bookmark_id is not None:
+    if args.rerun_outcomes is not None:
+        result = rerun_latest_outcomes(
+            processor,
+            journal,
+            outcomes=args.rerun_outcomes,
+            limit=args.rerun_limit,
+        )
+    elif args.bookmark_id is not None:
         result: dict[str, Any] = processor.run_one(args.bookmark_id)
     else:
         result = processor(args.batch_size)

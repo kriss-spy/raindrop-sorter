@@ -295,6 +295,28 @@ uv run python local_journal.py --db-path chroma_db explain 123456789
 Use `--journal-path /another/path.sqlite` with both `local_run.py` and
 `local_journal.py` to store the journal elsewhere.
 
+### Re-evaluate provisional and conflicting results
+
+After changing aliases, rebuilding the index, or updating routing code, first run a
+read-only retry of bookmarks whose latest result is provisional or conflicting.
+Wait for any dashboard `Process all` run to finish before starting this separate CLI
+process:
+
+```bash
+uv run python local_run.py \
+  --rerun-outcomes provisional conflict \
+  --rerun-limit 100 \
+  --db-path chroma_db \
+  --model-dir .cache/wd14
+```
+
+Inspect the new attempts in the dashboard. Add `--apply` to the same command when
+the proposals are correct. The selection is based on each bookmark's latest applied
+journal attempt, so a dry run does not remove it from the retry set. It is capped by
+`--rerun-limit` and does not include confirmed or review-only bookmarks.
+Bookmarks skipped because they were moved manually are also suppressed from later
+bulk retries.
+
 ## 10. Refresh after reorganizing Raindrop
 
 Re-run the local bootstrap after creating, renaming, deleting, or substantially
@@ -318,8 +340,8 @@ Always dry-run a small batch after refreshing either artifact.
 ### Refresh character aliases from CloudNotes
 
 The local router ships with an Art-only character alias snapshot. To rebuild it
-after changing the corresponding voicebank, PJSK, Touhou, VTuber, anime, or
-Umamusume notes in CloudNotes, run:
+after changing the corresponding voicebank, PJSK, Touhou, VTuber, anime, Umamusume,
+or Honkai: Star Rail notes in CloudNotes, run:
 
 ```bash
 uv run python scripts/sync_cloudnotes_character_aliases.py \

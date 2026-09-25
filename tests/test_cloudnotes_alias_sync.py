@@ -48,6 +48,11 @@ def test_build_registry_imports_bounded_art_aliases(tmp_path: Path) -> None:
         "extracurricular/ACG/media franchise/Umamusume Pretty Derby/characters/umamusume/Special Week.md",
         "aliases:\n  - スペシャルウィーク\n",
     )
+    _note(
+        tmp_path,
+        "extracurricular/ACG/games/gacha game/Honkai star rail/characters/Firefly.md",
+        "aliases:\n  - 流萤\n  - ホタル\n",
+    )
 
     registry = build_registry(
         tmp_path,
@@ -86,6 +91,9 @@ def test_build_registry_imports_bounded_art_aliases(tmp_path: Path) -> None:
     assert {"Special Week", "スペシャルウィーク"} <= set(
         registry["Art/GAMES/UMAMUSUME"]
     )
+    assert {"Firefly", "流萤", "ホタル"} <= set(
+        registry["Art/GAMES/STARRAIL"]
+    )
     assert registry["Art/GAMES/GENSHIN"] == ["Paimon"]
     assert all(destination.startswith("Art/") for destination in registry)
 
@@ -99,6 +107,10 @@ def test_build_registry_ignores_catalogs_and_non_character_notes(tmp_path: Path)
     _note(
         tmp_path,
         "extracurricular/ACG/media franchise/Umamusume Pretty Derby/characters/umamusume/umamusume.md",
+    )
+    _note(
+        tmp_path,
+        "extracurricular/ACG/games/gacha game/Honkai star rail/characters/characters.md",
     )
 
     aliases = {

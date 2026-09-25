@@ -116,6 +116,9 @@ GFL2_LOCALIZED_TEXT_ALIASES = (
     "소녀전선2",
 )
 LOCALIZED_ART_TEXT_ALIASES: dict[str, tuple[str, ...]] = {
+    "Art/VOCALOID": (
+        "vocaloid",
+    ),
     "Art/GAMES/GFL2": GFL2_LOCALIZED_TEXT_ALIASES,
     "Art/GAMES/Arknights Endfield": (
         "arknights: endfield",

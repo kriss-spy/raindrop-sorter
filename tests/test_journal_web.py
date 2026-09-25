@@ -81,6 +81,8 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert 'aria-label="Process all Unsorted Raindrops"' in page
     assert 'aria-label="Stop processing Unsorted Raindrops"' in page
     assert "https://app.raindrop.io/my/0/item/" in page
+    assert "encodeURIComponent(bookmarkId)}/edit" in page
+    assert "setInterval(refreshSorterStatus, 1000)" in page
     assert "/api/attempts/resolve-batch" in page
     assert "/api/sorter/${action}" in page
     assert "Process every actionable Raindrop in Unsorted now?" in page

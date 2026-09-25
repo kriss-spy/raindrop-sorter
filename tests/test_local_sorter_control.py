@@ -35,6 +35,37 @@ def test_process_all_runs_batches_until_unsorted_is_empty():
         controller.close()
 
 
+def test_inflight_item_progress_is_visible_before_batch_finishes():
+    item_recorded = threading.Event()
+    release = threading.Event()
+    controller = None
+    calls = 0
+
+    def process_batch(_limit):
+        nonlocal calls
+        assert controller is not None
+        calls += 1
+        if calls > 1:
+            return {"count": 0, "succeeded": 0, "progress_reported": True}
+        controller.record_item(True)
+        item_recorded.set()
+        release.wait(timeout=1)
+        return {"count": 1, "succeeded": 1, "progress_reported": True}
+
+    controller = LocalSorterController(process_batch)
+    try:
+        controller.process_all()
+        assert item_recorded.wait(timeout=1)
+        assert controller.status()["processed"] == 1
+        assert controller.status()["attempted"] == 1
+        release.set()
+        _wait_for(lambda: controller.status()["state"] == "idle")
+        assert controller.status()["processed"] == 1
+    finally:
+        release.set()
+        controller.close()
+
+
 def test_process_all_can_be_stopped_after_the_inflight_batch():
     started = threading.Event()
     release = threading.Event()
@@ -188,6 +219,8 @@ def test_partial_batch_stops_automatic_mode_and_preserves_progress():
         status = controller.status()
         assert status["automatic"] is False
         assert status["processed"] == 2
+        assert status["attempted"] == 3
+        assert status["failed"] == 1
         assert status["last_count"] == 3
         assert "1 item(s) failed" in status["last_error"]
     finally:

@@ -37,6 +37,8 @@ class LocalSorterController:
         self._processing = False
         self._state = "idle"
         self._processed = 0
+        self._attempted = 0
+        self._failed = 0
         self._last_count: int | None = None
         self._last_error: str | None = None
         self._updated_at = time.time()
@@ -106,6 +108,16 @@ class LocalSorterController:
         with self._condition:
             return self._stop_requested or self._closed
 
+    def record_item(self, succeeded: bool) -> None:
+        """Publish one completed item while an in-flight batch is still running."""
+        with self._condition:
+            self._attempted += 1
+            if succeeded:
+                self._processed += 1
+            else:
+                self._failed += 1
+            self._touch_locked()
+
     def close(self) -> None:
         with self._condition:
             if self._closed:
@@ -151,7 +163,10 @@ class LocalSorterController:
 
             with self._condition:
                 self._processing = False
-                self._processed += succeeded
+                if not result.get("progress_reported"):
+                    self._attempted += count
+                    self._processed += succeeded
+                    self._failed += failed
                 self._last_count = count
                 if self._closed:
                     self._state = "stopped"
@@ -197,6 +212,8 @@ class LocalSorterController:
             "automatic": self._automatic,
             "processing_all": self._drain_unsorted,
             "processed": self._processed,
+            "attempted": self._attempted,
+            "failed": self._failed,
             "last_count": self._last_count,
             "last_error": self._last_error,
             "batch_size": self._batch_size,

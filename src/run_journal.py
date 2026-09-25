@@ -351,6 +351,8 @@ class SQLiteRunJournal:
         phase: str | None = None,
         query: str | None = None,
         latest_per_bookmark: bool = False,
+        mode: str | tuple[str, ...] | None = None,
+        exclude_phase: str | None = None,
     ) -> list[dict[str, Any]]:
         if limit < 1:
             raise ValueError("limit must be at least 1")
@@ -363,12 +365,30 @@ class SQLiteRunJournal:
             if phase:
                 clauses.append("current_phase = ?")
                 parameters.append(phase)
+            if exclude_phase:
+                clauses.append("current_phase != ?")
+                parameters.append(exclude_phase)
             source = "attempts"
             if latest_per_bookmark:
                 source = "latest_attempts"
                 clauses.insert(0, "bookmark_rank = 1")
+            cte_parameters: list[Any] = []
+            if mode and latest_per_bookmark:
+                modes = (mode,) if isinstance(mode, str) else mode
+                placeholders = ", ".join("?" for _mode in modes)
+                latest_cte = _LATEST_ATTEMPTS_CTE.replace(
+                    "FROM attempts\n",
+                    f"FROM attempts WHERE mode IN ({placeholders})\n",
+                )
+                cte_parameters.extend(modes)
+            else:
+                latest_cte = _LATEST_ATTEMPTS_CTE if latest_per_bookmark else ""
+                if mode:
+                    modes = (mode,) if isinstance(mode, str) else mode
+                    placeholders = ", ".join("?" for _mode in modes)
+                    clauses.append(f"mode IN ({placeholders})")
+                    parameters.extend(modes)
             where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
-            latest_cte = _LATEST_ATTEMPTS_CTE if latest_per_bookmark else ""
             rows = connection.execute(
                 f"""
                 {latest_cte}
@@ -376,7 +396,7 @@ class SQLiteRunJournal:
                        outcome, destination, mode, bookmark_snapshot_json, decision_json
                 FROM {source} {where} ORDER BY started_at DESC, attempt_id DESC
                 """,
-                parameters,
+                [*cte_parameters, *parameters],
             ).fetchall()
 
         needle = (query or "").strip().casefold()
@@ -389,6 +409,7 @@ class SQLiteRunJournal:
                 title=snapshot.get("title") or f"Bookmark {decoded['bookmark_id']}",
                 link=snapshot.get("link"),
                 excerpt=snapshot.get("excerpt"),
+                collection_id=(snapshot.get("collection") or {}).get("$id"),
                 summary=decision.get("summary"),
                 duration_ms=_duration_ms(decoded["started_at"], decoded["ended_at"]),
             )

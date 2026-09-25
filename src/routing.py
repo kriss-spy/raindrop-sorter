@@ -153,13 +153,42 @@ class TextIdentifier:
 
         if not matches:
             return TextEvidence(kind="no_match", destination=None, strength=None, explanation="No personal-interest text match was found.")
-        destinations = tuple(sorted({canonical_destination(match.destination) for match in matches if match.destination}))
+        source_priority = {
+            "user_tag_or_hashtag": 3,
+            "curated_text": 2,
+            "character_alias": 1,
+        }
+        highest_priority = max(source_priority.get(match.source or "", 0) for match in matches)
+        decisive_matches = [
+            match
+            for match in matches
+            if source_priority.get(match.source or "", 0) == highest_priority
+        ]
+        destinations = tuple(sorted({
+            canonical_destination(match.destination)
+            for match in decisive_matches
+            if match.destination
+        }))
         if len(destinations) > 1:
+            details = "; ".join(
+                f"{match.matched_value!r} → {canonical_destination(match.destination)}"
+                for match in decisive_matches
+                if match.destination
+            )
             return TextEvidence(
                 kind="personal_interest_text", destination=None, strength="conflicting",
-                explanation="Text matches lead to multiple destinations.", candidates=destinations,
+                matched_value=", ".join(
+                    dict.fromkeys(
+                        match.matched_value
+                        for match in decisive_matches
+                        if match.matched_value
+                    )
+                ) or None,
+                source="multiple",
+                explanation=f"Text matches lead to multiple destinations: {details}.",
+                candidates=destinations,
             )
-        strongest = max(matches, key=lambda match: _strength_rank(match.strength))
+        strongest = max(decisive_matches, key=lambda match: _strength_rank(match.strength))
         return TextEvidence(**{**strongest.to_dict(), "destination": destinations[0], "candidates": destinations})
 
 
@@ -185,17 +214,20 @@ class VisualVerifier:
 
         normalized_labels = tuple(dict.fromkeys(semantic for raw in labels for semantic in semantic_tag_keys(str(raw).removeprefix("ai:wdtag-"))))
         modality = bookmark_modality(bookmark)
-        wd_destinations: set[str] = set()
+        identity_destinations: set[str] = set()
+        learned_destinations: set[str] = set()
         for label in normalized_labels:
             target = (
                 TAG_ROUTES.get(label)
-                or self.tag_rules.get(label)
                 or self.series_rules.get(label)
                 or self.character_alias_rules.get(label)
             )
             destination = _resolve_target(target, modality)
             if destination is not None:
-                wd_destinations.add(canonical_destination(destination))
+                identity_destinations.add(canonical_destination(destination))
+            learned_destination = _resolve_target(self.tag_rules.get(label), modality)
+            if learned_destination is not None:
+                learned_destinations.add(canonical_destination(learned_destination))
 
         exemplar = None
         exemplar_pass = False
@@ -203,14 +235,19 @@ class VisualVerifier:
             exemplar = score_visual_embedding(np.asarray(embedding, dtype=np.float32), self.exemplar_index, neighbors_per_folder=self.exemplar_index.neighbors_per_folder)
             exemplar_pass = bool(exemplar and exemplar.similarity >= self.exemplar_index.min_similarity and exemplar.margin >= self.exemplar_index.min_margin)
 
-        destinations = set(wd_destinations)
+        if len(identity_destinations) > 1:
+            return _visual_result(status="conflict", destination=None, candidates=tuple(sorted(identity_destinations)), labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation="Recognized WD14 identity labels disagree.")
+        if identity_destinations:
+            destination = next(iter(identity_destinations))
+            return _visual_result(status="pass", destination=destination, labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation=f"Recognized WD14 identity labels support {destination}; generic learned tags and visual similarity cannot override an explicit identity.")
         if exemplar_pass and exemplar is not None:
-            destinations.add(canonical_destination(exemplar.folder_path))
-        if len(destinations) > 1:
-            return _visual_result(status="conflict", destination=None, candidates=tuple(sorted(destinations)), labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation="WD14 and visual exemplar evidence disagree.")
-        if destinations:
-            destination = next(iter(destinations))
-            return _visual_result(status="pass", destination=destination, labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation=f"Visual evidence supports {destination}.")
+            destination = canonical_destination(exemplar.folder_path)
+            return _visual_result(status="pass", destination=destination, labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation=f"Visual exemplar similarity supports {destination} because no explicit identity label matched.")
+        if len(learned_destinations) > 1:
+            return _visual_result(status="conflict", destination=None, candidates=tuple(sorted(learned_destinations)), labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation="Lower-confidence learned visual tags disagree and no explicit identity label matched.")
+        if learned_destinations:
+            destination = next(iter(learned_destinations))
+            return _visual_result(status="pass", destination=destination, labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation=f"A learned visual tag supports {destination}; no explicit identity label or passing exemplar was available.")
         return _visual_result(status="inconclusive", destination=None, labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation="No visual destination passed its calibrated thresholds.")
 
 

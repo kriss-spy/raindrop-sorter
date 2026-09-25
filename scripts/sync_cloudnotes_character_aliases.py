@@ -30,6 +30,9 @@ ANIME = Path("extracurricular/ACG/anime")
 UMAMUSUME = Path(
     "extracurricular/ACG/media franchise/Umamusume Pretty Derby/characters/umamusume"
 )
+STARRAIL = Path(
+    "extracurricular/ACG/games/gacha game/Honkai star rail/characters"
+)
 
 PJSK_CHARACTER_GROUPS = {"25H", "LND", "MMJ", "VBS", "WXS", "pjsk movie"}
 VOICEBANK_DESTINATION_OVERRIDES = {
@@ -76,6 +79,7 @@ MANAGED_DESTINATIONS = {
     "Art/TOUHOU",
     "Art/VTUBERS",
     "Art/GAMES/UMAMUSUME",
+    "Art/GAMES/STARRAIL",
     "Art/ANIME",
     *ANIME_DESTINATIONS.values(),
 }
@@ -201,6 +205,12 @@ def _import_umamusume(registry: dict[str, set[str]], vault: Path) -> None:
             _add(registry, "Art/GAMES/UMAMUSUME", path, vault)
 
 
+def _import_starrail(registry: dict[str, set[str]], vault: Path) -> None:
+    for path in _notes(vault / STARRAIL):
+        if path.stem.casefold() != "characters":
+            _add(registry, "Art/GAMES/STARRAIL", path, vault)
+
+
 def build_registry(vault: Path, existing: dict[str, list[str]]) -> dict[str, list[str]]:
     registry: dict[str, set[str]] = defaultdict(set)
     for destination, aliases in existing.items():
@@ -213,6 +223,7 @@ def build_registry(vault: Path, existing: dict[str, list[str]]) -> dict[str, lis
     _import_vtubers(registry, vault)
     _import_anime(registry, vault)
     _import_umamusume(registry, vault)
+    _import_starrail(registry, vault)
 
     return {
         destination: sorted(aliases, key=lambda alias: (alias.casefold(), alias))
