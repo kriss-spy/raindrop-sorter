@@ -84,6 +84,13 @@ def semantic_tag_keys(raw_tag: str) -> list[str]:
     return keys
 
 
+def select_execution_providers(available: list[str]) -> list[str]:
+    """Prefer CUDA with a CPU fallback, excluding untested TensorRT startup."""
+    if "CUDAExecutionProvider" in available:
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    return ["CPUExecutionProvider"]
+
+
 class WD14Tagger:
     """ONNX-based WD14 tagger with lazy model loading."""
 
@@ -103,7 +110,9 @@ class WD14Tagger:
 
         _ensure_model(self.model_dir)
         model_path = os.path.join(self.model_dir, MODEL_FILENAME)
-        providers = ort.get_available_providers()
+        providers = select_execution_providers(ort.get_available_providers())
+        if "CUDAExecutionProvider" in providers and hasattr(ort, "preload_dlls"):
+            ort.preload_dlls()
         try:
             self._session = ort.InferenceSession(model_path, providers=providers)
         except Exception:
@@ -117,20 +126,38 @@ class WD14Tagger:
         self,
         image_input: bytes | Image.Image | str,
     ) -> np.ndarray:
+        return self._predict_probabilities_batch([image_input])[0]
+
+    def _predict_probabilities_batch(
+        self,
+        image_inputs: list[bytes | Image.Image | str],
+    ) -> np.ndarray:
+        if not image_inputs:
+            return np.empty((0, 0), dtype=np.float32)
         self._load()
         if self._session is None:
             raise RuntimeError("WD14 model failed to load")
 
-        if isinstance(image_input, str):
-            image = Image.open(image_input)
-        elif isinstance(image_input, bytes):
-            image = Image.open(io.BytesIO(image_input))
-        else:
-            image = image_input
+        images = []
+        for image_input in image_inputs:
+            if isinstance(image_input, str):
+                image = Image.open(image_input)
+            elif isinstance(image_input, bytes):
+                image = Image.open(io.BytesIO(image_input))
+            else:
+                image = image_input
+            images.append(_preprocess(image))
 
-        input_arr = _preprocess(image)
-        outputs = self._session.run(None, {self._session.get_inputs()[0].name: input_arr})
-        return outputs[0][0]
+        model_input = self._session.get_inputs()[0]
+        batch_dimension = getattr(model_input, "shape", [1])[0]
+        if len(images) > 1 and batch_dimension == 1:
+            return np.concatenate([
+                self._session.run(None, {model_input.name: input_arr})[0]
+                for input_arr in images
+            ], axis=0)
+        input_arr = np.concatenate(images, axis=0)
+        outputs = self._session.run(None, {model_input.name: input_arr})
+        return outputs[0]
 
     def predict(
         self,
@@ -153,6 +180,25 @@ class WD14Tagger:
             if prob >= self.threshold:
                 tags.append(normalize_tag(tag))
         return tags
+
+    def predict_batch(
+        self,
+        image_inputs: list[bytes | Image.Image | str],
+    ) -> list[list[str]]:
+        """Analyze a bounded batch while honoring the model's batch dimension."""
+        if not image_inputs:
+            return []
+        probabilities = self._predict_probabilities_batch(image_inputs)
+        if self._tags is None:
+            raise RuntimeError("WD14 model failed to load")
+        return [
+            [
+                normalize_tag(tag)
+                for tag, probability in zip(self._tags, row)
+                if probability >= self.threshold
+            ]
+            for row in probabilities
+        ]
 
     def predict_characters(
         self,

@@ -1,9 +1,11 @@
 """Behavior tests for local visual exemplar indexing."""
 
 import numpy as np
+from unittest.mock import patch
 
 from src.resolver import decide_folder
 from src.visual_exemplars import (
+    CCIPImageEmbedder,
     DEFAULT_CLIP_MODEL,
     LocalVisualEmbeddingCache,
     VisualExemplarIndex,
@@ -13,6 +15,24 @@ from src.visual_exemplars import (
     partition_visual_examples,
     save_visual_exemplar_index,
 )
+
+
+def test_ccip_embedder_batches_images_in_one_model_call():
+    expected = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    embedder = CCIPImageEmbedder()
+
+    with patch(
+        "imgutils.metrics.ccip_batch_extract_features",
+        return_value=expected,
+    ) as extract:
+        actual = embedder.embed_images([b"first", b"second"])
+
+    np.testing.assert_array_equal(actual, expected)
+    payloads = extract.call_args.args[0]
+    assert [payload.getvalue() for payload in payloads] == [b"first", b"second"]
+    assert extract.call_args.kwargs == {
+        "model": "ccip-caformer-24-randaug-pruned"
+    }
 
 
 def test_partition_visual_examples_reserves_latest_holdout_and_caps_training():

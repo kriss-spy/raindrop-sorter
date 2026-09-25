@@ -146,10 +146,17 @@ class CCIPImageEmbedder:
         self.ccip_model = model_name.partition(":")[2]
 
     def embed_image(self, image_bytes: bytes) -> np.ndarray:
-        from imgutils.metrics import ccip_extract_feature
+        return self.embed_images([image_bytes])[0]
+
+    def embed_images(self, image_payloads: list[bytes]) -> np.ndarray:
+        """Extract a bounded image batch with one CCIP model call."""
+        from imgutils.metrics import ccip_batch_extract_features
 
         return np.asarray(
-            ccip_extract_feature(io.BytesIO(image_bytes), model=self.ccip_model),
+            ccip_batch_extract_features(
+                [io.BytesIO(payload) for payload in image_payloads],
+                model=self.ccip_model,
+            ),
             dtype=np.float32,
         )
 

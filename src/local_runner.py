@@ -4,7 +4,9 @@ import argparse
 import json
 import os
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
+from dataclasses import dataclass
 from typing import Any
 
 from src.destinations import is_art_destination
@@ -30,6 +32,23 @@ REQUIRED_INDEX_FILES = (
     "tag_rules.json",
 )
 RUNNER_VERSION = "native-two-step-v1"
+DEFAULT_VISUAL_BATCH_SIZE = 8
+DEFAULT_DOWNLOAD_WORKERS = 8
+
+
+@dataclass(frozen=True)
+class LocalRoutingArtifacts:
+    folder_id_map: dict[str, int]
+    tag_rules: dict[str, Any]
+    series_rules: dict[str, Any]
+    visual_index: Any | None
+
+
+@dataclass(frozen=True)
+class VisualAnalysis:
+    tags: list[str]
+    embedding: Any | None = None
+    error: BaseException | None = None
 
 
 def _no_vision(_bookmark: dict[str, Any]) -> list[str]:
@@ -161,6 +180,17 @@ def _load_folder_map(db_path: str) -> dict[str, int]:
         return json.load(handle)
 
 
+def _load_routing_artifacts(db_path: str) -> LocalRoutingArtifacts:
+    validate_local_index(db_path)
+    tag_rules, _mismatches = load_tag_rules(db_path)
+    return LocalRoutingArtifacts(
+        folder_id_map=_load_folder_map(db_path),
+        tag_rules=tag_rules,
+        series_rules=load_series_rules(db_path),
+        visual_index=load_visual_exemplar_index(db_path),
+    )
+
+
 def _has_image_source(bookmark: dict[str, Any]) -> bool:
     return bool(bookmark.get("cover")) or any(
         str(item.get("type", "")).casefold() == "image" and item.get("link")
@@ -219,14 +249,27 @@ class LocalBatchProcessor:
         journal: RunJournal,
         apply: bool = True,
         mutation_lock: Any | None = None,
+        visual_batch_size: int = DEFAULT_VISUAL_BATCH_SIZE,
+        download_workers: int = DEFAULT_DOWNLOAD_WORKERS,
     ):
+        if visual_batch_size < 1:
+            raise ValueError("visual_batch_size must be at least 1")
+        if download_workers < 1:
+            raise ValueError("download_workers must be at least 1")
         self.client = client
         self.db_path = db_path
         self.journal = journal
         self.apply = apply
         self.mutation_lock = mutation_lock
+        self.visual_batch_size = visual_batch_size
+        self.download_workers = download_workers
+        self.artifacts = _load_routing_artifacts(db_path)
+        self.text_identifier = TextIdentifier(
+            self.artifacts.tag_rules,
+            self.artifacts.series_rules,
+        )
         self.tagger = WD14Tagger(model_dir=model_dir)
-        self.visual_index = load_visual_exemplar_index(db_path)
+        self.visual_index = self.artifacts.visual_index
         self.visual_embedder = (
             create_visual_embedder(self.visual_index.model_name)
             if self.visual_index is not None
@@ -238,6 +281,8 @@ class LocalBatchProcessor:
         bookmark_id: int,
         *,
         expected_collection_ids: set[int | None] | None = None,
+        bookmark_snapshot: dict[str, Any] | None = None,
+        visual_analysis: VisualAnalysis | None = None,
     ) -> dict[str, Any]:
         image: bytes | None | object = _IMAGE_NOT_LOADED
 
@@ -254,19 +299,128 @@ class LocalBatchProcessor:
                 return None
             return self.visual_embedder.embed_image(payload)
 
+        def precomputed_vision(_bookmark: dict[str, Any]) -> list[str]:
+            if visual_analysis is None:
+                return []
+            if visual_analysis.error is not None:
+                raise visual_analysis.error
+            return visual_analysis.tags
+
+        analyze_vision = (
+            precomputed_vision
+            if visual_analysis is not None
+            else (
+                lambda bookmark: [
+                    f"ai:wdtag-{tag}" for tag in self.tagger.predict(image_bytes(bookmark))
+                ] if image_bytes(bookmark) is not None else []
+            )
+        )
+        analyze_visual = (
+            (lambda _bookmark: visual_analysis.embedding)
+            if visual_analysis is not None
+            else visual_embedding
+        )
+
         return run_local_bookmark(
             self.client,
             bookmark_id=bookmark_id,
             db_path=self.db_path,
-            analyze_vision=lambda bookmark: [
-                f"ai:wdtag-{tag}" for tag in self.tagger.predict(image_bytes(bookmark))
-            ] if image_bytes(bookmark) is not None else [],
-            analyze_visual=visual_embedding,
+            analyze_vision=analyze_vision,
+            analyze_visual=analyze_visual,
             apply=self.apply,
             journal=self.journal,
             mutation_lock=self.mutation_lock,
             expected_collection_ids=expected_collection_ids,
+            bookmark=bookmark_snapshot,
+            artifacts=self.artifacts,
         )
+
+    def _batch_visual_analysis(
+        self,
+        work: list[dict[str, Any]],
+    ) -> dict[int, VisualAnalysis]:
+        analyses = {
+            int(bookmark["_id"]): VisualAnalysis([])
+            for bookmark in work
+        }
+        candidates = []
+        for bookmark in work:
+            text = self.text_identifier.identify(bookmark)
+            if (
+                text.kind != "user_confirmed_rule"
+                and _has_image_source(bookmark)
+                and bookmark_modality(bookmark) == "art"
+            ):
+                candidates.append(bookmark)
+        if not candidates:
+            return analyses
+
+        def fetch(bookmark: dict[str, Any]) -> bytes | None:
+            url = resolve_cover_url(bookmark)
+            return download_cover(url) if url else None
+
+        with ThreadPoolExecutor(
+            max_workers=min(self.download_workers, len(candidates))
+        ) as executor:
+            downloaded = list(executor.map(fetch, candidates))
+        available = [
+            (bookmark, payload)
+            for bookmark, payload in zip(candidates, downloaded)
+            if payload is not None
+        ]
+        for start in range(0, len(available), self.visual_batch_size):
+            chunk = available[start:start + self.visual_batch_size]
+            payloads = [payload for _bookmark, payload in chunk]
+            try:
+                raw_tag_results: list[tuple[list[str], BaseException | None]] = [
+                    (tags, None) for tags in self.tagger.predict_batch(payloads)
+                ]
+            except Exception:
+                raw_tag_results = []
+                for payload in payloads:
+                    try:
+                        raw_tag_results.append((self.tagger.predict(payload), None))
+                    except Exception as error:
+                        raw_tag_results.append(([], error))
+
+            embeddings: list[Any | None] = [None] * len(chunk)
+            embedding_errors: list[BaseException | None] = [None] * len(chunk)
+            eligible_indexes = [
+                index
+                for index, (_tags, error) in enumerate(raw_tag_results)
+                if error is None
+            ]
+            if self.visual_embedder is not None and eligible_indexes:
+                embedding_payloads = [payloads[index] for index in eligible_indexes]
+                try:
+                    if hasattr(self.visual_embedder, "embed_images"):
+                        batch_embeddings = list(
+                            self.visual_embedder.embed_images(embedding_payloads)
+                        )
+                    else:
+                        batch_embeddings = [
+                            self.visual_embedder.embed_image(payload)
+                            for payload in embedding_payloads
+                        ]
+                    for index, embedding in zip(eligible_indexes, batch_embeddings):
+                        embeddings[index] = embedding
+                except Exception:
+                    for index in eligible_indexes:
+                        try:
+                            embeddings[index] = self.visual_embedder.embed_image(
+                                payloads[index]
+                            )
+                        except Exception as error:
+                            embedding_errors[index] = error
+
+            for index, (bookmark, _payload) in enumerate(chunk):
+                tags, tag_error = raw_tag_results[index]
+                analyses[int(bookmark["_id"])] = VisualAnalysis(
+                    [f"ai:wdtag-{tag}" for tag in tags],
+                    embeddings[index],
+                    tag_error or embedding_errors[index],
+                )
+        return analyses
 
     def __call__(
         self,
@@ -276,13 +430,18 @@ class LocalBatchProcessor:
         on_progress: Callable[[bool], None] | None = None,
     ) -> dict[str, Any]:
         work = find_local_work(self.client, limit=limit)
+        visual_analyses = self._batch_visual_analysis(work)
         results = []
         errors = []
         for item in work:
             if should_stop is not None and should_stop():
                 break
             try:
-                results.append(self.run_one(int(item["_id"])))
+                results.append(self.run_one(
+                    int(item["_id"]),
+                    bookmark_snapshot=item,
+                    visual_analysis=visual_analyses[int(item["_id"])],
+                ))
                 if on_progress is not None:
                     on_progress(True)
             except Exception as error:
@@ -380,10 +539,16 @@ def run_local_bookmark(
     journal: RunJournal | None = None,
     mutation_lock: Any | None = None,
     expected_collection_ids: set[int | None] | None = None,
+    bookmark: dict[str, Any] | None = None,
+    artifacts: LocalRoutingArtifacts | None = None,
 ) -> dict[str, Any]:
     """Run the native two-step route; writes require ``apply=True``."""
-    validate_local_index(db_path)
-    bookmark = client.get_raindrop(bookmark_id)
+    artifacts = artifacts or _load_routing_artifacts(db_path)
+    bookmark = (
+        dict(bookmark)
+        if bookmark is not None
+        else client.get_raindrop(bookmark_id)
+    )
     attempt: AttemptHandle | None = None
     if journal is not None:
         attempt = journal.start_attempt(
@@ -395,10 +560,10 @@ def run_local_bookmark(
 
     try:
         candidate = dict(bookmark)
-        folder_id_map = _load_folder_map(db_path)
-        tag_rules, _mismatches = load_tag_rules(db_path)
-        series_rules = load_series_rules(db_path)
-        visual_index = load_visual_exemplar_index(db_path)
+        folder_id_map = artifacts.folder_id_map
+        tag_rules = artifacts.tag_rules
+        series_rules = artifacts.series_rules
+        visual_index = artifacts.visual_index
         text = TextIdentifier(tag_rules, series_rules).identify(candidate)
         if journal is not None and attempt is not None:
             journal.record_event(

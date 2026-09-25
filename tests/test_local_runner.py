@@ -221,7 +221,7 @@ def test_batch_processor_reports_partial_failures_without_losing_successes(
         journal=SQLiteRunJournal(tmp_path / "run-journal.sqlite"),
     )
 
-    def run_one(bookmark_id):
+    def run_one(bookmark_id, **_kwargs):
         if bookmark_id == 2:
             raise RuntimeError("boom")
         return {"bookmark_id": bookmark_id}
@@ -239,6 +239,158 @@ def test_batch_processor_reports_partial_failures_without_losing_successes(
     assert result["errors"] == [
         {"bookmark_id": 2, "type": "RuntimeError", "message": "boom"}
     ]
+
+
+def test_batch_processor_batches_visual_models_and_reuses_queue_snapshots(
+    tmp_path, monkeypatch
+):
+    _write_state(tmp_path)
+    save_visual_exemplar_index(
+        VisualExemplarIndex(
+            embeddings=np.array([[1.0, 0.0]], dtype=np.float32),
+            folder_paths=["Art/MIKU"],
+            bookmark_ids=[99],
+            min_similarity=0.0,
+            min_margin=0.0,
+            model_name=DEFAULT_CLIP_MODEL,
+        ),
+        str(tmp_path),
+    )
+
+    class Client:
+        def __init__(self):
+            self.items = [
+                {
+                    "_id": bookmark_id,
+                    "title": f"art {bookmark_id}",
+                    "type": "image",
+                    "domain": "example.test",
+                    "cover": f"https://example.test/{bookmark_id}.jpg",
+                    "collection": {"$id": -1},
+                    "tags": ["sorter-unreviewed"],
+                }
+                for bookmark_id in (1, 2)
+            ]
+            self.get_calls = 0
+            self.updates = []
+
+        def get_tags(self, collection_id):
+            assert collection_id == -1
+            return [{"_id": "sorter-unreviewed"}]
+
+        def get_raindrops(self, collection_id, perpage, search):
+            if search == '#"sorter-unreviewed"':
+                return ([dict(item) for item in self.items], False)
+            return ([], False)
+
+        def get_raindrop(self, bookmark_id):
+            self.get_calls += 1
+            return dict(next(item for item in self.items if item["_id"] == bookmark_id))
+
+        def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
+            self.updates.append((bookmark_id, collection_id, tags))
+
+    class BatchTagger:
+        def __init__(self):
+            self.calls = []
+
+        def predict_batch(self, images):
+            self.calls.append(images)
+            return [["hatsune_miku"] for _image in images]
+
+        def predict(self, _image):
+            raise AssertionError("per-image WD14 inference should not run")
+
+    class BatchEmbedder:
+        def __init__(self):
+            self.calls = []
+
+        def embed_images(self, images):
+            self.calls.append(images)
+            return np.array([[1.0, 0.0] for _image in images], dtype=np.float32)
+
+        def embed_image(self, _image):
+            raise AssertionError("per-image visual embedding should not run")
+
+    client = Client()
+    processor = LocalBatchProcessor(
+        client,
+        db_path=str(tmp_path),
+        model_dir=str(tmp_path / "model"),
+        journal=SQLiteRunJournal(tmp_path / "run-journal.sqlite"),
+        mutation_lock=threading.RLock(),
+    )
+    processor.tagger = BatchTagger()
+    processor.visual_embedder = BatchEmbedder()
+    monkeypatch.setattr(
+        "src.local_runner.download_cover",
+        lambda url: url.encode(),
+    )
+
+    result = processor(2)
+
+    assert result["succeeded"] == 2
+    assert len(processor.tagger.calls) == 1
+    assert processor.tagger.calls[0] == [
+        b"https://example.test/1.jpg",
+        b"https://example.test/2.jpg",
+    ]
+    assert len(processor.visual_embedder.calls) == 1
+    assert processor.visual_embedder.calls[0] == processor.tagger.calls[0]
+    assert client.get_calls == 2  # stale-state checks only
+    assert [update[:2] for update in client.updates] == [(1, 42), (2, 42)]
+
+
+def test_batch_processor_isolates_a_bad_image_without_losing_the_batch(
+    tmp_path, monkeypatch
+):
+    _write_state(tmp_path)
+
+    class Client:
+        def get_tags(self, _collection_id):
+            return [{"_id": "sorter-unreviewed"}]
+
+        def get_raindrops(self, _collection_id, perpage, search):
+            if search == '#"sorter-unreviewed"':
+                return ([
+                    {
+                        "_id": bookmark_id,
+                        "title": "art",
+                        "type": "image",
+                        "cover": f"https://example.test/{bookmark_id}.jpg",
+                        "tags": ["sorter-unreviewed"],
+                    }
+                    for bookmark_id in (1, 2)
+                ], False)
+            return ([], False)
+
+        def update_raindrop(self, *_args, **_kwargs):
+            return None
+
+    class PartiallyFailingTagger:
+        def predict_batch(self, _images):
+            raise ValueError("bad image in batch")
+
+        def predict(self, image):
+            if image.endswith(b"/2.jpg"):
+                raise ValueError("bad second image")
+            return ["hatsune_miku"]
+
+    processor = LocalBatchProcessor(
+        Client(),
+        db_path=str(tmp_path),
+        model_dir=str(tmp_path / "model"),
+        journal=SQLiteRunJournal(tmp_path / "run-journal.sqlite"),
+    )
+    processor.tagger = PartiallyFailingTagger()
+    monkeypatch.setattr("src.local_runner.download_cover", lambda url: url.encode())
+
+    result = processor(2)
+
+    assert result["succeeded"] == 1
+    assert result["failed"] == 1
+    assert result["errors"][0]["bookmark_id"] == 2
+    assert result["errors"][0]["type"] == "ValueError"
 
 
 def test_batch_processor_stops_before_the_next_bookmark_when_cancelled(
@@ -259,7 +411,7 @@ def test_batch_processor_stops_before_the_next_bookmark_when_cancelled(
         journal=SQLiteRunJournal(tmp_path / "run-journal.sqlite"),
     )
     calls = []
-    processor.run_one = lambda bookmark_id: calls.append(bookmark_id) or {"status": "ok"}
+    processor.run_one = lambda bookmark_id, **_kwargs: calls.append(bookmark_id) or {"status": "ok"}
 
     result = processor(25, should_stop=lambda: bool(calls))
 

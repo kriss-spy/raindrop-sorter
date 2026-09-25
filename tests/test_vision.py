@@ -32,7 +32,7 @@ from src.vision_worker import (
     run_character_vision_on_bookmark,
     run_vision_on_bookmark,
 )
-from src.wd14_tagger import normalize_tag, WD14Tagger
+from src.wd14_tagger import normalize_tag, select_execution_providers, WD14Tagger
 
 
 # ---------------------------------------------------------------------------
@@ -59,6 +59,17 @@ def test_normalize_tag_basic():
 
 def test_normalize_tag_idempotent():
     assert normalize_tag("hatsune_miku") == "hatsune_miku"
+
+
+def test_wd14_prefers_cuda_without_enabling_untested_tensorrt():
+    assert select_execution_providers([
+        "TensorrtExecutionProvider",
+        "CUDAExecutionProvider",
+        "CPUExecutionProvider",
+    ]) == ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    assert select_execution_providers(["CPUExecutionProvider"]) == [
+        "CPUExecutionProvider"
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -103,6 +114,56 @@ def test_wd14_tagger_predict_bytes():
 
     tags = tagger.predict(buf.getvalue())
     assert tags == ["test_tag"]
+
+
+def test_wd14_tagger_predict_batch_runs_one_model_call_for_many_images():
+    tagger = WD14Tagger(model_dir="/tmp/fake_wd14", threshold=0.5)
+    mock_session = MagicMock()
+    model_input = MagicMock(name="input")
+    model_input.shape = ["batch", 448, 448, 3]
+    mock_session.get_inputs.return_value = [model_input]
+    mock_session.run.return_value = [
+        np.array([[0.9, 0.2], [0.1, 0.8]], dtype=np.float32)
+    ]
+    tagger._session = mock_session
+    tagger._tags = ["hatsune_miku", "hakurei_reimu"]
+
+    from PIL import Image
+
+    images = [
+        Image.new("RGB", (448, 448), color=(255, 0, 0)),
+        Image.new("RGB", (448, 448), color=(0, 0, 255)),
+    ]
+
+    assert tagger.predict_batch(images) == [
+        ["hatsune_miku"],
+        ["hakurei_reimu"],
+    ]
+    assert mock_session.run.call_count == 1
+
+
+def test_wd14_tagger_predict_batch_honors_fixed_model_batch_dimension():
+    tagger = WD14Tagger(model_dir="/tmp/fake_wd14", threshold=0.5)
+    mock_session = MagicMock()
+    model_input = MagicMock(name="input")
+    model_input.shape = [1, 448, 448, 3]
+    mock_session.get_inputs.return_value = [model_input]
+    mock_session.run.side_effect = [
+        [np.array([[0.9, 0.2]], dtype=np.float32)],
+        [np.array([[0.1, 0.8]], dtype=np.float32)],
+    ]
+    tagger._session = mock_session
+    tagger._tags = ["hatsune_miku", "hakurei_reimu"]
+
+    from PIL import Image
+
+    images = [Image.new("RGB", (448, 448)), Image.new("RGB", (448, 448))]
+
+    assert tagger.predict_batch(images) == [
+        ["hatsune_miku"],
+        ["hakurei_reimu"],
+    ]
+    assert mock_session.run.call_count == 2
 
 
 def test_wd14_tagger_predict_characters_excludes_generic_properties():
