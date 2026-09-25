@@ -53,7 +53,7 @@ html,body{height:100%;overflow:hidden}
 .toolbar #search{grid-area:search}.toolbar #outcome{grid-area:outcome}.toolbar #phase{grid-area:phase}.toolbar #scope{grid-area:scope}.toolbar .view-switch{grid-area:view}.toolbar button[type="submit"]{grid-area:refresh}.toolbar #sorter-toggle{grid-area:control}.toolbar #detail-toggle{grid-area:detail}
 .control{padding:8px 10px}.icon-button{display:inline-grid;place-items:center;border:1px solid var(--line);background:#0e151c;color:var(--cyan);width:36px;height:36px;padding:0;border-radius:9px;cursor:pointer}.icon-button:hover,.icon-button:focus-visible{border-color:var(--cyan);background:#122129}.icon-button svg,.icon-link svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.icon-button.active{color:var(--lime);border-color:var(--lime)}
 .view-switch{display:flex}.view-switch .icon-button{border-radius:0}.view-switch .icon-button:first-child{border-radius:9px 0 0 9px}.view-switch .icon-button:last-child{border-radius:0 9px 9px 0;margin-left:-1px}
-.action-bar,.sorter-panel{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#101820}.action-bar[hidden],.sorter-panel[hidden]{display:none}.action-bar .control{min-width:260px}.action-message{color:var(--muted);margin-left:auto}.sorter-panel{justify-content:flex-end}.sorter-status{margin-right:auto}.sorter-status strong{color:var(--lime)}.sorter-panel .explain{margin:0}
+.action-bar,.sorter-panel{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#101820}.action-bar[hidden],.sorter-panel[hidden]{display:none}.action-bar .control{min-width:260px}.action-message{color:var(--muted);margin-left:auto}.sorter-panel{justify-content:flex-end}.sorter-status{margin-right:auto}.sorter-status strong{color:var(--lime)}.sorter-panel .explain{margin:0}.batch-picker{position:relative;flex:0 1 520px}.batch-picker .control{width:100%}.batch-destination-results{position:absolute;z-index:10;top:calc(100% + 5px);left:0;right:0;max-height:min(380px,60vh);overflow:auto;padding:5px;background:#0e151c;border:1px solid var(--line);border-radius:9px;box-shadow:0 18px 42px #05080bcc}.batch-destination-results[hidden]{display:none}.batch-destination-option{display:block;width:100%;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;cursor:pointer}.batch-destination-option:hover,.batch-destination-option.active{background:#183039;color:var(--cyan)}.batch-destination-empty{padding:10px;color:var(--muted)}
 .workspace{display:block;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}.panel-head{padding:9px 12px}
 .attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));grid-auto-rows:min-content;align-content:start;align-items:stretch;gap:10px;max-height:none}.attempt{position:relative;padding:0;border:1px solid var(--line);border-radius:11px;background:#0d141a;overflow:hidden}.attempt:hover,.attempt.active{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.attempt-body{display:flex;flex-direction:column;gap:5px;padding:9px 10px 10px;min-width:0}.attempt-cover{display:block;width:100%;height:100%;object-fit:cover;background:linear-gradient(135deg,#111d25,#0a1015)}.attempt-cover-wrap{position:relative;background:linear-gradient(135deg,#111d25,#080d11)}.card-cover-wrap{aspect-ratio:16/9}.attempt-cover{position:absolute;inset:0;z-index:1}.attempt-cover-wrap.missing img{display:none}.attempt-select{position:absolute;z-index:3;top:8px;left:8px;width:18px;height:18px;accent-color:var(--cyan)}.attempt-tools{display:flex;align-items:center;gap:7px}.icon-link{display:inline-grid;place-items:center;color:var(--cyan);width:25px;height:25px;border:1px solid var(--line);border-radius:7px;text-decoration:none}.attempt-head .attempt-tools{margin-left:auto}.attempt-head .badge{margin-left:0}
 .attempt-table-wrap{padding:0;overflow:auto}.attempt-table{width:100%;border-collapse:collapse;table-layout:fixed}.attempt-table th,.attempt-table td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.attempt-table th{position:sticky;top:0;z-index:2;background:#111820;color:var(--muted);font-size:10px;text-transform:uppercase}.attempt-table tbody tr{cursor:pointer}.attempt-table tbody tr:hover,.attempt-table tbody tr.active{background:#17232b}.attempt-table .col-check{width:42px}.attempt-table .col-cover{width:76px}.attempt-table .col-outcome{width:110px}.attempt-table .col-run{width:145px}.attempt-table .col-time{width:135px}.attempt-table .col-open{width:48px}.table-cover{width:58px;height:42px;object-fit:cover;border-radius:6px;background:#080d11}.table-title{font:650 14px system-ui;overflow-wrap:anywhere}.table-destination{color:var(--cyan);overflow-wrap:anywhere}
@@ -65,7 +65,7 @@ html,body{height:100%;overflow:hidden}
 </style></head><body><main class="shell">
 <header class="top"><h1 class="brand">Raindrop Sorter</h1><div class="live"><i class="dot"></i><span id="updated">Connecting…</span></div></header>
 <form class="toolbar" id="filters"><input class="control" id="search" placeholder="Search bookmarks, destinations, summaries"><select class="control" id="outcome" aria-label="Filter by outcome"><option value="">All outcomes</option></select><select class="control" id="phase"><option value="">All lifecycle phases</option></select><select class="control" id="scope" aria-label="Dashboard view"><option value="latest">Latest status</option><option value="history">Attempt history</option></select><div class="view-switch" role="group" aria-label="Results layout"><button class="icon-button active" id="card-view" type="button" aria-label="Image card layout" title="Image card layout"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button><button class="icon-button" id="table-view" type="button" aria-label="Table layout" title="Table layout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v16"/></svg></button></div><button class="icon-button" type="submit" aria-label="Refresh dashboard" title="Refresh dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a7.5 7.5 0 1 0 .2 5"/></svg></button><button class="icon-button" id="sorter-toggle" type="button" aria-label="Show sorter controls" title="Show sorter controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg></button><button class="icon-button detail-toggle" id="detail-toggle" type="button" aria-label="Show attempt details" title="Show attempt details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button></form>
-<section class="action-bar" id="batch-bar" hidden><strong id="selection-count">0 selected</strong><select class="control" id="batch-destination" aria-label="Batch destination"><option value="">Choose Art destination…</option></select><button class="icon-button" id="batch-assign" type="button" aria-label="Assign selected Raindrops" title="Assign selected Raindrops" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><path d="M5 5v14"/></svg></button><button class="icon-button" id="selection-clear" type="button" aria-label="Clear selection" title="Clear selection"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><span class="action-message" id="batch-message"></span></section>
+<section class="action-bar" id="batch-bar" hidden><strong id="selection-count">0 selected</strong><div class="batch-picker"><input class="control" id="batch-destination-search" role="combobox" aria-label="Batch destination" aria-autocomplete="list" aria-controls="batch-destination-results" aria-expanded="false" autocomplete="off" placeholder="Search Art destinations…"><div class="batch-destination-results" id="batch-destination-results" role="listbox" hidden></div></div><button class="icon-button" id="batch-assign" type="button" aria-label="Assign selected Raindrops" title="Assign selected Raindrops" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><path d="M5 5v14"/></svg></button><button class="icon-button" id="selection-clear" type="button" aria-label="Clear selection" title="Clear selection"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><span class="action-message" id="batch-message"></span></section>
 <section class="sorter-panel" id="sorter-panel" hidden><div class="sorter-status"><strong id="sorter-state">Loading…</strong><div class="explain" id="sorter-summary">Reading local sorter status</div></div><button class="icon-button" id="process-all" type="button" aria-label="Process all Unsorted Raindrops" title="Process all Unsorted Raindrops"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/><path d="m15 15 3 3 4-5"/></svg></button><button class="icon-button" id="sorter-stop" type="button" aria-label="Stop processing Unsorted Raindrops" title="Stop processing after the current Raindrop"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button><button class="icon-button" id="sorter-start" type="button" aria-label="Start automatic sorter" title="Start automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg></button><button class="icon-button" id="sorter-pause" type="button" aria-label="Pause automatic sorter" title="Pause automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg></button></section>
 <section class="workspace" id="workspace"><div class="panel attempt-panel"><div class="panel-head"><span id="list-title">Latest Raindrop status</span><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
 </main><script>
@@ -85,6 +85,9 @@ let artCollectionsPromise = null;
 let resultLayout = localStorage.getItem('sorter-result-layout') === 'table' ? 'table' : 'cards';
 let renderedAttempts = [];
 const selectedAttempts = new Set();
+let batchDestinationCollections = [];
+let batchDestinationFocusIndex = 0;
+let batchDestinationWantsOpen = false;
 const previewObserver = 'IntersectionObserver' in window ? new IntersectionObserver(entries => {
   entries.filter(entry => entry.isIntersecting).forEach(entry => {
     const image = entry.target;
@@ -206,9 +209,10 @@ function clearCaches() {
   });
   previewUrlCache.clear();
   artCollectionsPromise = null;
-  const batchDestination = select('#batch-destination');
+  const batchDestination = select('#batch-destination-search');
   batchDestination.dataset.loaded = 'false';
-  batchDestination.replaceChildren(new Option('Choose Art destination…', ''));
+  batchDestinationCollections = [];
+  closeBatchDestinationResults();
 }
 function invalidateDetailSelection() {
   detailSelectionRevision += 1;
@@ -381,7 +385,7 @@ function syncSelectionUi() {
   select('#batch-bar').hidden = count === 0;
   if (count) void loadBatchDestinations();
   select('#selection-count').textContent = `${count} selected`;
-  select('#batch-assign').disabled = !count || !select('#batch-destination').value;
+  select('#batch-assign').disabled = !count || !select('#batch-destination-search').dataset.collectionId;
   document.querySelectorAll('.attempt-select').forEach(checkbox => {
     const item = checkbox.closest('[data-attempt-id]');
     if (item) checkbox.checked = selectedAttempts.has(item.dataset.attemptId);
@@ -610,22 +614,77 @@ async function refreshDashboard() {
   try { await renderOverview(); await renderAttempts(); }
   catch (error) { select('#attempts').replaceChildren(element('div', 'error', error.message)); }
 }
+function closeBatchDestinationResults() {
+  const results = select('#batch-destination-results');
+  const input = select('#batch-destination-search');
+  batchDestinationWantsOpen = false;
+  results.hidden = true;
+  input.setAttribute('aria-expanded', 'false');
+  input.removeAttribute('aria-activedescendant');
+}
+function chooseBatchDestination(collection) {
+  const input = select('#batch-destination-search');
+  input.dataset.collectionId = String(collection.collection_id);
+  input.value = collection.path;
+  closeBatchDestinationResults();
+  syncSelectionUi();
+}
+function renderBatchDestinationResults() {
+  const input = select('#batch-destination-search');
+  const results = select('#batch-destination-results');
+  batchDestinationWantsOpen = true;
+  const terms = input.value.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
+  const matches = batchDestinationCollections
+    .filter(collection => terms.every(term => collection.path.toLocaleLowerCase().includes(term)))
+    .slice(0, 100);
+  results.replaceChildren();
+  if (!matches.length) {
+    results.append(element('div', 'batch-destination-empty', 'No matching Art destinations'));
+    batchDestinationFocusIndex = -1;
+  } else {
+    batchDestinationFocusIndex = Math.max(0, Math.min(batchDestinationFocusIndex, matches.length - 1));
+    matches.forEach((collection, index) => {
+      const option = element('button', 'batch-destination-option' + (index === batchDestinationFocusIndex ? ' active' : ''), collection.path);
+      option.type = 'button';
+      option.id = `batch-destination-option-${collection.collection_id}`;
+      option.tabIndex = -1;
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', String(String(collection.collection_id) === input.dataset.collectionId));
+      option.onmousedown = event => event.preventDefault();
+      option.onclick = () => chooseBatchDestination(collection);
+      option.onmousemove = () => {
+        batchDestinationFocusIndex = index;
+        results.querySelectorAll('[role="option"]').forEach((item, itemIndex) => item.classList.toggle('active', itemIndex === index));
+        input.setAttribute('aria-activedescendant', option.id);
+      };
+      results.append(option);
+    });
+    input.setAttribute('aria-activedescendant', results.querySelectorAll('[role="option"]')[batchDestinationFocusIndex].id);
+  }
+  results.hidden = false;
+  input.setAttribute('aria-expanded', 'true');
+}
 async function loadBatchDestinations() {
-  const destination = select('#batch-destination');
+  const destination = select('#batch-destination-search');
   if (destination.dataset.loaded === 'true') return;
   try {
     const collections = await artCollections();
-    const selected = destination.value;
-    destination.replaceChildren(new Option('Choose Art destination…', ''));
-    collections.forEach(item => destination.append(new Option(item.path, item.collection_id)));
-    destination.value = selected;
+    const selected = destination.dataset.collectionId || '';
+    batchDestinationCollections = collections;
+    const selectedCollection = collections.find(item => String(item.collection_id) === selected);
+    if (selectedCollection) destination.value = selectedCollection.path;
+    else if (selected) {
+      delete destination.dataset.collectionId;
+      destination.value = '';
+      syncSelectionUi();
+    }
     destination.dataset.loaded = 'true';
   } catch (error) {
     select('#batch-message').textContent = error.message;
   }
 }
 async function assignSelected() {
-  const collectionId = Number(select('#batch-destination').value);
+  const collectionId = Number(select('#batch-destination-search').dataset.collectionId);
   if (!collectionId || !selectedAttempts.size) return;
   const button = select('#batch-assign');
   button.disabled = true;
@@ -699,7 +758,36 @@ select('#card-view').onclick = () => {
 select('#table-view').onclick = () => {
   resultLayout = 'table'; localStorage.setItem('sorter-result-layout', resultLayout); renderAttemptResults(); syncSelectionUi();
 };
-select('#batch-destination').onchange = syncSelectionUi;
+select('#batch-destination-search').onfocus = async event => {
+  batchDestinationWantsOpen = true;
+  await loadBatchDestinations();
+  if (!batchDestinationWantsOpen || document.activeElement !== event.target) return;
+  batchDestinationFocusIndex = 0;
+  renderBatchDestinationResults();
+  event.target.select();
+};
+select('#batch-destination-search').oninput = () => {
+  delete select('#batch-destination-search').dataset.collectionId;
+  batchDestinationFocusIndex = 0;
+  renderBatchDestinationResults();
+  syncSelectionUi();
+};
+select('#batch-destination-search').onkeydown = event => {
+  const results = select('#batch-destination-results');
+  if (event.key === 'Escape') { closeBatchDestinationResults(); return; }
+  if (!['ArrowDown', 'ArrowUp', 'Enter'].includes(event.key)) return;
+  event.preventDefault();
+  if (results.hidden) renderBatchDestinationResults();
+  const options = [...results.querySelectorAll('[role="option"]')];
+  if (!options.length) return;
+  if (event.key === 'Enter') { options[batchDestinationFocusIndex]?.click(); return; }
+  const direction = event.key === 'ArrowDown' ? 1 : -1;
+  batchDestinationFocusIndex = (batchDestinationFocusIndex + direction + options.length) % options.length;
+  options.forEach((option, index) => option.classList.toggle('active', index === batchDestinationFocusIndex));
+  select('#batch-destination-search').setAttribute('aria-activedescendant', options[batchDestinationFocusIndex].id);
+  options[batchDestinationFocusIndex].scrollIntoView({block:'nearest'});
+};
+select('#batch-destination-search').onblur = () => setTimeout(closeBatchDestinationResults, 100);
 select('#batch-assign').onclick = assignSelected;
 select('#selection-clear').onclick = () => { selectedAttempts.clear(); renderAttemptResults(); syncSelectionUi(); };
 select('#sorter-toggle').onclick = () => {

@@ -78,6 +78,15 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert 'aria-label="Image card layout"' in page
     assert 'aria-label="Table layout"' in page
     assert 'aria-label="Assign selected Raindrops"' in page
+    assert 'role="combobox"' in page
+    assert 'placeholder="Search Art destinations…"' in page
+    assert 'role="listbox"' in page
+    assert "renderBatchDestinationResults" in page
+    assert "batchDestinationCollections" in page
+    assert "batchDestinationWantsOpen" in page
+    assert "option.tabIndex = -1" in page
+    assert "aria-activedescendant" in page
+    assert '<select class="control" id="batch-destination"' not in page
     assert 'aria-label="Process all Unsorted Raindrops"' in page
     assert 'aria-label="Stop processing Unsorted Raindrops"' in page
     assert "https://app.raindrop.io/my/0/item/" in page
