@@ -404,6 +404,15 @@ class SQLiteRunJournal:
             "outcomes": {str(row["outcome"]): int(row["count"]) for row in rows},
         }
 
+    def has_bookmark(self, bookmark_id: int) -> bool:
+        """Return whether any journal attempt exists for a bookmark."""
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT 1 FROM attempts WHERE bookmark_id = ? LIMIT 1",
+                (bookmark_id,),
+            ).fetchone()
+        return row is not None
+
     def status(self) -> dict[str, int]:
         with self._connect() as connection:
             rows = connection.execute(

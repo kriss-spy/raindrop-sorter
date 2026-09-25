@@ -56,6 +56,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
         page = response.read().decode()
     assert "Raindrop Journal" in page
     assert "Search bookmarks" in page
+    assert "bookmark-preview" in page
 
     overview = _json(f"{base_url}/api/overview")
     assert overview["total_attempts"] == 1
@@ -89,3 +90,50 @@ def test_dashboard_refuses_to_create_a_missing_journal(tmp_path):
     with pytest.raises(FileNotFoundError, match="journal does not exist"):
         create_server(missing, host="127.0.0.1", port=0)
     assert not missing.exists()
+
+
+def test_dashboard_proxies_live_bookmark_preview(tmp_path):
+    path = tmp_path / "journal.sqlite"
+    journal = SQLiteRunJournal(path)
+    journal.start_attempt({"_id": 1864496693}, mode="dry-run")
+    calls = []
+
+    def load_preview(bookmark_id):
+        calls.append(bookmark_id)
+        return b"preview-bytes", "image/webp"
+
+    server = create_server(
+        path, host="127.0.0.1", port=0, preview_loader=load_preview
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with urlopen(
+            f"http://127.0.0.1:{server.server_port}/api/bookmarks/1864496693/preview"
+        ) as response:
+            assert response.headers["Content-Type"] == "image/webp"
+            assert response.read() == b"preview-bytes"
+        assert calls == [1864496693]
+
+        with pytest.raises(HTTPError) as unknown:
+            urlopen(
+                f"http://127.0.0.1:{server.server_port}/api/bookmarks/999/preview"
+            )
+        assert unknown.value.code == 404
+        assert calls == [1864496693]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_dashboard_rejects_non_loopback_preview_binding(tmp_path):
+    path = tmp_path / "journal.sqlite"
+    SQLiteRunJournal(path)
+    with pytest.raises(ValueError, match="loopback"):
+        create_server(
+            path,
+            host="0.0.0.0",
+            port=0,
+            preview_loader=lambda bookmark_id: None,
+        )

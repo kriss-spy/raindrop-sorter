@@ -11,12 +11,16 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
+from dotenv import load_dotenv
+
+from src.bookmark_preview import BookmarkPreviewService, PreviewLoader
 from src.journal_dashboard import DASHBOARD_HTML
 from src.run_journal import SQLiteRunJournal
 
 
 class JournalHTTPServer(ThreadingHTTPServer):
     journal: SQLiteRunJournal
+    preview_loader: PreviewLoader | None
 
 
 def create_server(
@@ -24,9 +28,13 @@ def create_server(
     *,
     host: str = "127.0.0.1",
     port: int = 8765,
+    preview_loader: PreviewLoader | None = None,
 ) -> JournalHTTPServer:
+    if preview_loader is not None and host not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("image previews require a loopback host")
     server = JournalHTTPServer((host, port), JournalRequestHandler)
     server.journal = SQLiteRunJournal(journal_path, read_only=True)
+    server.preview_loader = preview_loader
     return server
 
 
@@ -42,6 +50,8 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                 self._send_json(HTTPStatus.OK, self.server.journal.overview())
             elif request.path == "/api/attempts":
                 self._attempts(parse_qs(request.query))
+            elif request.path.startswith("/api/bookmarks/") and request.path.endswith("/preview"):
+                self._preview(request.path)
             elif request.path.startswith("/api/attempts/"):
                 attempt_id = request.path.removeprefix("/api/attempts/")
                 trace = self.server.journal.explain_attempt(attempt_id)
@@ -66,6 +76,28 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         )
         self._send_json(HTTPStatus.OK, {"items": items, "count": len(items)})
 
+    def _preview(self, path: str) -> None:
+        bookmark_id = int(path.removeprefix("/api/bookmarks/").removesuffix("/preview"))
+        if not self.server.journal.has_bookmark(bookmark_id):
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "bookmark not in journal"})
+            return
+        if self.server.preview_loader is None:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "image preview unavailable"})
+            return
+        try:
+            preview = self.server.preview_loader(bookmark_id)
+        except Exception as error:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {"error": f"could not load image preview: {type(error).__name__}"},
+            )
+            return
+        if preview is None:
+            self._send_json(HTTPStatus.NOT_FOUND, {"error": "bookmark has no image preview"})
+            return
+        image, content_type = preview
+        self._send(HTTPStatus.OK, image, content_type)
+
     def _send_json(self, status: HTTPStatus, payload: object) -> None:
         self._send(
             status,
@@ -82,7 +114,7 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'",
+            "default-src 'self'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'",
         )
         self.end_headers()
         self.wfile.write(encoded)
@@ -102,14 +134,23 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--open", action="store_true", help="Open the dashboard in a browser")
     args = parser.parse_args(argv)
+    load_dotenv()
     path = args.journal_path or os.path.join(args.db_path, "run-journal.sqlite")
+    token = os.environ.get("RAINDROP_TOKEN")
     try:
-        server = create_server(path, host=args.host, port=args.port)
+        server = create_server(
+            path,
+            host=args.host,
+            port=args.port,
+            preview_loader=BookmarkPreviewService(token) if token else None,
+        )
     except FileNotFoundError as error:
         parser.error(str(error))
     url = f"http://{args.host}:{server.server_port}"
     print(f"Raindrop Journal: {url}")
     print(f"Reading: {Path(path).resolve()}")
+    if not token:
+        print("Image previews disabled: RAINDROP_TOKEN is not configured.")
     print("Press Ctrl+C to stop.")
     if args.open:
         webbrowser.open(url)

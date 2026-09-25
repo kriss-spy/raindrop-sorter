@@ -88,3 +88,5 @@ def test_dashboard_queries_include_snapshot_summary_and_filters(tmp_path):
     trace = journal.explain_attempt(attempt.attempt_id)
     assert trace is not None
     assert trace["attempt"]["bookmark_snapshot"]["title"] == "Mini's new outfit"
+    assert journal.has_bookmark(123)
+    assert not journal.has_bookmark(999)

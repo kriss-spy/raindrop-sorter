@@ -216,9 +216,11 @@ uv run python local_dashboard.py --db-path chroma_db --open
 
 The dashboard stays on your computer at <http://127.0.0.1:8765>. It shows outcome
 counts, searchable and filterable attempts, the evidence behind each decision, the
-action taken, and the full event timeline. It is read-only: it cannot move bookmarks
-or change tags. Leave the command running while using the page, and press `Ctrl+C`
-to stop it.
+action taken, a live bookmark image preview, and the full event timeline. It is
+read-only: it cannot move bookmarks or change tags. Image previews use the configured
+`RAINDROP_TOKEN` to resolve the current cover through the localhost server; the token
+and cover URL are not stored in the journal or sent to the browser. Leave the command
+running while using the page, and press `Ctrl+C` to stop it.
 
 If port 8765 is already in use, choose another one with `--port 8766`. Use
 `--journal-path /another/path.sqlite` when the sorter writes its journal somewhere
