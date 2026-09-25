@@ -120,7 +120,11 @@ class TextIdentifier:
             if destination and _contains_alias(searchable, normalized_alias):
                 matches.append(_alias_evidence(normalized_alias, destination, "curated_text"))
         for alias, targets in CHARACTER_ALIAS_ROUTES.items():
-            if _contains_alias(searchable, alias):
+            if _contains_alias(
+                searchable,
+                alias,
+                require_script_boundaries=not alias.isascii() and len(alias) <= 2,
+            ):
                 matches.extend(
                     _alias_evidence(alias, destination, "character_alias")
                     for target in targets
@@ -236,12 +240,41 @@ def _resolve_target(target: RuleTarget | None, modality: str | None) -> str | No
     return canonical_destination(matches[0]) if len(matches) == 1 else None
 
 
-def _contains_alias(text: str, alias: str) -> bool:
+def _contains_alias(
+    text: str,
+    alias: str,
+    *,
+    require_script_boundaries: bool = False,
+) -> bool:
     if not alias:
         return False
     if not alias.isascii():
-        return text.strip() == alias if len(alias) == 1 else alias in text
+        if not require_script_boundaries:
+            return alias in text
+        start = 0
+        while (index := text.find(alias, start)) != -1:
+            before = text[index - 1] if index > 0 else ""
+            after_index = index + len(alias)
+            after = text[after_index] if after_index < len(text) else ""
+            if (
+                _script_family(before) != _script_family(alias[0])
+                and _script_family(after) != _script_family(alias[-1])
+            ):
+                return True
+            start = index + 1
+        return False
     return re.search(rf"(?<![\w]){re.escape(alias)}(?![\w])", text) is not None
+
+
+def _script_family(character: str) -> str | None:
+    if not character:
+        return None
+    name = unicodedata.name(character, "")
+    if character.isalpha() and name:
+        return name.partition(" ")[0]
+    if character.isascii() and (character.isalnum() or character == "_"):
+        return "ASCII_WORD"
+    return None
 
 
 def _alias_evidence(alias: str, target: str, source: str) -> TextEvidence:

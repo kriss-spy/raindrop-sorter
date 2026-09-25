@@ -88,3 +88,24 @@ def test_art_alias_does_not_route_a_nonvisual_article():
         {"_id": 999, "type": "article", "title": "Genshin release notes", "tags": []}
     )
     assert evidence.kind == "no_match"
+
+
+def test_katakana_alias_does_not_match_inside_a_longer_name():
+    evidence = TextIdentifier({}, {}).identify(
+        {
+            "_id": 999,
+            "type": "image",
+            "title": "『アリサ・ミハイロヴナ・九条』fanart",
+            "tags": [],
+        }
+    )
+
+    assert evidence.kind == "no_match"
+
+
+def test_work_alias_can_match_inside_unsegmented_cjk_text():
+    evidence = TextIdentifier({}, {}).identify(
+        {"_id": 999, "type": "image", "title": "原神壁紙", "tags": []}
+    )
+
+    assert evidence.destination == "Art/GAMES/GENSHIN"

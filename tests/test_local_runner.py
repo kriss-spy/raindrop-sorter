@@ -97,6 +97,37 @@ def test_local_runner_executes_vision_and_resolution_without_writing(tmp_path):
     assert client.updates == []
 
 
+def test_local_runner_runs_vision_for_pixiv_link_with_image_media(tmp_path):
+    _write_state(tmp_path)
+    calls = []
+    client = FakeRaindropClient(
+        {
+            "_id": 123,
+            "title": "fanart",
+            "type": "link",
+            "domain": "pixiv.net",
+            "link": "https://www.pixiv.net/en/artworks/149957672",
+            "cover": "https://embed.pixiv.net/artwork.php?illust_id=149957672",
+            "media": [
+                {"type": "image", "link": "https://i.pximg.net/example.jpg"}
+            ],
+            "tags": ["sorter-unreviewed"],
+        }
+    )
+
+    result = run_local_bookmark(
+        client,
+        bookmark_id=123,
+        db_path=str(tmp_path),
+        analyze_vision=lambda bookmark: calls.append(bookmark["_id"])
+        or ["ai:wdtag-hatsune_miku"],
+    )
+
+    assert calls == [123]
+    assert result["target_folder"] == "Art/MIKU"
+    assert result["vision_tag_count"] == 1
+
+
 def test_local_runner_writes_only_when_apply_is_explicit(tmp_path):
     _write_state(tmp_path)
     client = FakeRaindropClient(
