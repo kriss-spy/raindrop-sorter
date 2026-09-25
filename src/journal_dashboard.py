@@ -23,8 +23,13 @@ button,input,select{font:inherit}
 button.control{cursor:pointer;color:var(--cyan)}
 .panel{overflow:hidden}
 .panel-head{border-bottom:1px solid var(--line);display:flex;justify-content:space-between;color:var(--muted)}
-.attempt{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;color:inherit;width:100%;text-align:left;cursor:pointer}
-.attempt-title{font:650 15px system-ui;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.attempt{display:flex;flex-direction:column;gap:5px;color:inherit;width:100%;text-align:left;cursor:pointer}
+.attempt-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.attempt-title{font:650 15px/1.3 system-ui;white-space:normal;overflow-wrap:anywhere}
+.attempt-meta{line-height:1.35}
+.attempt-footer{display:flex;align-items:flex-end;justify-content:space-between;gap:8px}
+.attempt-time{color:var(--muted);font-size:11px;white-space:nowrap;margin-left:auto}
+.attempt-destination{overflow-wrap:anywhere}
 .meta,.when{color:var(--muted);font-size:12px}
 .destination{color:var(--cyan)}
 .badge{align-self:start;border:1px solid currentColor;border-radius:99px;padding:2px 8px;font-size:10px;text-transform:uppercase}
@@ -45,7 +50,7 @@ button.control{cursor:pointer;color:var(--cyan)}
 .skeleton{height:72px;background:linear-gradient(90deg,#111820,#18242c,#111820);background-size:200%;animation:p 1.2s infinite}
 @keyframes p{to{background-position:-200%}}
 .resolution{border:1px solid color-mix(in srgb,var(--amber) 55%,var(--line));border-radius:11px;padding:16px;margin:18px 0;background:#17150f}.resolution h3{margin:0 0 7px;font:700 16px system-ui}.choice-group{margin-top:14px}.choice-label{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}.choice-grid,.collection-results{display:flex;flex-wrap:wrap;gap:7px}.choice{border:1px solid var(--line);background:#101820;color:var(--text);border-radius:8px;padding:8px 10px;cursor:pointer;text-align:left}.choice:hover,.choice.selected{border-color:var(--cyan);color:var(--cyan);background:#102126}.choice:disabled{cursor:not-allowed;opacity:.45}.collection-search{width:100%;margin-bottom:8px}.collection-results{max-height:155px;overflow:auto}.selection{color:var(--cyan);margin:14px 0 9px}.apply-choice{width:100%;background:var(--cyan);color:#071013;border:0;border-radius:8px;padding:11px;font-weight:750;cursor:pointer}.apply-choice:disabled{cursor:not-allowed;opacity:.45}.resolution-error{color:var(--red);margin-top:9px}
-html,body{height:100%;overflow:hidden}.shell{height:100dvh;max-width:none;padding:18px 22px;display:grid;grid-template-rows:auto auto auto minmax(0,1fr);gap:10px}.top{align-items:center;margin:0}.brand{font-size:clamp(24px,3vw,34px);margin:2px 0}.sub{font-size:12px}.stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:0}.stat{padding:8px 12px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-radius:9px}.stat b{font-size:19px;margin:0;order:-1}.stat span{font-size:9px}.toolbar{grid-template-columns:minmax(220px,1fr) 150px 180px 150px auto auto;gap:8px;margin:0}.control{padding:8px 10px}.workspace{display:block;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}.panel-head{padding:9px 12px}.attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));grid-auto-rows:min-content;align-content:start;gap:9px;max-height:none}.attempt{min-height:112px;padding:13px;border:1px solid var(--line);border-radius:10px;background:#0d141a}.attempt:hover,.attempt.active{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.attempt .when{margin-top:5px}.detail-panel{position:absolute;z-index:5;inset:0 0 0 auto;width:min(720px,52vw);display:grid;grid-template-rows:auto minmax(0,1fr);background:#10171f;box-shadow:-18px 0 44px #05080bad;transform:translateX(calc(100% + 24px));transition:transform .2s ease;pointer-events:none}.workspace.detail-open .detail-panel{transform:translateX(0);pointer-events:auto}.detail-panel-head{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--muted)}.icon-button{border:1px solid var(--line);background:#0e151c;color:var(--text);width:30px;height:30px;border-radius:8px;cursor:pointer}.detail-toggle[hidden]{display:none}#detail{padding:18px;max-height:none;overflow:auto;min-height:0}.detail-title{font-size:21px}.bookmark-preview{max-height:330px;margin:14px 0}.empty{min-height:0}.drawer-scrim{position:absolute;z-index:4;inset:0;background:#05080b99;opacity:0;pointer-events:none;transition:opacity .2s;border:0}.workspace.detail-open .drawer-scrim{opacity:1;pointer-events:auto}@media(max-width:950px){.shell{padding:12px}.top .sub{display:none}.stats{grid-template-columns:repeat(3,1fr)}.toolbar{grid-template-columns:1fr 1fr 1fr}.toolbar #search{grid-column:span 3}.toolbar button{grid-column:auto}.detail-panel{width:min(680px,92vw)}}@media(max-width:600px){.live{display:none}.stats{display:flex;overflow:auto}.stat{min-width:105px}.toolbar{grid-template-columns:1fr 1fr}.toolbar #search{grid-column:span 2}.attempt-grid{grid-template-columns:1fr}.detail-panel{width:100%}}@media(max-height:520px){html,body{overflow:auto}.shell{height:auto;min-height:520px}.workspace{min-height:260px}.eyebrow,.sub{display:none}}
+html,body{height:100%;overflow:hidden}.shell{height:100dvh;max-width:none;padding:18px 22px;display:grid;grid-template-rows:auto auto auto minmax(0,1fr);gap:10px}.top{align-items:center;margin:0}.brand{font-size:clamp(24px,3vw,34px);margin:2px 0}.sub{font-size:12px}.stats{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:0}.stat{padding:8px 12px;display:flex;align-items:baseline;justify-content:space-between;gap:10px;border-radius:9px}.stat b{font-size:19px;margin:0;order:-1}.stat span{font-size:9px}.toolbar{grid-template-columns:minmax(220px,1fr) 150px 180px 150px auto auto;gap:8px;margin:0}.control{padding:8px 10px}.workspace{display:block;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}.panel-head{padding:9px 12px}.attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));grid-auto-rows:min-content;align-content:start;align-items:start;gap:9px;max-height:none}.attempt{align-self:start;padding:10px 11px;border:1px solid var(--line);border-radius:10px;background:#0d141a}.attempt:hover,.attempt.active{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.detail-panel{position:absolute;z-index:5;inset:0 0 0 auto;width:min(720px,52vw);display:grid;grid-template-rows:auto minmax(0,1fr);background:#10171f;box-shadow:-18px 0 44px #05080bad;transform:translateX(calc(100% + 24px));transition:transform .2s ease;pointer-events:none}.workspace.detail-open .detail-panel{transform:translateX(0);pointer-events:auto}.detail-panel-head{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--muted)}.icon-button{border:1px solid var(--line);background:#0e151c;color:var(--text);width:30px;height:30px;border-radius:8px;cursor:pointer}.detail-toggle[hidden]{display:none}#detail{padding:18px;max-height:none;overflow:auto;min-height:0}.detail-title{font-size:21px}.bookmark-preview{max-height:330px;margin:14px 0}.empty{min-height:0}.drawer-scrim{position:absolute;z-index:4;inset:0;background:#05080b99;opacity:0;pointer-events:none;transition:opacity .2s;border:0}.workspace.detail-open .drawer-scrim{opacity:1;pointer-events:auto}@media(max-width:950px){.shell{padding:12px}.top .sub{display:none}.stats{grid-template-columns:repeat(3,1fr)}.toolbar{grid-template-columns:1fr 1fr 1fr}.toolbar #search{grid-column:span 3}.toolbar button{grid-column:auto}.detail-panel{width:min(680px,92vw)}}@media(max-width:600px){.live{display:none}.stats{display:flex;overflow:auto}.stat{min-width:105px}.toolbar{grid-template-columns:1fr 1fr}.toolbar #search{grid-column:span 2}.attempt-grid{grid-template-columns:1fr}.detail-panel{width:100%}}@media(max-height:520px){html,body{overflow:auto}.shell{height:auto;min-height:520px}.workspace{min-height:260px}.eyebrow,.sub{display:none}}
 </style></head><body><main class="shell">
 <header class="top"><div><div class="eyebrow">local operator view</div><h1 class="brand">Raindrop Journal</h1><div class="sub">Every routing decision, its evidence, and what the sorter did next.</div></div><div class="live"><i class="dot"></i><span id="updated">Connecting…</span></div></header>
 <section class="stats" id="stats"></section>
@@ -65,8 +70,12 @@ const attemptTraceCache = new Map();
 const previewUrlCache = new Map();
 let previewCacheGeneration = 0;
 let artCollectionsPromise = null;
+const shortDateTime = new Intl.DateTimeFormat('en-US', {
+  year:'2-digit', month:'2-digit', day:'2-digit',
+  hour:'numeric', minute:'2-digit', hour12:true,
+});
 const formatTime = timestamp => timestamp
-  ? new Intl.DateTimeFormat(undefined, {dateStyle:'medium', timeStyle:'short'}).format(new Date(timestamp))
+  ? shortDateTime.format(new Date(timestamp)).replace(', ', ' ')
   : 'running';
 const formatDuration = milliseconds => milliseconds == null
   ? 'running'
@@ -211,12 +220,15 @@ async function renderAttempts() {
     const button = element('button', 'attempt' + (attempt.attempt_id === selectedAttemptId ? ' active' : ''));
     button.type = 'button';
     button.dataset.attemptId = attempt.attempt_id;
-    const identity = element('div');
-    identity.append(element('div', 'attempt-title', attempt.title), element('div', 'meta', `#${attempt.bookmark_id} · ${attempt.mode} · ${formatDuration(attempt.duration_ms)}`));
-    if (attempt.destination) identity.append(element('div', 'destination', '→ ' + attempt.destination));
-    const resultMeta = element('div');
-    resultMeta.append(outcomeBadge(attempt.current_phase === 'failed' ? 'failed' : attempt.outcome), element('div', 'when', formatTime(attempt.started_at)));
-    button.append(identity, resultMeta);
+    const header = element('div', 'attempt-head');
+    header.append(element('div', 'attempt-title', attempt.title), outcomeBadge(attempt.current_phase === 'failed' ? 'failed' : attempt.outcome));
+    const meta = element('div', 'meta attempt-meta', `#${attempt.bookmark_id} · ${attempt.mode} · ${formatDuration(attempt.duration_ms)}`);
+    const footer = element('div', 'attempt-footer');
+    if (attempt.destination) footer.append(element('div', 'destination attempt-destination', '→ ' + attempt.destination));
+    const startedAt = element('time', 'attempt-time', formatTime(attempt.started_at));
+    if (attempt.started_at) startedAt.dateTime = attempt.started_at;
+    footer.append(startedAt);
+    button.append(header, meta, footer);
     button.onclick = () => {
       invalidateDetailSelection();
       renderDetail(attempt.attempt_id);

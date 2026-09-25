@@ -82,6 +82,11 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert 'class="attempt-grid"' in page
     assert "attemptTraceCache" in page
     assert "detailSelectionRevision === reviewSelectionRevision" in page
+    assert "attempt-footer" in page
+    assert "year:'2-digit', month:'2-digit', day:'2-digit'" in page
+    assert "startedAt.dateTime = attempt.started_at" in page
+    assert "text-overflow:ellipsis" not in page
+    assert ".attempt{min-height:" not in page
     assert "overflow:hidden" in page
 
     overview = _json(f"{base_url}/api/overview")
