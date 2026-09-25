@@ -60,6 +60,7 @@ const element = (tag, className, text) => {
   return created;
 };
 let selectedAttemptId = null;
+let detailSelectionRevision = 0;
 const attemptTraceCache = new Map();
 const previewUrlCache = new Map();
 let previewCacheGeneration = 0;
@@ -146,6 +147,9 @@ function clearCaches() {
   previewUrlCache.clear();
   artCollectionsPromise = null;
 }
+function invalidateDetailSelection() {
+  detailSelectionRevision += 1;
+}
 function setDetailOpen(open) {
   select('#workspace').classList.toggle('detail-open', open);
   const panel = select('#detail-panel');
@@ -213,7 +217,10 @@ async function renderAttempts() {
     const resultMeta = element('div');
     resultMeta.append(outcomeBadge(attempt.current_phase === 'failed' ? 'failed' : attempt.outcome), element('div', 'when', formatTime(attempt.started_at)));
     button.append(identity, resultMeta);
-    button.onclick = () => renderDetail(attempt.attempt_id);
+    button.onclick = () => {
+      invalidateDetailSelection();
+      renderDetail(attempt.attempt_id);
+    };
     attemptList.append(button);
   });
 }
@@ -312,6 +319,7 @@ async function renderResolution(trace, detailPanel) {
     renderCollections();
     applyButton.onclick = async () => {
       if (!selectedCollection) return;
+      const reviewSelectionRevision = detailSelectionRevision;
       applyButton.disabled = true; search.disabled = true; errorBox.textContent = '';
       applyButton.textContent = 'Applying…';
       try {
@@ -319,15 +327,19 @@ async function renderResolution(trace, detailPanel) {
         attemptTraceCache.delete(attempt.attempt_id);
         artCollectionsPromise = null;
         await refreshDashboard();
-        await renderDetail(result.attempt_id);
+        if (detailSelectionRevision === reviewSelectionRevision) {
+          await renderDetail(result.attempt_id);
+        }
       } catch (error) {
         errorBox.textContent = error.message;
         try {
           const latest = await fetchJson(`/api/attempts?latest=1&limit=10&q=${encodeURIComponent(attempt.bookmark_id)}`);
           const latestAttempt = latest.items.find(item => item.bookmark_id === attempt.bookmark_id);
-          if (latestAttempt && latestAttempt.attempt_id !== attempt.attempt_id) {
+          if (latestAttempt && latestAttempt.attempt_id !== attempt.attempt_id && detailSelectionRevision === reviewSelectionRevision) {
             await refreshDashboard();
-            await renderDetail(latestAttempt.attempt_id);
+            if (detailSelectionRevision === reviewSelectionRevision) {
+              await renderDetail(latestAttempt.attempt_id);
+            }
             return;
           }
         } catch (_refreshError) {
@@ -416,24 +428,35 @@ async function refreshDashboard() {
 }
 select('#filters').onsubmit = event => {
   event.preventDefault();
+  invalidateDetailSelection();
   clearCaches();
   refreshDashboard();
 };
 let searchTimer;
-select('#search').oninput = () => { clearTimeout(searchTimer); searchTimer = setTimeout(renderAttempts, 250); };
-select('#outcome').onchange = renderAttempts;
-select('#phase').onchange = renderAttempts;
+select('#search').oninput = () => {
+  invalidateDetailSelection();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(renderAttempts, 250);
+};
+select('#outcome').onchange = () => { invalidateDetailSelection(); renderAttempts(); };
+select('#phase').onchange = () => { invalidateDetailSelection(); renderAttempts(); };
 select('#scope').onchange = () => {
+  invalidateDetailSelection();
   clearDetail();
   refreshDashboard();
 };
 select('#detail-toggle').onclick = () => {
-  setDetailOpen(!select('#workspace').classList.contains('detail-open'));
+  const opening = !select('#workspace').classList.contains('detail-open');
+  if (!opening) invalidateDetailSelection();
+  setDetailOpen(opening);
 };
-select('#detail-close').onclick = () => setDetailOpen(false);
-select('#detail-scrim').onclick = () => setDetailOpen(false);
+select('#detail-close').onclick = () => { invalidateDetailSelection(); setDetailOpen(false); };
+select('#detail-scrim').onclick = () => { invalidateDetailSelection(); setDetailOpen(false); };
 document.addEventListener('keydown', event => {
-  if (event.key === 'Escape') setDetailOpen(false);
+  if (event.key === 'Escape' && select('#workspace').classList.contains('detail-open')) {
+    invalidateDetailSelection();
+    setDetailOpen(false);
+  }
 });
 refreshDashboard();
 setInterval(refreshDashboard, 15000);

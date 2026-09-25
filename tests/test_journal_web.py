@@ -81,6 +81,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert 'id="detail-panel" aria-hidden="true" inert' in page
     assert 'class="attempt-grid"' in page
     assert "attemptTraceCache" in page
+    assert "detailSelectionRevision === reviewSelectionRevision" in page
     assert "overflow:hidden" in page
 
     overview = _json(f"{base_url}/api/overview")
