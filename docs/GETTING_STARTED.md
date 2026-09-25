@@ -2,6 +2,9 @@
 
 This is the canonical guide for installing, deploying, monitoring, and operating Raindrop Sorter. The project has no built-in dashboard; references to the dashboard below mean Modal's external web console.
 
+For a local-only setup with no Modal deployment, use
+[`LOCAL_GETTING_STARTED.md`](LOCAL_GETTING_STARTED.md).
+
 ## Prerequisites
 
 - A [Raindrop.io](https://raindrop.io) account with an existing folder hierarchy
