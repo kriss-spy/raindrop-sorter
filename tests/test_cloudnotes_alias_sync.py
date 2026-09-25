@@ -71,6 +71,18 @@ def test_build_registry_imports_bounded_art_aliases(tmp_path: Path) -> None:
     assert "Lily White" in registry["Art/TOUHOU"]
     assert "Neuro-sama" in registry["Art/VTUBERS"]
     assert "平沢唯" in registry["Art/ANIME/K-ON"]
+    assert {"Ritsu Tainaka", "Tsumugi Kotobuki"} <= set(
+        registry["Art/ANIME/K-ON"]
+    )
+    assert {"Renge Miyauchi", "Hotaru Ichijou", "Komari Koshigaya"} <= set(
+        registry["Art/ANIME/Non Non Biyori"]
+    )
+    assert {"Hachiman Hikigaya", "Yukino Yukinoshita"} <= set(
+        registry["Art/ANIME/Oregairu"]
+    )
+    assert {"Shidou Itsuka", "Kurumi Tokisaki", "時崎狂三"} <= set(
+        registry["Art/ANIME/Date a Live"]
+    )
     assert {"Special Week", "スペシャルウィーク"} <= set(
         registry["Art/GAMES/UMAMUSUME"]
     )

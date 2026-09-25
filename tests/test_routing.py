@@ -123,6 +123,67 @@ def test_text_identifier_uses_touhou_vault_aliases(title):
     assert evidence.destination == "Art/TOUHOU"
 
 
+@pytest.mark.parametrize(
+    ("title", "destination"),
+    [
+        ("Renge Miyauchi fanart", "Art/ANIME/Non Non Biyori"),
+        ("Hachiman Hikigaya fanart", "Art/ANIME/Oregairu"),
+        ("Kurumi Tokisaki fanart", "Art/ANIME/Date a Live"),
+    ],
+)
+def test_text_identifier_uses_audited_anime_aliases(title, destination):
+    evidence = TextIdentifier({}, {}).identify(
+        {"_id": 999, "type": "image", "title": title, "tags": []}
+    )
+    assert evidence.destination == destination
+
+
+def test_text_identifier_preserves_independent_character_conflicts():
+    evidence = TextIdentifier({}, {}).identify(
+        {
+            "_id": 999,
+            "type": "image",
+            "title": "Renge Miyauchi and Kurumi Tokisaki fanart",
+            "tags": [],
+        }
+    )
+    assert evidence.strength == "conflicting"
+    assert evidence.candidates == (
+        "Art/ANIME/Date a Live",
+        "Art/ANIME/Non Non Biyori",
+    )
+
+
+def test_text_identifier_prunes_only_overlapping_short_alias_occurrences():
+    evidence = TextIdentifier({}, {}).identify(
+        {
+            "_id": 999,
+            "type": "image",
+            "title": "Yui and Yuigahama Yui fanart",
+            "tags": [],
+        }
+    )
+    assert evidence.strength == "conflicting"
+    assert evidence.candidates == ("Art/ANIME", "Art/ANIME/Oregairu")
+
+
+@pytest.mark.parametrize(
+    ("label", "destination"),
+    [
+        ("tainaka_ritsu", "Art/ANIME/K-ON"),
+        ("tokisaki_kurumi", "Art/ANIME/Date a Live"),
+    ],
+)
+def test_visual_verifier_uses_audited_anime_aliases(label, destination):
+    evidence = VisualVerifier({}, {}, None).verify(
+        {"_id": 999, "type": "image", "cover": "https://example.test/a.jpg"},
+        labels=[label],
+        embedding=None,
+    )
+    assert evidence.status == "pass"
+    assert evidence.destination == destination
+
+
 def test_native_routing_ignores_non_art_destinations():
     text = TextIdentifier({"vocaloid": "Music/VOCALOID"}, {}).identify(
         {"_id": 999, "type": "audio", "tags": ["vocaloid"]}

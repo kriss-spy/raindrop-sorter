@@ -17,6 +17,11 @@ from typing import Any, Iterable
 from src.destinations import is_art_destination
 
 
+ANIME_ALIASES_PATH = (
+    Path(__file__).parents[1] / "src" / "anime_character_aliases.json"
+)
+
+
 VOICEBANKS = Path("extracurricular/music/voice synthesizer/voicebanks")
 PJSK = Path("extracurricular/ACG/games/rhythm game/pjsk")
 TOUHOU = Path("extracurricular/ACG/Touhou/characters")
@@ -183,6 +188,11 @@ def _import_anime(registry: dict[str, set[str]], vault: Path) -> None:
             continue
         anime = relative.parts[0]
         _add(registry, ANIME_DESTINATIONS.get(anime, "Art/ANIME"), path, vault)
+    supplements: dict[str, list[str]] = json.loads(
+        ANIME_ALIASES_PATH.read_text(encoding="utf-8")
+    )
+    for destination, aliases in supplements.items():
+        registry[destination].update(aliases)
 
 
 def _import_umamusume(registry: dict[str, set[str]], vault: Path) -> None:

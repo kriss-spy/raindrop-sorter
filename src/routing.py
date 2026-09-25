@@ -119,17 +119,37 @@ class TextIdentifier:
             destination = _resolve_target(target, modality)
             if destination and _contains_alias(searchable, normalized_alias):
                 matches.append(_alias_evidence(normalized_alias, destination, "curated_text"))
+        character_matches: list[
+            tuple[str, tuple[str, ...], tuple[tuple[int, int], ...]]
+        ] = []
         for alias, targets in CHARACTER_ALIAS_ROUTES.items():
-            if _contains_alias(
+            spans = _alias_spans(
                 searchable,
                 alias,
                 require_script_boundaries=not alias.isascii() and len(alias) <= 2,
-            ):
-                matches.extend(
-                    _alias_evidence(alias, destination, "character_alias")
-                    for target in targets
-                    if (destination := _resolve_target(target, modality)) is not None
+            )
+            if spans:
+                character_matches.append((alias, targets, spans))
+        specific_character_matches = [
+            (alias, targets)
+            for alias, targets, spans in character_matches
+            if any(
+                not any(
+                    alias != longer_alias
+                    and longer_start <= start
+                    and end <= longer_end
+                    for longer_alias, _longer_targets, longer_spans in character_matches
+                    for longer_start, longer_end in longer_spans
                 )
+                for start, end in spans
+            )
+        ]
+        for alias, targets in specific_character_matches:
+            matches.extend(
+                _alias_evidence(alias, destination, "character_alias")
+                for target in targets
+                if (destination := _resolve_target(target, modality)) is not None
+            )
 
         if not matches:
             return TextEvidence(kind="no_match", destination=None, strength=None, explanation="No personal-interest text match was found.")
@@ -254,11 +274,35 @@ def _contains_alias(
     *,
     require_script_boundaries: bool = False,
 ) -> bool:
+    return bool(
+        _alias_spans(
+            text,
+            alias,
+            require_script_boundaries=require_script_boundaries,
+        )
+    )
+
+
+def _alias_spans(
+    text: str,
+    alias: str,
+    *,
+    require_script_boundaries: bool = False,
+) -> tuple[tuple[int, int], ...]:
     if not alias:
-        return False
+        return ()
+    if alias.isascii():
+        return tuple(
+            (match.start(), match.end())
+            for match in re.finditer(rf"(?<![\w]){re.escape(alias)}(?![\w])", text)
+        )
     if not alias.isascii():
         if not require_script_boundaries:
-            return alias in text
+            return tuple(
+                (match.start(), match.end())
+                for match in re.finditer(re.escape(alias), text)
+            )
+        spans: list[tuple[int, int]] = []
         start = 0
         while (index := text.find(alias, start)) != -1:
             before = text[index - 1] if index > 0 else ""
@@ -268,10 +312,10 @@ def _contains_alias(
                 _script_family(before) != _script_family(alias[0])
                 and _script_family(after) != _script_family(alias[-1])
             ):
-                return True
+                spans.append((index, after_index))
             start = index + 1
-        return False
-    return re.search(rf"(?<![\w]){re.escape(alias)}(?![\w])", text) is not None
+        return tuple(spans)
+    return ()
 
 
 def _script_family(character: str) -> str | None:

@@ -280,6 +280,12 @@ handled by small, tested corrections in the sync script. Other voicebanks go to
 `Art/VOICEBANKS`. Routing destinations outside the `Art/` collection group are
 intentionally excluded for now.
 
+Anime character notes are treated as personal aliases, not as a complete cast
+list. `src/anime_character_aliases.json` supplies audited main characters and
+canonical Japanese/Latin spellings when the vault is sparse or uses only a
+translated filename. The provenance audit is recorded in
+`docs/research/anime-character-alias-audit.md`.
+
 ## Troubleshooting
 
 ### `RAINDROP_TOKEN is required`
