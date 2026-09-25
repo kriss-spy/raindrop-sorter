@@ -1,4 +1,4 @@
-"""Human resolution workflow for provisional and conflicting journal attempts."""
+"""Human resolution workflow for unresolved journal attempts."""
 
 from __future__ import annotations
 
@@ -97,10 +97,11 @@ class JournalReviewService:
             if original.get("outcome") not in {
                 RouteOutcome.PROVISIONAL.value,
                 RouteOutcome.CONFLICT.value,
+                RouteOutcome.REVIEW.value,
             } and not retrying_manual_review:
                 raise IneligibleReviewAttempt(
-                    "only provisional, conflicting, or failed manual-review attempts "
-                    "can be resolved"
+                    "only review, provisional, conflicting, or recoverable "
+                    "manual-review attempts can be resolved"
                 )
             try:
                 source = ReviewSelectionSource(selection_source)
@@ -133,6 +134,7 @@ class JournalReviewService:
                     {},
                 )
                 review_choices = prior_selection.get("review_choices") or {}
+                custom_only = bool(prior_selection.get("custom_only"))
             else:
                 review_choices = {
                     "text": sorted(_evidence_destinations(
@@ -142,6 +144,11 @@ class JournalReviewService:
                         original.get("decision") or {}, "visual_evidence"
                     )),
                 }
+                custom_only = original.get("outcome") == RouteOutcome.REVIEW.value
+            if custom_only and source is not ReviewSelectionSource.CUSTOM:
+                raise InvalidReviewDestination(
+                    "review outcomes must use the custom Art collection picker"
+                )
             if source.evidence_key is not None:
                 evidence_destinations = set(review_choices.get(source.value, []))
                 if destination not in evidence_destinations:
@@ -161,6 +168,7 @@ class JournalReviewService:
                         "selection_source": source.value,
                         "source_attempt_id": attempt_id,
                         "review_choices": review_choices,
+                        "custom_only": custom_only,
                     },
                 ),
             )

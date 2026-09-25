@@ -116,10 +116,12 @@ function evidenceDestinations(items) {
 async function renderResolution(trace, detailPanel) {
   const attempt = trace.attempt;
   const retrying = attempt.mode === 'manual-review' && !attempt.outcome && ['failed', 'manual_destination_selected'].includes(attempt.current_phase);
-  if ((!['provisional', 'conflict'].includes(attempt.outcome) && !retrying) || select('#scope').value !== 'latest') return;
+  if ((!['review', 'provisional', 'conflict'].includes(attempt.outcome) && !retrying) || select('#scope').value !== 'latest') return;
+  const previous = retrying ? [...trace.events].reverse().find(event => event.phase === 'manual_destination_selected')?.payload : null;
+  const customOnly = attempt.outcome === 'review' || Boolean(previous?.custom_only);
   const section = element('section', 'resolution');
-  section.append(element('h3', '', retrying ? (attempt.current_phase === 'failed' ? 'Retry failed review' : 'Resume interrupted review') : attempt.outcome === 'conflict' ? 'Resolve conflict' : 'Approve provisional route'));
-  section.append(element('div', 'explain', 'Choose an evidence destination or any collection in the Art group. Nothing moves until you press Move & confirm.'));
+  section.append(element('h3', '', retrying ? (attempt.current_phase === 'failed' ? 'Retry failed review' : 'Resume interrupted review') : attempt.outcome === 'review' ? 'Assign destination' : attempt.outcome === 'conflict' ? 'Resolve conflict' : 'Approve provisional route'));
+  section.append(element('div', 'explain', customOnly ? 'Search and choose a collection in the Art group. Nothing moves until you press Move & confirm.' : 'Choose an evidence destination or any collection in the Art group. Nothing moves until you press Move & confirm.'));
   detailPanel.append(section);
   try {
     const collections = await artCollections();
@@ -156,15 +158,16 @@ async function renderResolution(trace, detailPanel) {
       });
       group.append(grid); section.append(group);
     };
-    const previous = retrying ? [...trace.events].reverse().find(event => event.phase === 'manual_destination_selected')?.payload : null;
-    addEvidenceChoices('Text evidence', 'Text', [...new Set([...evidenceDestinations(attempt.decision?.text_evidence || []), ...(previous?.review_choices?.text || [])])]);
-    addEvidenceChoices('Visual evidence', 'Visual', [...new Set([...evidenceDestinations(attempt.decision?.visual_evidence || []), ...(previous?.review_choices?.visual || [])])]);
-    if (retrying) {
+    if (!customOnly) {
+      addEvidenceChoices('Text evidence', 'Text', [...new Set([...evidenceDestinations(attempt.decision?.text_evidence || []), ...(previous?.review_choices?.text || [])])]);
+      addEvidenceChoices('Visual evidence', 'Visual', [...new Set([...evidenceDestinations(attempt.decision?.visual_evidence || []), ...(previous?.review_choices?.visual || [])])]);
+    }
+    if (retrying && !customOnly) {
       if (previous?.destination) addEvidenceChoices('Previous choice', previous.selection_source || 'Custom', [previous.destination]);
     }
 
     const customGroup = element('div', 'choice-group');
-    customGroup.append(element('label', 'choice-label', 'Choose another Art collection'));
+    customGroup.append(element('label', 'choice-label', customOnly ? 'Choose an Art collection' : 'Choose another Art collection'));
     const search = element('input', 'control collection-search');
     search.placeholder = 'Search Art collections'; search.type = 'search';
     const results = element('div', 'collection-results');

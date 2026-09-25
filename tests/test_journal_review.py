@@ -72,6 +72,28 @@ def _seed_conflict(journal):
     return attempt
 
 
+def _seed_review(journal):
+    attempt = journal.start_attempt({"_id": 123, "title": "Unknown artwork"}, mode="dry-run")
+    journal.record_decision(
+        attempt,
+        RouteDecision(
+            bookmark_id=123,
+            outcome=RouteOutcome.REVIEW,
+            destination=None,
+            text_evidence=(TextEvidence(
+                kind="no_match",
+                destination=None,
+                strength=None,
+                explanation="No personal-interest text match was found.",
+            ),),
+            visual_evidence=(),
+            summary="Kept in Unsorted for manual review.",
+        ),
+    )
+    journal.complete(attempt, phase="dry_run_completed")
+    return attempt
+
+
 def test_review_service_lists_only_collections_in_art_group(tmp_path):
     service = JournalReviewService(
         SQLiteRunJournal(tmp_path / "journal.sqlite"), FakeReviewClient()
@@ -116,6 +138,69 @@ def test_review_service_resolves_conflict_as_new_confirmed_attempt(tmp_path):
     assert trace["attempt"]["destination"] == "Art/TOUHOU"
     assert trace["actions"][0]["status"] == "succeeded"
     assert trace["actions"][0]["payload"]["selection_source"] == "text"
+
+
+def test_review_outcome_can_be_assigned_only_with_custom_picker(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    original = _seed_review(journal)
+    service = JournalReviewService(journal, FakeReviewClient())
+
+    with pytest.raises(InvalidReviewDestination, match="custom"):
+        service.resolve(
+            original.attempt_id,
+            collection_id=10,
+            selection_source="text",
+        )
+
+    result = service.resolve(
+        original.attempt_id,
+        collection_id=10,
+        selection_source="custom",
+    )
+    assert result["outcome"] == "confirmed"
+    assert result["destination"] == "Art/TOUHOU"
+    assert result["selection_source"] == "custom"
+
+
+def test_failed_review_outcome_retry_stays_custom_picker_only(tmp_path):
+    class FlakyClient(FakeReviewClient):
+        def __init__(self):
+            super().__init__()
+            self.fail = True
+
+        def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
+            if self.fail:
+                raise RuntimeError("temporary outage")
+            return super().update_raindrop(bookmark_id, collection_id, tags)
+
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    original = _seed_review(journal)
+    client = FlakyClient()
+    service = JournalReviewService(journal, client)
+
+    with pytest.raises(RuntimeError, match="temporary outage"):
+        service.resolve(
+            original.attempt_id,
+            collection_id=10,
+            selection_source="custom",
+        )
+
+    failed = journal.explain(123)["attempt"]
+    client.fail = False
+    with pytest.raises(InvalidReviewDestination, match="custom"):
+        service.resolve(
+            failed["attempt_id"],
+            collection_id=10,
+            selection_source="text",
+        )
+
+    result = service.resolve(
+        failed["attempt_id"],
+        collection_id=10,
+        selection_source="custom",
+    )
+    assert result["outcome"] == "confirmed"
+    assert result["destination"] == "Art/TOUHOU"
 
 
 def test_review_service_rejects_stale_attempt_and_non_art_destination(tmp_path):

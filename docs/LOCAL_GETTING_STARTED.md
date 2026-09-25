@@ -221,11 +221,13 @@ selector to show recent older attempts again. The dashboard also shows outcome c
 search and filters, the evidence behind each decision, the action taken, a live
 bookmark image preview, and the full event timeline. For a provisional or conflicting
 latest status, use the review panel to choose the text-evidence destination, the
-visual-evidence destination, or search any live collection in the Art group. **Move &
+visual-evidence destination, or search any live collection in the Art group. For a
+`review` status, use its custom picker to search and select an Art collection. **Move &
 confirm** moves that Raindrop, replaces review/conflict lifecycle tags with a confirmed
-sorted tag, and records a new `manual-review` attempt. The server rejects stale attempts
-and collections outside Art. A failed Raindrop update remains as an audited, retryable
-manual-review status; it is never counted as confirmed.
+sorted tag, and records a new `manual-review` attempt. The server rejects stale attempts,
+non-custom choices for `review` statuses, and collections outside Art. A failed Raindrop
+update remains as an audited, retryable manual-review status; it is never counted as
+confirmed.
 
 Image previews and review actions use the configured `RAINDROP_TOKEN`; the token and
 cover URL are not stored in the journal or sent to the browser. Without a token, the
