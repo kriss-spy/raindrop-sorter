@@ -105,6 +105,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "startedAt.dateTime = attempt.started_at" in page
     assert "text-overflow:ellipsis" not in page
     assert ".attempt{min-height:" not in page
+    assert "align-items:stretch" in page
     assert "overflow:hidden" in page
 
     overview = _json(f"{base_url}/api/overview")
