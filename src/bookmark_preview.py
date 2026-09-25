@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import io
 import threading
+import time
+from collections import OrderedDict
 from collections.abc import Callable
 
 from PIL import Image
@@ -14,6 +16,42 @@ from src.vision_worker import download_cover, resolve_cover_url
 
 Preview = tuple[bytes, str]
 PreviewLoader = Callable[[int], Preview | None]
+
+
+class CachedPreviewLoader:
+    """Keep a bounded, short-lived cache of dashboard preview bytes in memory."""
+
+    def __init__(
+        self,
+        loader: PreviewLoader,
+        *,
+        max_entries: int = 64,
+        ttl_seconds: float = 300,
+        clock: Callable[[], float] = time.monotonic,
+    ):
+        self._loader = loader
+        self._max_entries = max_entries
+        self._ttl_seconds = ttl_seconds
+        self._clock = clock
+        self._cache: OrderedDict[int, tuple[float, Preview | None]] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def __call__(self, bookmark_id: int) -> Preview | None:
+        now = self._clock()
+        with self._lock:
+            cached = self._cache.get(bookmark_id)
+            if cached is not None and now - cached[0] < self._ttl_seconds:
+                self._cache.move_to_end(bookmark_id)
+                return cached[1]
+            self._cache.pop(bookmark_id, None)
+
+        preview = self._loader(bookmark_id)
+        with self._lock:
+            self._cache[bookmark_id] = (now, preview)
+            self._cache.move_to_end(bookmark_id)
+            while len(self._cache) > self._max_entries:
+                self._cache.popitem(last=False)
+        return preview
 
 
 class BookmarkPreviewService:

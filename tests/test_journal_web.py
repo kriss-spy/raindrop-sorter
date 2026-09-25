@@ -69,12 +69,19 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     base_url, _ = dashboard
     with urlopen(base_url) as response:
         page = response.read().decode()
+        assert "img-src 'self' blob:" in response.headers["Content-Security-Policy"]
     assert "Raindrop Journal" in page
     assert "Search bookmarks" in page
     assert "bookmark-preview" in page
     assert "Latest status" in page
     assert "Search Art collections" in page
     assert "Move & confirm" in page
+    assert 'id="detail-toggle"' in page
+    assert 'id="detail-close"' in page
+    assert 'id="detail-panel" aria-hidden="true" inert' in page
+    assert 'class="attempt-grid"' in page
+    assert "attemptTraceCache" in page
+    assert "overflow:hidden" in page
 
     overview = _json(f"{base_url}/api/overview")
     assert overview["total_attempts"] == 2
@@ -141,6 +148,11 @@ def test_dashboard_proxies_live_bookmark_preview(tmp_path):
             f"http://127.0.0.1:{server.server_port}/api/bookmarks/1864496693/preview"
         ) as response:
             assert response.headers["Content-Type"] == "image/webp"
+            assert response.headers["Cache-Control"] == "private, max-age=300"
+            assert response.read() == b"preview-bytes"
+        with urlopen(
+            f"http://127.0.0.1:{server.server_port}/api/bookmarks/1864496693/preview"
+        ) as response:
             assert response.read() == b"preview-bytes"
         assert calls == [1864496693]
 

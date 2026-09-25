@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlparse
 
 from dotenv import load_dotenv
 
-from src.bookmark_preview import BookmarkPreviewService, PreviewLoader
+from src.bookmark_preview import CachedPreviewLoader, BookmarkPreviewService, PreviewLoader
 from src.journal_dashboard import DASHBOARD_HTML
 from src.journal_review import (
     IneligibleReviewAttempt,
@@ -53,7 +53,9 @@ def create_server(
         journal_path,
         read_only=raindrop_client is None,
     )
-    server.preview_loader = preview_loader
+    server.preview_loader = (
+        CachedPreviewLoader(preview_loader) if preview_loader is not None else None
+    )
     server.reviewer = (
         JournalReviewService(server.journal, raindrop_client)
         if raindrop_client is not None
@@ -196,7 +198,12 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.NOT_FOUND, {"error": "bookmark has no image preview"})
             return
         image, content_type = preview
-        self._send(HTTPStatus.OK, image, content_type)
+        self._send(
+            HTTPStatus.OK,
+            image,
+            content_type,
+            cache_control="private, max-age=300",
+        )
 
     def _send_json(self, status: HTTPStatus, payload: object) -> None:
         self._send(
@@ -205,16 +212,24 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             "application/json; charset=utf-8",
         )
 
-    def _send(self, status: HTTPStatus, body: str | bytes, content_type: str) -> None:
+    def _send(
+        self,
+        status: HTTPStatus,
+        body: str | bytes,
+        content_type: str,
+        *,
+        cache_control: str = "no-store",
+    ) -> None:
         encoded = body.encode() if isinstance(body, str) else body
         self.send_response(status)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(encoded)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache_control)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; img-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'",
+            "default-src 'self'; img-src 'self' blob:; style-src 'unsafe-inline'; "
+            "script-src 'unsafe-inline'; connect-src 'self'",
         )
         self.end_headers()
         self.wfile.write(encoded)
