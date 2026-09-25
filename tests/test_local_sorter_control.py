@@ -54,6 +54,28 @@ def test_automatic_sorter_can_be_started_and_paused():
         controller.close()
 
 
+def test_automatic_sorter_drains_full_batches_before_polling():
+    remaining = iter([25, 7])
+    calls = []
+
+    def process_batch(limit):
+        calls.append(limit)
+        return {"count": next(remaining)}
+
+    controller = LocalSorterController(
+        process_batch,
+        batch_size=25,
+        poll_seconds=60,
+    )
+    try:
+        controller.start_automatic()
+        _wait_for(lambda: len(calls) == 2)
+        assert calls == [25, 25]
+        assert controller.status()["state"] == "watching"
+    finally:
+        controller.close()
+
+
 def test_pause_during_inflight_batch_finishes_as_paused():
     started = threading.Event()
     release = threading.Event()

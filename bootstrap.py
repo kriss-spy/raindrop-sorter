@@ -227,7 +227,7 @@ def main() -> None:
     parser.add_argument("--vision-min-folder-rounds", type=int, default=2)
     parser.add_argument(
         "--vision-model-dir",
-        default=".scratch/wd14_model",
+        default=".cache/wd14",
         help="Reusable local WD14 model cache",
     )
     args = parser.parse_args()

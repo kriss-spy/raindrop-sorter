@@ -24,7 +24,7 @@ from src.journal_review import (
     ReviewAttemptNotFound,
     StaleReviewAttempt,
 )
-from src.local_runner import LocalBatchProcessor
+from src.local_runner import LocalBatchProcessor, validate_local_index
 from src.local_sorter_control import LocalSorterController
 from src.raindrop_client import RaindropClient
 from src.run_journal import SQLiteRunJournal
@@ -35,6 +35,7 @@ class JournalHTTPServer(ThreadingHTTPServer):
     preview_loader: PreviewLoader | None
     reviewer: JournalReviewService | None
     sorter_controller: Any | None
+    sorter_unavailable_reason: str
 
     def server_close(self) -> None:
         if self.sorter_controller is not None:
@@ -50,6 +51,7 @@ def create_server(
     preview_loader: PreviewLoader | None = None,
     raindrop_client: Any | None = None,
     sorter_controller: Any | None = None,
+    sorter_unavailable_reason: str | None = None,
     mutation_lock: threading.RLock | None = None,
 ) -> JournalHTTPServer:
     journal_path = Path(journal_path)
@@ -79,6 +81,9 @@ def create_server(
         else None
     )
     server.sorter_controller = sorter_controller
+    server.sorter_unavailable_reason = sorter_unavailable_reason or (
+        "RAINDROP_TOKEN is required for sorter controls"
+    )
     return server
 
 
@@ -92,6 +97,10 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                 self._send(HTTPStatus.OK, DASHBOARD_HTML, "text/html; charset=utf-8")
             elif request.path == "/api/overview":
                 self._send_json(HTTPStatus.OK, self.server.journal.overview())
+            elif request.path == "/api/health":
+                self._health()
+            elif request.path == "/api/ready":
+                self._readiness()
             elif request.path == "/api/attempts":
                 self._attempts(parse_qs(request.query))
             elif request.path == "/api/review/collections":
@@ -224,23 +233,44 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         })
 
     def _sorter_status(self) -> None:
+        self._send_json(HTTPStatus.OK, self._sorter_status_payload())
+
+    def _sorter_status_payload(self) -> dict[str, Any]:
         controller = self.server.sorter_controller
         if controller is None:
-            self._send_json(HTTPStatus.OK, {
+            return {
                 "available": False,
                 "state": "unavailable",
                 "automatic": False,
-                "error": "RAINDROP_TOKEN is required for sorter controls",
-            })
-            return
-        self._send_json(HTTPStatus.OK, controller.status())
+                "error": self.server.sorter_unavailable_reason,
+            }
+        return controller.status()
+
+    def _health(self) -> None:
+        self._send_json(HTTPStatus.OK, {
+            "status": "ok",
+            "journal": True,
+            "image_previews": self.server.preview_loader is not None,
+            "review_actions": self.server.reviewer is not None,
+            "sorter": self._sorter_status_payload(),
+        })
+
+    def _readiness(self) -> None:
+        sorter = self._sorter_status_payload()
+        ready = bool(sorter.get("available")) and sorter.get("state") not in {
+            "error", "stopped", "stopping"
+        }
+        self._send_json(
+            HTTPStatus.OK if ready else HTTPStatus.SERVICE_UNAVAILABLE,
+            {"status": "ready" if ready else "not_ready", "sorter": sorter},
+        )
 
     def _sorter_action(self, path: str) -> None:
         controller = self.server.sorter_controller
         if controller is None:
             self._send_json(
                 HTTPStatus.SERVICE_UNAVAILABLE,
-                {"error": "sorter controls require RAINDROP_TOKEN"},
+                {"error": self.server.sorter_unavailable_reason},
             )
             return
         actions = {
@@ -368,6 +398,11 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--model-dir", default=".cache/wd14")
     parser.add_argument("--batch-size", type=int, default=25)
     parser.add_argument("--poll-seconds", type=float, default=15.0)
+    parser.add_argument(
+        "--auto-start",
+        action="store_true",
+        help="Start the applied automatic sorter after the dashboard is ready",
+    )
     parser.add_argument("--open", action="store_true", help="Open the dashboard in a browser")
     args = parser.parse_args(argv)
     load_dotenv()
@@ -375,31 +410,37 @@ def main(argv: list[str] | None = None) -> None:
     token = os.environ.get("RAINDROP_TOKEN")
     client = RaindropClient(token=token) if token else None
     controller = None
+    sorter_unavailable_reason = None
     mutation_lock = threading.RLock()
     if client is not None:
-        sorter_client = RaindropClient(token=token)
-        processor_lock = threading.Lock()
-        processor: LocalBatchProcessor | None = None
+        try:
+            validate_local_index(args.db_path)
+        except (FileNotFoundError, ValueError) as error:
+            sorter_unavailable_reason = str(error)
+        else:
+            sorter_client = RaindropClient(token=token)
+            processor_lock = threading.Lock()
+            processor: LocalBatchProcessor | None = None
 
-        def process_batch(limit: int) -> dict[str, Any]:
-            nonlocal processor
-            with processor_lock:
-                if processor is None:
-                    processor = LocalBatchProcessor(
-                        sorter_client,
-                        db_path=args.db_path,
-                        model_dir=args.model_dir,
-                        journal=SQLiteRunJournal(path),
-                        apply=True,
-                        mutation_lock=mutation_lock,
-                    )
-                return processor(limit)
+            def process_batch(limit: int) -> dict[str, Any]:
+                nonlocal processor
+                with processor_lock:
+                    if processor is None:
+                        processor = LocalBatchProcessor(
+                            sorter_client,
+                            db_path=args.db_path,
+                            model_dir=args.model_dir,
+                            journal=SQLiteRunJournal(path),
+                            apply=True,
+                            mutation_lock=mutation_lock,
+                        )
+                    return processor(limit)
 
-        controller = LocalSorterController(
-            process_batch,
-            batch_size=args.batch_size,
-            poll_seconds=args.poll_seconds,
-        )
+            controller = LocalSorterController(
+                process_batch,
+                batch_size=args.batch_size,
+                poll_seconds=args.poll_seconds,
+            )
     try:
         server = create_server(
             path,
@@ -408,15 +449,25 @@ def main(argv: list[str] | None = None) -> None:
             preview_loader=BookmarkPreviewService(token) if token else None,
             raindrop_client=client,
             sorter_controller=controller,
+            sorter_unavailable_reason=sorter_unavailable_reason,
             mutation_lock=mutation_lock,
         )
     except FileNotFoundError as error:
         parser.error(str(error))
+    if args.auto_start:
+        if controller is None:
+            server.server_close()
+            parser.error(
+                f"--auto-start is unavailable: {sorter_unavailable_reason or 'RAINDROP_TOKEN is required'}"
+            )
+        controller.start_automatic()
     url = f"http://{args.host}:{server.server_port}"
     print(f"Raindrop Sorter dashboard: {url}")
     print(f"Reading: {Path(path).resolve()}")
     if not token:
         print("Image previews and review actions disabled: RAINDROP_TOKEN is not configured.")
+    elif sorter_unavailable_reason:
+        print(f"Sorter controls disabled: {sorter_unavailable_reason}")
     print("Press Ctrl+C to stop.")
     if args.open:
         webbrowser.open(url)

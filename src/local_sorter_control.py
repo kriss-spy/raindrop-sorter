@@ -149,6 +149,13 @@ class LocalSorterController:
                     self._state = "paused" if self._paused else "idle"
                     self._touch_locked()
                     continue
+                if count >= self._batch_size:
+                    # A full page means more work may already be waiting. Keep
+                    # draining while the models are warm instead of adding the
+                    # polling delay between backlog batches.
+                    self._state = "running"
+                    self._touch_locked()
+                    continue
                 self._state = "watching"
                 self._touch_locked()
                 self._condition.wait_for(

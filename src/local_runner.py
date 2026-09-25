@@ -6,6 +6,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from src.destinations import is_art_destination
 from src.routing import RouteEngine, TextIdentifier, VisualVerifier
 from src.run_journal import AttemptHandle, RunJournal, SQLiteRunJournal
 from src.modality import bookmark_modality
@@ -47,6 +48,53 @@ def validate_local_index(db_path: str) -> None:
             f"Local index {db_path!r} is incomplete (missing: {names}). "
             "Run `uv run python bootstrap.py --db-path chroma_db` first."
         )
+    artifacts: dict[str, Any] = {}
+    for filename in REQUIRED_INDEX_FILES:
+        try:
+            with open(os.path.join(db_path, filename), encoding="utf-8") as handle:
+                artifacts[filename] = json.load(handle)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                f"Local index {db_path!r} is invalid: {filename} is not valid JSON. "
+                "Run `uv run python bootstrap.py --db-path chroma_db` again."
+            ) from error
+
+    folder_map = artifacts["folder_id_map.json"]
+    if not isinstance(folder_map, dict) or not folder_map or not all(
+        isinstance(path, str)
+        and path.strip()
+        and isinstance(collection_id, int)
+        and not isinstance(collection_id, bool)
+        for path, collection_id in folder_map.items()
+    ):
+        raise ValueError(
+            f"Local index {db_path!r} is invalid: folder_id_map.json must map "
+            "collection paths to integer IDs. Run bootstrap again."
+        )
+
+    tag_rules = artifacts["tag_rules.json"]
+    rules = tag_rules.get("rules") if isinstance(tag_rules, dict) else None
+    mismatches = tag_rules.get("mismatches") if isinstance(tag_rules, dict) else None
+    if not isinstance(rules, dict) or not isinstance(mismatches, dict):
+        raise ValueError(
+            f"Local index {db_path!r} is invalid: tag_rules.json must contain "
+            "rules and mismatches objects. Run bootstrap again."
+        )
+    for target in rules.values():
+        destinations = [target] if isinstance(target, str) else target
+        if not isinstance(destinations, list) or not destinations or not all(
+            isinstance(destination, str) and destination for destination in destinations
+        ):
+            raise ValueError(
+                f"Local index {db_path!r} is invalid: a tag rule has no valid destination. "
+                "Run bootstrap again."
+            )
+        for destination in destinations:
+            if is_art_destination(destination) and destination not in folder_map:
+                raise ValueError(
+                    f"Local index {db_path!r} is inconsistent: tag rule targets unknown "
+                    f"collection {destination}. Run bootstrap again."
+                )
 
 
 def find_local_work(client: Any, *, limit: int) -> list[dict[str, Any]]:
@@ -421,7 +469,7 @@ def main(argv: list[str] | None = None) -> None:
         "--journal-path",
         help="SQLite journal path (default: <db-path>/run-journal.sqlite)",
     )
-    parser.add_argument("--model-dir", default="/tmp/raindrop-sorter-wd14")
+    parser.add_argument("--model-dir", default=".cache/wd14")
     parser.add_argument(
         "--apply",
         action="store_true",

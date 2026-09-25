@@ -110,6 +110,23 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert overview["outcomes"] == {"review": 1}
     assert overview["attempt_outcomes"] == {"pending": 1, "review": 1}
 
+    health = _json(f"{base_url}/api/health")
+    assert health == {
+        "status": "ok",
+        "journal": True,
+        "image_previews": False,
+        "review_actions": False,
+        "sorter": {
+            "available": False,
+            "state": "unavailable",
+            "automatic": False,
+            "error": "RAINDROP_TOKEN is required for sorter controls",
+        },
+    }
+    with pytest.raises(HTTPError) as not_ready:
+        urlopen(f"{base_url}/api/ready")
+    assert not_ready.value.code == 503
+
 
 def test_dashboard_filters_attempts_and_returns_exact_trace(dashboard):
     base_url, attempt_id = dashboard
@@ -422,6 +439,7 @@ def test_dashboard_exposes_sorter_controls(tmp_path):
     thread.start()
     base_url = f"http://127.0.0.1:{server.server_port}"
     try:
+        assert _json(f"{base_url}/api/ready")["status"] == "ready"
         assert _json(f"{base_url}/api/sorter/status")["state"] == "paused"
         assert _post_json(f"{base_url}/api/sorter/process-all", {})["state"] == "running"
         assert _post_json(f"{base_url}/api/sorter/start", {})["automatic"] is True
@@ -432,3 +450,51 @@ def test_dashboard_exposes_sorter_controls(tmp_path):
         server.server_close()
         thread.join()
     assert controller.calls[-1] == "close"
+
+
+def test_dashboard_reports_why_sorter_controls_are_unavailable(tmp_path):
+    path = tmp_path / "journal.sqlite"
+    SQLiteRunJournal(path)
+    server = create_server(
+        path,
+        host="127.0.0.1",
+        port=0,
+        sorter_unavailable_reason="Local index is incomplete; run bootstrap first.",
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        status = _json(f"http://127.0.0.1:{server.server_port}/api/sorter/status")
+        assert status == {
+            "available": False,
+            "state": "unavailable",
+            "automatic": False,
+            "error": "Local index is incomplete; run bootstrap first.",
+        }
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_unavailable_sorter_action_reports_the_actual_preflight_error(tmp_path):
+    path = tmp_path / "journal.sqlite"
+    SQLiteRunJournal(path)
+    reason = "Local index is incomplete; run bootstrap first."
+    server = create_server(
+        path,
+        host="127.0.0.1",
+        port=0,
+        sorter_unavailable_reason=reason,
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(HTTPError) as unavailable:
+            _post_json(f"http://127.0.0.1:{server.server_port}/api/sorter/start", {})
+        assert unavailable.value.code == 503
+        assert json.load(unavailable.value)["error"] == reason
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

@@ -7,6 +7,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Callable
+from concurrent.futures import Future
 
 from PIL import Image
 
@@ -34,6 +35,7 @@ class CachedPreviewLoader:
         self._ttl_seconds = ttl_seconds
         self._clock = clock
         self._cache: OrderedDict[int, tuple[float, Preview | None]] = OrderedDict()
+        self._inflight: dict[int, Future[Preview | None]] = {}
         self._lock = threading.Lock()
 
     def __call__(self, bookmark_id: int) -> Preview | None:
@@ -44,13 +46,31 @@ class CachedPreviewLoader:
                 self._cache.move_to_end(bookmark_id)
                 return cached[1]
             self._cache.pop(bookmark_id, None)
+            pending = self._inflight.get(bookmark_id)
+            if pending is None:
+                pending = Future()
+                self._inflight[bookmark_id] = pending
+                owns_load = True
+            else:
+                owns_load = False
 
-        preview = self._loader(bookmark_id)
+        if not owns_load:
+            return pending.result()
+
+        try:
+            preview = self._loader(bookmark_id)
+        except BaseException as error:
+            with self._lock:
+                self._inflight.pop(bookmark_id, None)
+                pending.set_exception(error)
+            raise
         with self._lock:
-            self._cache[bookmark_id] = (now, preview)
+            self._cache[bookmark_id] = (self._clock(), preview)
             self._cache.move_to_end(bookmark_id)
             while len(self._cache) > self._max_entries:
                 self._cache.popitem(last=False)
+            self._inflight.pop(bookmark_id, None)
+            pending.set_result(preview)
         return preview
 
 

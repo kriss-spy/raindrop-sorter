@@ -10,6 +10,7 @@ from src.local_runner import (
     backfill_unreviewed,
     find_local_work,
     run_local_bookmark,
+    validate_local_index,
 )
 from src.run_journal import SQLiteRunJournal
 from src.tag_rules import save_series_rules, save_tag_rules
@@ -72,6 +73,23 @@ def _write_state(path):
         json.dumps({"Art/MIKU": 42, "VOCALOID": 43}),
         encoding="utf-8",
     )
+
+
+def test_local_index_validation_rejects_malformed_or_inconsistent_state(tmp_path):
+    (tmp_path / "folder_id_map.json").write_text(
+        json.dumps({"Art/MIKU": 42}),
+        encoding="utf-8",
+    )
+    (tmp_path / "tag_rules.json").write_text("not json", encoding="utf-8")
+    with pytest.raises(ValueError, match="tag_rules.json is not valid JSON"):
+        validate_local_index(str(tmp_path))
+
+    (tmp_path / "tag_rules.json").write_text(
+        json.dumps({"rules": {"reimu": "Art/TOUHOU"}, "mismatches": {}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="unknown collection Art/TOUHOU"):
+        validate_local_index(str(tmp_path))
 
 
 def test_local_runner_executes_vision_and_resolution_without_writing(tmp_path):

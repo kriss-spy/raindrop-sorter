@@ -237,11 +237,24 @@ attempt; failures are reported without discarding successful assignments.
 
 The sliders icon opens local sorter controls. **Process all** drains bounded batches
 until no actionable Unsorted items remain. **Start automatic sorter** keeps the same
-warm local model alive, drains current work, and checks for new Unsorted items every 15
-seconds. **Pause** disables automatic polling after any in-flight automatic batch;
+warm local model alive, drains full batches without waiting between them, and checks
+for new Unsorted items every 15 seconds after the backlog is clear. **Pause** disables
+automatic polling after any in-flight automatic batch;
 a separately requested **Process all** drain continues to completion. These controls
 run with `--apply`: they can update tags and move Raindrops. They are available
 only on the loopback dashboard when `RAINDROP_TOKEN` is configured.
+
+For an always-on local session, opt in to applied automatic sorting at startup:
+
+```bash
+uv run python local_dashboard.py \
+  --db-path chroma_db \
+  --model-dir .cache/wd14 \
+  --auto-start
+```
+
+`--auto-start` fails before sorting if the token or local index is unavailable. Without
+that flag, launching the dashboard never starts the sorter automatically.
 
 Image previews and review actions use the configured `RAINDROP_TOKEN`; the token and
 cover URL are not stored in the journal or sent to the browser. Without a token, the
@@ -251,6 +264,19 @@ Leave the command running while using the page, and press `Ctrl+C` to stop it.
 If port 8765 is already in use, choose another one with `--port 8766`. Use
 `--journal-path /another/path.sqlite` when the sorter writes its journal somewhere
 other than the selected database directory.
+
+For a machine-readable operational check:
+
+```bash
+curl --fail --silent http://127.0.0.1:8765/api/ready | python -m json.tool
+```
+
+The readiness check returns HTTP 503 when applied sorter controls are unavailable or
+the automatic sorter has stopped on an error, so `curl --fail` works for monitoring.
+`/api/health` remains a liveness check for the read-only journal dashboard and reports
+whether image previews and review actions are configured. A missing, malformed, or
+empty local index disables sorter controls with an actionable message while leaving
+journal inspection available.
 
 The command-line views remain available for scripts and quick checks:
 
