@@ -262,6 +262,24 @@ uv run python visual_index.py --db-path chroma_db
 
 Always dry-run a small batch after refreshing either artifact.
 
+### Refresh character aliases from CloudNotes
+
+The local router ships with an Art-only character alias snapshot. To rebuild it
+after changing the corresponding voicebank, PJSK, Touhou, VTuber, anime, or
+Umamusume notes in CloudNotes, run:
+
+```bash
+uv run python scripts/sync_cloudnotes_character_aliases.py \
+  --vault /home/krisspy/obsidian/cloudnotes
+```
+
+The command reads the vault and rewrites `src/character_aliases.json`; it does not
+modify the vault. Voicebanks listing Vocaloid in their `platforms` frontmatter go
+to `Art/VOCALOID`; known incomplete vault metadata and spelling differences are
+handled by small, tested corrections in the sync script. Other voicebanks go to
+`Art/VOICEBANKS`. Routing destinations outside the `Art/` collection group are
+intentionally excluded for now.
+
 ## Troubleshooting
 
 ### `RAINDROP_TOKEN is required`
@@ -306,7 +324,7 @@ uv run --with pytest pytest
 
 The independent, versioned Obsidian-backed Personal Interest Index described in
 `ARCHITECTURE.md` is not implemented yet. The current local build seeds text rules
-and visual exemplars from existing Raindrop tags and collection assignments, plus
-the curated aliases in the codebase. These inputs produce native structured
+and visual exemplars from existing Raindrop tags and Art collection assignments,
+plus the curated aliases in the codebase. These inputs produce native structured
 evidence and pass through the native decision table; the legacy resolver compatibility
 adapter is not used.

@@ -11,7 +11,7 @@ from typing import Any, Literal
 import numpy as np
 
 from src.calibrations import BOOKMARK_ROUTES, CHARACTER_ALIAS_ROUTES, TAG_ROUTES, TEXT_ROUTES
-from src.destinations import canonical_destination
+from src.destinations import canonical_destination, is_art_destination
 from src.modality import bookmark_modality
 from src.tag_rules import RuleTarget
 from src.visual_exemplars import VisualExemplarIndex, score_visual_embedding
@@ -149,6 +149,10 @@ class VisualVerifier:
     def __init__(self, tag_rules: dict[str, RuleTarget], series_rules: dict[str, RuleTarget], exemplar_index: VisualExemplarIndex | None):
         self.tag_rules = {normalize_tag(key): value for key, value in tag_rules.items()}
         self.series_rules = {normalize_tag(key): value for key, value in series_rules.items()}
+        self.character_alias_rules = {
+            normalize_tag(key): list(targets)
+            for key, targets in CHARACTER_ALIAS_ROUTES.items()
+        }
         self.exemplar_index = exemplar_index
 
     def verify(self, bookmark: dict[str, Any], *, labels: list[str], embedding: Any | None, bypass: bool = False) -> VisualEvidence:
@@ -163,7 +167,12 @@ class VisualVerifier:
         modality = bookmark_modality(bookmark)
         wd_destinations: set[str] = set()
         for label in normalized_labels:
-            target = TAG_ROUTES.get(label) or self.tag_rules.get(label) or self.series_rules.get(label)
+            target = (
+                TAG_ROUTES.get(label)
+                or self.tag_rules.get(label)
+                or self.series_rules.get(label)
+                or self.character_alias_rules.get(label)
+            )
             destination = _resolve_target(target, modality)
             if destination is not None:
                 wd_destinations.add(canonical_destination(destination))
@@ -227,17 +236,16 @@ def _has_image_source(bookmark: dict[str, Any]) -> bool:
 
 
 def _resolve_target(target: RuleTarget | None, modality: str | None) -> str | None:
-    if target is None:
+    if target is None or modality != "art":
         return None
-    candidates = [target] if isinstance(target, str) else list(target)
+    candidates = [
+        candidate
+        for candidate in ([target] if isinstance(target, str) else list(target))
+        if is_art_destination(candidate)
+    ]
     if len(candidates) == 1:
-        destination = canonical_destination(candidates[0])
-        group = destination.partition("/")[0].casefold()
-        if group in {"art", "music", "video", "post"} and group != modality:
-            return None
-        return destination
-    matches = [value for value in candidates if modality and value.partition("/")[0].casefold() == modality]
-    return canonical_destination(matches[0]) if len(matches) == 1 else None
+        return canonical_destination(candidates[0])
+    return None
 
 
 def _contains_alias(

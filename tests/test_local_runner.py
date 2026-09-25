@@ -272,7 +272,11 @@ def test_local_runner_reports_an_incomplete_index_before_fetching(tmp_path):
 
 def test_local_runner_combines_explicit_hashtag_with_visual_verification(tmp_path):
     _write_state(tmp_path)
-    save_series_rules({"vocaloid": "VOCALOID"}, str(tmp_path))
+    save_series_rules({"vocaloid": "Art/VOCALOID"}, str(tmp_path))
+    (tmp_path / "folder_id_map.json").write_text(
+        json.dumps({"Art/MIKU": 42, "Art/VOCALOID": 43}),
+        encoding="utf-8",
+    )
     client = FakeRaindropClient(
         {
             "_id": 123,
@@ -293,7 +297,7 @@ def test_local_runner_combines_explicit_hashtag_with_visual_verification(tmp_pat
     )
 
     assert result["action"] == "move"
-    assert result["target_folder"] == "VOCALOID"
+    assert result["target_folder"] == "Art/VOCALOID"
     assert result["vision_tag_count"] == 0
     assert result["decision"]["outcome"] == "provisional"
 

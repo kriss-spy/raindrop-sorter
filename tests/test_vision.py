@@ -19,6 +19,7 @@ from src.state_machine import (
     tag_reviewed,
 )
 from src.tag_rules import (
+    extract_candidate_tag_rules,
     extract_series_rules,
     load_series_rules,
     save_series_rules,
@@ -37,6 +38,18 @@ from src.wd14_tagger import normalize_tag, WD14Tagger
 # ---------------------------------------------------------------------------
 # WD14 tag normalization
 # ---------------------------------------------------------------------------
+
+
+def test_candidate_tag_rules_only_include_art_group():
+    bookmarks = [
+        {"folder_path": "Art/TOUHOU", "tags": ["touhou"]},
+        {"folder_path": "Art/TOUHOU", "tags": ["touhou"]},
+        {"folder_path": "Art/TOUHOU", "tags": ["touhou"]},
+        {"folder_path": "Video/TOUHOU", "tags": ["video-only"]},
+        {"folder_path": "Video/TOUHOU", "tags": ["video-only"]},
+        {"folder_path": "Video/TOUHOU", "tags": ["video-only"]},
+    ]
+    assert extract_candidate_tag_rules(bookmarks) == {"touhou": "Art/TOUHOU"}
 
 def test_normalize_tag_basic():
     assert normalize_tag("Hatsune Miku") == "hatsune_miku"
@@ -837,24 +850,17 @@ def test_extract_series_rules_from_unique_folder_names():
     )
 
     assert rules == {
-        "anime": "ANIME",
         "vocaloid": "Art/Vocaloid",
-        "touhou": ["Archive/Touhou", "Art/Touhou"],
+        "touhou": "Art/Touhou",
     }
 
 
-def test_extract_series_rules_preserves_group_specific_candidates():
+def test_extract_series_rules_only_includes_art_group():
     rules = extract_series_rules(
         ["Art/VOCALOID", "Music/VOCALOID", "Video/VOCALOID"]
     )
 
-    assert rules == {
-        "vocaloid": [
-            "Art/VOCALOID",
-            "Music/VOCALOID",
-            "Video/VOCALOID",
-        ]
-    }
+    assert rules == {"vocaloid": "Art/VOCALOID"}
 
 
 def test_load_series_rules_missing():

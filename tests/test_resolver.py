@@ -121,16 +121,14 @@ def test_extract_candidate_tag_rules():
     assert "vocaloid" not in rules
 
 
-def test_extract_candidate_tag_rules_preserves_group_specific_candidates():
+def test_extract_candidate_tag_rules_excludes_non_art_candidates():
     bookmarks = [
         {"folder_path": folder, "tags": ["vocaloid"]}
         for folder in ("Art/VOCALOID", "Music/VOCALOID")
         for _ in range(3)
     ]
 
-    assert extract_candidate_tag_rules(bookmarks) == {
-        "vocaloid": ["Art/VOCALOID", "Music/VOCALOID"]
-    }
+    assert extract_candidate_tag_rules(bookmarks) == {"vocaloid": "Art/VOCALOID"}
 
 
 def test_save_and_load_tag_rules():

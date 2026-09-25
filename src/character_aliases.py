@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import unicodedata
 
+from src.destinations import is_art_destination
+
 
 ALIASES_PATH = Path(__file__).with_name("character_aliases.json")
 
@@ -17,6 +19,8 @@ def load_character_alias_routes() -> dict[str, tuple[str, ...]]:
     )
     folders_by_alias: dict[str, set[str]] = {}
     for folder, aliases in by_folder.items():
+        if not is_art_destination(folder):
+            continue
         for alias in aliases:
             normalized_alias = unicodedata.normalize("NFKC", alias).casefold()
             folders_by_alias.setdefault(normalized_alias, set()).add(folder)

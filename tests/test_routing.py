@@ -83,6 +83,59 @@ def test_visual_verifier_uses_confirmed_wd14_assignment():
     assert "blue_archive" in evidence.labels
 
 
+@pytest.mark.parametrize(
+    "label",
+    [
+        "nazrin",
+        "toramaru_shou",
+        "aki_shizuha",
+        "hijiri_byakuren",
+        "hong_meiling",
+        "hoshiguma_yuugi",
+        "fujiwara_no_mokou",
+        "ibaraki_kasen",
+        "inubashiri_momiji",
+        "kawashiro_nitori",
+        "kazami_yuuka",
+        "kishin_sagume",
+        "kochiya_sanae",
+        "lily_white",
+        "soga_no_tojiko",
+        "tenkyuu_chimata",
+        "yorigami_jo'on",
+    ],
+)
+def test_visual_verifier_uses_vault_character_registry(label):
+    evidence = VisualVerifier({}, {}, None).verify(
+        {"_id": 999, "type": "image", "cover": "https://example.test/a.jpg"},
+        labels=[f"ai:wdtag-{label}"],
+        embedding=None,
+    )
+    assert evidence.status == "pass"
+    assert evidence.destination == "Art/TOUHOU"
+
+
+@pytest.mark.parametrize("title", ["ナズーリン fanart", "#東方LW 絵札イラスト"])
+def test_text_identifier_uses_touhou_vault_aliases(title):
+    evidence = TextIdentifier({}, {}).identify(
+        {"_id": 999, "type": "image", "title": title, "tags": []}
+    )
+    assert evidence.destination == "Art/TOUHOU"
+
+
+def test_native_routing_ignores_non_art_destinations():
+    text = TextIdentifier({"vocaloid": "Music/VOCALOID"}, {}).identify(
+        {"_id": 999, "type": "audio", "tags": ["vocaloid"]}
+    )
+    visual = VisualVerifier({}, {"vocaloid": "Video/VOCALOID"}, None).verify(
+        {"_id": 999, "type": "image", "cover": "https://example.test/a.jpg"},
+        labels=["vocaloid"],
+        embedding=None,
+    )
+    assert text.kind == "no_match"
+    assert visual.status == "inconclusive"
+
+
 def test_art_alias_does_not_route_a_nonvisual_article():
     evidence = TextIdentifier({}, {}).identify(
         {"_id": 999, "type": "article", "title": "Genshin release notes", "tags": []}

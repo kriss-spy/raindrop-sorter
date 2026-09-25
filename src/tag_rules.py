@@ -5,6 +5,8 @@ import os
 from collections import defaultdict
 from typing import Any
 
+from src.destinations import is_art_destination
+
 TAG_RULES_FILE = "tag_rules.json"
 TAG_RULES_CANDIDATES_FILE = "tag_rules_candidates.json"
 SERIES_RULES_FILE = "series_rules.json"
@@ -47,7 +49,7 @@ def extract_candidate_tag_rules(
     folder_tag_counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     for bm in bookmarks:
         folder = bm.get("folder_path", "")
-        if not folder:
+        if not is_art_destination(folder):
             continue
         tags = bm.get("tags", [])
         user_tags = [t for t in tags if not t.startswith(("ai:", "sorter-"))]
@@ -122,7 +124,8 @@ def extract_series_rules(folder_paths: list[str]) -> dict[str, RuleTarget]:
     candidate so the resolver can select one from bookmark modality.
     """
     paths_by_tag: dict[str, set[str]] = defaultdict(set)
-    for path in folder_paths:
+    art_paths = [path for path in folder_paths if is_art_destination(path)]
+    for path in art_paths:
         terminal_name = path.rsplit("/", 1)[-1]
         tag = _canonical_tag(terminal_name)
         if tag:
@@ -132,7 +135,7 @@ def extract_series_rules(folder_paths: list[str]) -> dict[str, RuleTarget]:
     for tag, paths in paths_by_tag.items():
         ordered_paths = sorted(paths)
         rules[tag] = ordered_paths[0] if len(ordered_paths) == 1 else ordered_paths
-    live_folders = set(folder_paths)
+    live_folders = set(art_paths)
     for alias, target in SERIES_ALIASES.items():
         if target in live_folders:
             rules[_canonical_tag(alias)] = target

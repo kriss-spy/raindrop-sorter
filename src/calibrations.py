@@ -157,6 +157,11 @@ TEXT_ROUTES: dict[str, str] = {
         for alias in aliases
     },
     "初音ミク": "Art/MIKU",
+    "touhou": "Art/TOUHOU",
+    "touhou lostword": "Art/TOUHOU",
+    "東方project": "Art/TOUHOU",
+    "東方lw": "Art/TOUHOU",
+    "東ロワ": "Art/TOUHOU",
     "ほしまちぎゃらりー": "Art/VTUBERS",
     "星街すいせい": "Art/VTUBERS",
     "すいちゃん": "Art/VTUBERS",
