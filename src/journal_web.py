@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, urlparse
 from dotenv import load_dotenv
 
 from src.bookmark_preview import CachedPreviewLoader, BookmarkPreviewService, PreviewLoader
+from src.cover_cache import SQLiteCoverCache
 from src.journal_dashboard import DASHBOARD_HTML
 from src.journal_review import (
     IneligibleReviewAttempt,
@@ -38,6 +39,7 @@ class JournalHTTPServer(ThreadingHTTPServer):
     sorter_controller: Any | None
     sorter_unavailable_reason: str
     live_library: LiveLibraryBrowser | None
+    cover_cache: SQLiteCoverCache | None
 
     def server_close(self) -> None:
         if self.sorter_controller is not None:
@@ -51,6 +53,7 @@ def create_server(
     host: str = "127.0.0.1",
     port: int = 8765,
     preview_loader: PreviewLoader | None = None,
+    cover_cache: SQLiteCoverCache | None = None,
     raindrop_client: Any | None = None,
     sorter_controller: Any | None = None,
     sorter_unavailable_reason: str | None = None,
@@ -78,8 +81,14 @@ def create_server(
     server.preview_loader = (
         CachedPreviewLoader(preview_loader) if preview_loader is not None else None
     )
+    server.cover_cache = cover_cache
     server.reviewer = (
-        JournalReviewService(server.journal, raindrop_client, mutation_lock=mutation_lock)
+        JournalReviewService(
+            server.journal,
+            raindrop_client,
+            mutation_lock=mutation_lock,
+            cover_cache=cover_cache,
+        )
         if raindrop_client is not None
         else None
     )
@@ -125,6 +134,10 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                 if trace is None:
                     self._send_json(HTTPStatus.NOT_FOUND, {"error": "attempt not found"})
                 else:
+                    if self.server.cover_cache is not None:
+                        trace["attempt"]["cover"] = self.server.cover_cache.get(
+                            int(trace["attempt"]["bookmark_id"])
+                        )
                     self._send_json(HTTPStatus.OK, trace)
             else:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
@@ -362,6 +375,8 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             query=query.get("q", [None])[0] or None,
             latest_per_bookmark=latest in {"1", "true"},
         )
+        if self.server.cover_cache is not None:
+            items = self.server.cover_cache.attach(items)
         self._send_json(HTTPStatus.OK, {"items": items, "count": len(items)})
 
     def _preview(self, path: str) -> None:
@@ -414,7 +429,7 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header(
             "Content-Security-Policy",
-            "default-src 'self'; img-src 'self' blob:; style-src 'unsafe-inline'; "
+            "default-src 'self'; img-src 'self' blob: https:; style-src 'unsafe-inline'; "
             "script-src 'unsafe-inline'; connect-src 'self'",
         )
         self.end_headers()
@@ -449,6 +464,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     load_dotenv()
     path = args.journal_path or os.path.join(args.db_path, "run-journal.sqlite")
+    cover_cache = SQLiteCoverCache(Path(args.db_path) / "cover-cache.sqlite")
     token = os.environ.get("RAINDROP_TOKEN")
     client = RaindropClient(token=token) if token else None
     controller = None
@@ -476,6 +492,7 @@ def main(argv: list[str] | None = None) -> None:
                             journal=SQLiteRunJournal(path),
                             apply=True,
                             mutation_lock=mutation_lock,
+                            cover_cache=cover_cache,
                         )
                     return processor(
                         limit,
@@ -494,6 +511,7 @@ def main(argv: list[str] | None = None) -> None:
             host=args.host,
             port=args.port,
             preview_loader=BookmarkPreviewService(token) if token else None,
+            cover_cache=cover_cache,
             raindrop_client=client,
             sorter_controller=controller,
             sorter_unavailable_reason=sorter_unavailable_reason,

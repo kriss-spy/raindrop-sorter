@@ -6,6 +6,7 @@ from urllib.request import Request, urlopen
 
 import pytest
 
+from src.cover_cache import SQLiteCoverCache
 from src.journal_web import create_server
 from src.routing import RouteDecision, RouteOutcome, TextEvidence
 from src.run_journal import SQLiteRunJournal
@@ -20,7 +21,12 @@ def dashboard(tmp_path):
     )
     journal.complete(older, phase="dry_run_completed")
     attempt = journal.start_attempt(
-        {"_id": 1864496693, "title": "Pixiv illustration", "link": "https://example.test/art"},
+        {
+            "_id": 1864496693,
+            "title": "Pixiv illustration",
+            "link": "https://example.test/art",
+            "cover": "https://rdl.ink/pixiv.webp",
+        },
         mode="dry-run",
     )
     journal.record_decision(
@@ -41,7 +47,14 @@ def dashboard(tmp_path):
     )
     journal.complete(attempt, phase="dry_run_completed")
 
-    server = create_server(path, host="127.0.0.1", port=0)
+    cover_cache = SQLiteCoverCache(tmp_path / "cover-cache.sqlite")
+    cover_cache.record({"_id": 1864496693, "cover": "https://rdl.ink/pixiv.webp"})
+    server = create_server(
+        path,
+        host="127.0.0.1",
+        port=0,
+        cover_cache=cover_cache,
+    )
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     yield f"http://127.0.0.1:{server.server_port}", attempt.attempt_id
@@ -70,7 +83,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     base_url, _ = dashboard
     with urlopen(base_url) as response:
         page = response.read().decode()
-        assert "img-src 'self' blob:" in response.headers["Content-Security-Policy"]
+        assert "img-src 'self' blob: https:" in response.headers["Content-Security-Policy"]
     assert "Raindrop Sorter" in page
     assert "Raindrop Journal" not in page
     assert 'class="stats"' not in page
@@ -107,7 +120,9 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "MAX_CONCURRENT_PREVIEW_FETCHES = 2" in page
     assert "fetchPreviewBlob(bookmarkId)" in page
     assert "image.dataset.bookmarkId" in page
-    assert "image.src = image.dataset.src" not in page
+    assert "image.dataset.coverUrl" in page
+    assert "image.referrerPolicy = 'no-referrer'" in page
+    assert "previewImage(attempt.bookmark_id, attempt.title, 'attempt-cover', attempt.cover)" in page
     assert "Latest status" in page
     assert "Search Art collections" in page
     assert "Move & confirm" in page
@@ -168,6 +183,7 @@ def test_dashboard_filters_attempts_and_returns_exact_trace(dashboard):
     base_url, attempt_id = dashboard
     attempts = _json(f"{base_url}/api/attempts?outcome=review&q=pixiv")
     assert attempts["items"][0]["bookmark_id"] == 1864496693
+    assert attempts["items"][0]["cover"] == "https://rdl.ink/pixiv.webp"
     assert _json(f"{base_url}/api/attempts?outcome=confirmed")["items"] == []
 
     trace = _json(f"{base_url}/api/attempts/{attempt_id}")

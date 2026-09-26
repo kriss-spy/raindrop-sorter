@@ -6,6 +6,7 @@ import threading
 from enum import StrEnum
 from typing import Any
 
+from src.cover_cache import SQLiteCoverCache
 from src.reindex import build_folder_map
 from src.routing import RouteDecision, RouteOutcome, TextEvidence, VisualEvidence
 from src.run_journal import SQLiteRunJournal
@@ -54,10 +55,12 @@ class JournalReviewService:
         journal: SQLiteRunJournal,
         client: Any,
         mutation_lock: threading.RLock | None = None,
+        cover_cache: SQLiteCoverCache | None = None,
     ):
         self.journal = journal
         self.client = client
         self._lock = mutation_lock or threading.RLock()
+        self.cover_cache = cover_cache
 
     def art_collections(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -223,6 +226,8 @@ class JournalReviewService:
                         f"destination was not provided by {source.value} evidence"
                     )
             bookmark = self.client.get_raindrop(bookmark_id)
+            if self.cover_cache is not None:
+                self.cover_cache.record(bookmark)
             tags = tags_for_decision(bookmark, RouteOutcome.CONFIRMED.value)
             review_attempt = self.journal.start_attempt(
                 bookmark,

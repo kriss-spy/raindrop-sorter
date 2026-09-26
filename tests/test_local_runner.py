@@ -7,6 +7,7 @@ import pytest
 import src.local_runner as local_runner
 
 from src.centroids import save_centroids
+from src.cover_cache import SQLiteCoverCache
 from src.local_runner import (
     LocalBatchProcessor,
     find_local_work,
@@ -147,6 +148,7 @@ def test_local_runner_runs_vision_for_pixiv_link_with_image_media(tmp_path):
 def test_local_runner_writes_only_when_apply_is_explicit(tmp_path):
     _write_state(tmp_path)
     journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
+    cover_cache = SQLiteCoverCache(tmp_path / "cover-cache.sqlite")
     client = FakeRaindropClient(
         {
             "_id": 123,
@@ -165,12 +167,14 @@ def test_local_runner_writes_only_when_apply_is_explicit(tmp_path):
         analyze_vision=lambda _bookmark: ["ai:wdtag-hatsune_miku"],
         apply=True,
         journal=journal,
+        cover_cache=cover_cache,
     )
 
     assert result["applied"] is True
     assert client.updates[0][0:2] == (123, 42)
     assert all(not tag.startswith(("sorter-", "ai:sorted:")) for tag in client.updates[0][2])
     assert journal.explain(123)["attempt"]["current_phase"] == "applied"
+    assert cover_cache.get(123) == "https://example.test/cover.jpg"
 
 
 def test_local_runner_refuses_remote_writes_without_a_journal(tmp_path):

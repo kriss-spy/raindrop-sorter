@@ -328,6 +328,15 @@ The journal records the bounded bookmark snapshot, lifecycle events, structured
 evidence, intended or completed action, and any failure. Dry runs record a
 `planned` action and never write to Raindrop.
 
+For an existing journal, cache the current Raindrop `cover` URLs once so dashboard
+cards load them directly instead of proxying full images through Python:
+
+```bash
+RAINDROP_TOKEN="your-token-here" uv run python local_run.py \
+  --migrate-covers \
+  --db-path chroma_db
+```
+
 Before the first database-backed apply run, preview the lifecycle-tag migration:
 
 ```bash

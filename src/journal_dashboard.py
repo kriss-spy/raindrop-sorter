@@ -158,17 +158,32 @@ function raindropLink(bookmarkId, label = 'Open in Raindrop.io') {
   link.onclick = event => event.stopPropagation();
   return link;
 }
-function previewImage(bookmarkId, title, className) {
+function directCoverUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.href : '';
+  } catch (_error) {
+    return '';
+  }
+}
+function previewImage(bookmarkId, title, className, coverUrl = '') {
   const image = element('img', className);
   image.alt = title ? `Preview of ${title}` : `Preview of Raindrop ${bookmarkId}`;
   image.loading = 'lazy';
+  image.decoding = 'async';
+  image.referrerPolicy = 'no-referrer';
   image.dataset.bookmarkId = String(bookmarkId);
+  image.dataset.coverUrl = directCoverUrl(coverUrl);
   image.onerror = () => image.parentElement?.classList.add('missing');
   if (previewObserver) previewObserver.observe(image);
   else loadPreviewImage(image);
   return image;
 }
 function loadPreviewImage(image) {
+  if (image.dataset.coverUrl) {
+    image.src = image.dataset.coverUrl;
+    return;
+  }
   previewUrl(image.dataset.bookmarkId)
     .then(url => { if (image.isConnected) image.src = url; })
     .catch(() => image.parentElement?.classList.add('missing'));
@@ -404,7 +419,7 @@ function renderCard(attempt) {
     + (selectedAttempts.has(attempt.attempt_id) ? ' selected' : ''));
   activateAttempt(card, attempt);
   const cover = element('div', 'attempt-cover-wrap card-cover-wrap');
-  cover.append(previewImage(attempt.bookmark_id, attempt.title, 'attempt-cover'));
+  cover.append(previewImage(attempt.bookmark_id, attempt.title, 'attempt-cover', attempt.cover));
   if (isAssignable(attempt)) card.append(selectionCheckbox(attempt));
   const body = element('div', 'attempt-body');
   const header = element('div', 'attempt-head');
@@ -452,7 +467,7 @@ function renderTable(attempts) {
     if (isAssignable(attempt)) checkCell.append(selectionCheckbox(attempt));
     const coverCell = element('td');
     const coverWrap = element('div', 'attempt-cover-wrap table-cover-wrap');
-    coverWrap.append(previewImage(attempt.bookmark_id, attempt.title, 'table-cover'));
+    coverWrap.append(previewImage(attempt.bookmark_id, attempt.title, 'table-cover', attempt.cover));
     coverCell.append(coverWrap);
     const titleCell = element('td');
     titleCell.append(element('div', 'table-title', attempt.title), element('div', 'meta', `#${attempt.bookmark_id}`));
@@ -676,13 +691,13 @@ async function renderDetail(attemptId) {
       links.append(originalLink);
     }
     detailPanel.append(links);
-    const preview = element('img', 'bookmark-preview');
-    preview.alt = snapshot.title ? `Preview of ${snapshot.title}` : `Preview of bookmark ${attempt.bookmark_id}`;
-    preview.loading = 'lazy';
+    const preview = previewImage(
+      attempt.bookmark_id,
+      snapshot.title,
+      'bookmark-preview',
+      attempt.cover,
+    );
     detailPanel.append(preview);
-    previewUrl(attempt.bookmark_id)
-      .then(url => { if (preview.isConnected) preview.src = url; })
-      .catch(() => preview.remove());
     if (attempt.decision?.summary) detailPanel.append(element('div', 'summary', attempt.decision.summary));
     if (attempt.error) detailPanel.append(element('div', 'error', `${attempt.error.type}: ${attempt.error.message}`));
     await renderResolution(trace, detailPanel);
