@@ -55,8 +55,8 @@ html,body{height:100%;overflow:hidden}
 .view-switch{display:flex}.view-switch .icon-button{border-radius:0}.view-switch .icon-button:first-child{border-radius:9px 0 0 9px}.view-switch .icon-button:last-child{border-radius:0 9px 9px 0;margin-left:-1px}
 .action-bar,.sorter-panel{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#101820}.action-bar[hidden],.sorter-panel[hidden]{display:none}.action-bar .control{min-width:260px}.action-message{color:var(--muted);margin-left:auto}.sorter-panel{justify-content:flex-end}.sorter-status{margin-right:auto}.sorter-status strong{color:var(--lime)}.sorter-panel .explain{margin:0}.batch-picker{position:relative;flex:0 1 520px}.batch-picker .control{width:100%}.batch-destination-results{position:absolute;z-index:10;top:calc(100% + 5px);left:0;right:0;max-height:min(380px,60vh);overflow:auto;padding:5px;background:#0e151c;border:1px solid var(--line);border-radius:9px;box-shadow:0 18px 42px #05080bcc}.batch-destination-results[hidden]{display:none}.batch-destination-option{display:block;width:100%;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;cursor:pointer}.batch-destination-option:hover,.batch-destination-option.active{background:#183039;color:var(--cyan)}.batch-destination-empty{padding:10px;color:var(--muted)}
 .workspace{display:block;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr)}.panel-head{padding:9px 12px}
-.attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));grid-auto-rows:min-content;align-content:start;align-items:stretch;gap:10px;max-height:none}.attempt{position:relative;padding:0;border:1px solid var(--line);border-radius:11px;background:#0d141a;overflow:hidden}.attempt:hover,.attempt.active{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.attempt-body{display:flex;flex-direction:column;gap:5px;padding:9px 10px 10px;min-width:0}.attempt-cover{display:block;width:100%;height:100%;object-fit:cover;background:linear-gradient(135deg,#111d25,#0a1015)}.attempt-cover-wrap{position:relative;background:linear-gradient(135deg,#111d25,#080d11)}.card-cover-wrap{aspect-ratio:16/9}.attempt-cover{position:absolute;inset:0;z-index:1}.attempt-cover-wrap.missing img{display:none}.attempt-select{position:absolute;z-index:3;top:8px;left:8px;width:18px;height:18px;accent-color:var(--cyan)}.attempt-tools{display:flex;align-items:center;gap:7px}.icon-link{display:inline-grid;place-items:center;color:var(--cyan);width:25px;height:25px;border:1px solid var(--line);border-radius:7px;text-decoration:none}.attempt-head .attempt-tools{margin-left:auto}.attempt-head .badge{margin-left:0}
-.attempt-table-wrap{padding:0;overflow:auto}.attempt-table{width:100%;border-collapse:collapse;table-layout:fixed}.attempt-table th,.attempt-table td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.attempt-table th{position:sticky;top:0;z-index:2;background:#111820;color:var(--muted);font-size:10px;text-transform:uppercase}.attempt-table tbody tr{cursor:pointer}.attempt-table tbody tr:hover,.attempt-table tbody tr.active{background:#17232b}.attempt-table .col-check{width:42px}.attempt-table .col-cover{width:76px}.attempt-table .col-outcome{width:110px}.attempt-table .col-run{width:145px}.attempt-table .col-time{width:135px}.attempt-table .col-open{width:48px}.table-cover{width:58px;height:42px;object-fit:cover;border-radius:6px;background:#080d11}.table-title{font:650 14px system-ui;overflow-wrap:anywhere}.table-destination{color:var(--cyan);overflow-wrap:anywhere}
+.attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));grid-auto-rows:min-content;align-content:start;align-items:stretch;gap:10px;max-height:none}.attempt{position:relative;padding:0;border:1px solid var(--line);border-radius:11px;background:#0d141a;overflow:hidden}.attempt:hover,.attempt.active,.attempt.selected{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.attempt.selected{border-color:var(--cyan);box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--cyan) 42%,transparent)}.attempt.selected.active{box-shadow:inset 3px 0 var(--cyan),inset 0 0 0 2px color-mix(in srgb,var(--cyan) 42%,transparent)}.attempt-body{display:flex;flex-direction:column;gap:5px;padding:9px 10px 10px;min-width:0}.attempt-cover{display:block;width:100%;height:100%;object-fit:cover;background:linear-gradient(135deg,#111d25,#0a1015)}.attempt-cover-wrap{position:relative;background:linear-gradient(135deg,#111d25,#080d11)}.card-cover-wrap{aspect-ratio:16/9}.attempt-cover{position:absolute;inset:0;z-index:1}.attempt-cover-wrap.missing img{display:none}.attempt-select{position:absolute;z-index:3;top:8px;left:8px;width:18px;height:18px;accent-color:var(--cyan)}.attempt-tools{display:flex;align-items:center;gap:7px}.icon-link{display:inline-grid;place-items:center;color:var(--cyan);width:25px;height:25px;border:1px solid var(--line);border-radius:7px;text-decoration:none}.attempt-head .attempt-tools{margin-left:auto}.attempt-head .badge{margin-left:0}
+.attempt-table-wrap{padding:0;overflow:auto}.attempt-table{width:100%;border-collapse:collapse;table-layout:fixed}.attempt-table th,.attempt-table td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.attempt-table th{position:sticky;top:0;z-index:2;background:#111820;color:var(--muted);font-size:10px;text-transform:uppercase}.attempt-table tbody tr{cursor:pointer}.attempt-table tbody tr:hover,.attempt-table tbody tr.active,.attempt-table tbody tr.selected{background:#17232b}.attempt-table tbody tr.selected{box-shadow:inset 3px 0 var(--cyan)}.attempt-table .col-check{width:42px}.attempt-table .col-cover{width:76px}.attempt-table .col-outcome{width:110px}.attempt-table .col-run{width:145px}.attempt-table .col-time{width:135px}.attempt-table .col-open{width:48px}.table-cover{width:58px;height:42px;object-fit:cover;border-radius:6px;background:#080d11}.table-title{font:650 14px system-ui;overflow-wrap:anywhere}.table-destination{color:var(--cyan);overflow-wrap:anywhere}
 .attempt-table .attempt-select{position:static}.table-cover-wrap{width:58px;height:42px;border-radius:6px;overflow:hidden}.icon-button:disabled{cursor:not-allowed;opacity:.35}
 .detail-panel{position:absolute;z-index:5;inset:0 0 0 auto;width:min(720px,52vw);display:grid;grid-template-rows:auto minmax(0,1fr);background:#10171f;box-shadow:-18px 0 44px #05080bad;transform:translateX(calc(100% + 24px));transition:transform .2s ease;pointer-events:none}.workspace.detail-open .detail-panel{transform:translateX(0);pointer-events:auto}.detail-panel-head{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--muted)}.detail-panel-head .icon-button{width:30px;height:30px}.detail-toggle[hidden]{display:none}#detail{padding:18px;max-height:none;overflow:auto;min-height:0}.detail-title{font-size:21px}.detail-links{display:flex;gap:8px;margin-top:7px}.detail-links .icon-link{width:32px;height:32px}.bookmark-preview{max-height:330px;margin:14px 0}.empty{min-height:0}.drawer-scrim{position:absolute;z-index:4;inset:0;background:#05080b99;opacity:0;pointer-events:none;transition:opacity .2s;border:0}.workspace.detail-open .drawer-scrim{opacity:1;pointer-events:auto}
 @media(max-width:1100px){.toolbar{grid-template-columns:minmax(0,1fr) repeat(3,minmax(130px,1fr)) 76px repeat(3,36px);grid-template-areas:"search search search search view refresh control detail" "outcome phase scope . . . . ."}.detail-panel{width:min(680px,92vw)}}
@@ -85,6 +85,7 @@ let artCollectionsPromise = null;
 let resultLayout = localStorage.getItem('sorter-result-layout') === 'table' ? 'table' : 'cards';
 let renderedAttempts = [];
 const selectedAttempts = new Set();
+let selectionAnchorAttemptId = null;
 let batchDestinationCollections = [];
 let batchDestinationFocusIndex = 0;
 let batchDestinationWantsOpen = false;
@@ -282,26 +283,65 @@ function selectionCheckbox(attempt) {
   checkbox.setAttribute('aria-label', `Select ${attempt.title || 'Raindrop ' + attempt.bookmark_id}`);
   checkbox.onclick = event => event.stopPropagation();
   checkbox.onchange = () => {
-    if (checkbox.checked) selectedAttempts.add(attempt.attempt_id);
-    else selectedAttempts.delete(attempt.attempt_id);
+    if (checkbox.checked) {
+      selectedAttempts.add(attempt.attempt_id);
+      selectionAnchorAttemptId = attempt.attempt_id;
+    } else {
+      selectedAttempts.delete(attempt.attempt_id);
+      if (!selectedAttempts.size) selectionAnchorAttemptId = null;
+    }
     if (checkbox.checked) void loadBatchDestinations();
     syncSelectionUi();
   };
   return checkbox;
 }
+function eligibleRangeTo(attemptId) {
+  const eligibleIds = renderedAttempts.filter(isAssignable).map(item => item.attempt_id);
+  const end = eligibleIds.indexOf(attemptId);
+  const start = eligibleIds.indexOf(selectionAnchorAttemptId);
+  if (end < 0) return [];
+  if (start < 0) return [attemptId];
+  return eligibleIds.slice(Math.min(start, end), Math.max(start, end) + 1);
+}
+function clearAttemptSelection() {
+  selectedAttempts.clear();
+  selectionAnchorAttemptId = null;
+}
+function handleAttemptActivation(event, attempt) {
+  const modified = event.ctrlKey || event.metaKey;
+  const selecting = selectedAttempts.size > 0 || modified || event.shiftKey;
+  if (!selecting) {
+    openAttempt(attempt.attempt_id);
+    return;
+  }
+  event.preventDefault();
+  if (!isAssignable(attempt)) return;
+  if (event.shiftKey) {
+    const range = eligibleRangeTo(attempt.attempt_id);
+    range.forEach(attemptId => selectedAttempts.add(attemptId));
+    if (selectionAnchorAttemptId === null) selectionAnchorAttemptId = attempt.attempt_id;
+  } else {
+    if (selectedAttempts.has(attempt.attempt_id)) selectedAttempts.delete(attempt.attempt_id);
+    else selectedAttempts.add(attempt.attempt_id);
+    selectionAnchorAttemptId = selectedAttempts.size ? attempt.attempt_id : null;
+  }
+  syncSelectionUi();
+}
 function activateAttempt(container, attempt) {
   container.dataset.attemptId = attempt.attempt_id;
   container.tabIndex = 0;
-  container.onclick = () => openAttempt(attempt.attempt_id);
+  container.onclick = event => handleAttemptActivation(event, attempt);
   container.onkeydown = event => {
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
-      openAttempt(attempt.attempt_id);
+      handleAttemptActivation(event, attempt);
     }
   };
 }
 function renderCard(attempt) {
-  const card = element('article', 'attempt' + (attempt.attempt_id === selectedAttemptId ? ' active' : ''));
+  const card = element('article', 'attempt'
+    + (attempt.attempt_id === selectedAttemptId ? ' active' : '')
+    + (selectedAttempts.has(attempt.attempt_id) ? ' selected' : ''));
   activateAttempt(card, attempt);
   const cover = element('div', 'attempt-cover-wrap card-cover-wrap');
   cover.append(previewImage(attempt.bookmark_id, attempt.title, 'attempt-cover'));
@@ -332,6 +372,7 @@ function renderTable(attempts) {
   selectAll.checked = eligible.length > 0 && eligible.every(item => selectedAttempts.has(item.attempt_id));
   selectAll.onchange = () => {
     eligible.forEach(item => selectAll.checked ? selectedAttempts.add(item.attempt_id) : selectedAttempts.delete(item.attempt_id));
+    selectionAnchorAttemptId = selectAll.checked && eligible.length ? eligible[0].attempt_id : null;
     renderAttemptResults(); syncSelectionUi();
   };
   const headings = [['col-check', selectAll], ['col-cover', 'Image'], ['', 'Title'], ['col-outcome', 'Outcome'], ['', 'Destination'], ['col-run', 'Run'], ['col-time', 'Time'], ['col-open', '']];
@@ -344,7 +385,8 @@ function renderTable(attempts) {
   head.append(headRow); table.append(head);
   const body = document.createElement('tbody');
   attempts.forEach(attempt => {
-    const row = element('tr', attempt.attempt_id === selectedAttemptId ? 'active' : '');
+    const row = element('tr', (attempt.attempt_id === selectedAttemptId ? 'active' : '')
+      + (selectedAttempts.has(attempt.attempt_id) ? ' selected' : ''));
     activateAttempt(row, attempt);
     const checkCell = element('td');
     if (isAssignable(attempt)) checkCell.append(selectionCheckbox(attempt));
@@ -381,6 +423,9 @@ function renderAttemptResults() {
 function syncSelectionUi() {
   const visibleIds = new Set(renderedAttempts.map(item => item.attempt_id));
   [...selectedAttempts].filter(id => !visibleIds.has(id)).forEach(id => selectedAttempts.delete(id));
+  if (selectionAnchorAttemptId && !visibleIds.has(selectionAnchorAttemptId)) {
+    selectionAnchorAttemptId = selectedAttempts.values().next().value || null;
+  }
   const count = selectedAttempts.size;
   select('#batch-bar').hidden = count === 0;
   if (count) void loadBatchDestinations();
@@ -389,6 +434,10 @@ function syncSelectionUi() {
   document.querySelectorAll('.attempt-select').forEach(checkbox => {
     const item = checkbox.closest('[data-attempt-id]');
     if (item) checkbox.checked = selectedAttempts.has(item.dataset.attemptId);
+  });
+  document.querySelectorAll('[data-attempt-id]').forEach(item => {
+    const selected = selectedAttempts.has(item.dataset.attemptId);
+    item.classList.toggle('selected', selected);
   });
 }
 async function renderAttempts() {
@@ -693,8 +742,9 @@ async function assignSelected() {
     const result = await postJson('/api/attempts/resolve-batch', {
       attempt_ids:[...selectedAttempts], collection_id:collectionId,
     });
-    selectedAttempts.clear();
+    clearAttemptSelection();
     result.errors.forEach(item => selectedAttempts.add(item.retry_attempt_id || item.attempt_id));
+    selectionAnchorAttemptId = selectedAttempts.values().next().value || null;
     clearCaches();
     select('#batch-message').textContent = result.failed
       ? `${result.resolved} assigned · ${result.failed} failed`
@@ -748,7 +798,7 @@ select('#outcome').onchange = () => { invalidateDetailSelection(); renderAttempt
 select('#phase').onchange = () => { invalidateDetailSelection(); renderAttempts(); };
 select('#scope').onchange = () => {
   invalidateDetailSelection();
-  selectedAttempts.clear();
+  clearAttemptSelection();
   clearDetail();
   refreshDashboard();
 };
@@ -789,7 +839,7 @@ select('#batch-destination-search').onkeydown = event => {
 };
 select('#batch-destination-search').onblur = () => setTimeout(closeBatchDestinationResults, 100);
 select('#batch-assign').onclick = assignSelected;
-select('#selection-clear').onclick = () => { selectedAttempts.clear(); renderAttemptResults(); syncSelectionUi(); };
+select('#selection-clear').onclick = () => { clearAttemptSelection(); renderAttemptResults(); syncSelectionUi(); };
 select('#sorter-toggle').onclick = () => {
   const panel = select('#sorter-panel');
   panel.hidden = !panel.hidden;

@@ -116,6 +116,11 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert ".attempt{min-height:" not in page
     assert "align-items:stretch" in page
     assert "overflow:hidden" in page
+    assert ".attempt.selected" in page
+    assert "selectionAnchorAttemptId" in page
+    assert "handleAttemptActivation" in page
+    assert "event.shiftKey" in page
+    assert "event.ctrlKey || event.metaKey" in page
 
     overview = _json(f"{base_url}/api/overview")
     assert overview["total_attempts"] == 2
