@@ -60,6 +60,37 @@ def test_text_identifier_uses_user_tags_but_ignores_ai_tags():
     assert evidence.source == "user_tag_or_hashtag"
 
 
+def test_text_identifier_bypasses_visual_for_review_confirmed_signal():
+    identifier = TextIdentifier(
+        {},
+        {},
+        review_feedback={
+            "tag_rules": {
+                "date_a_live": {
+                    "destination": "Art/ANIME/Date a Live",
+                    "support": 3,
+                    "observations": 3,
+                    "purity": 1.0,
+                }
+            },
+            "alias_rules": {},
+        },
+    )
+
+    evidence = identifier.identify(
+        {
+            "_id": 999,
+            "type": "image",
+            "title": "day 31 #date_a_live",
+            "tags": [],
+        }
+    )
+
+    assert evidence.kind == "user_confirmed_rule"
+    assert evidence.destination == "Art/ANIME/Date a Live"
+    assert evidence.source == "review_feedback"
+
+
 def test_short_alias_is_weak_and_uses_unicode_boundaries():
     evidence = TextIdentifier({}, {}).identify(
         {"_id": 999, "type": "image", "title": "Leva portrait", "tags": []}

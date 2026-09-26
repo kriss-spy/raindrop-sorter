@@ -16,6 +16,7 @@ from src.destinations import is_art_destination
 from src.routing import RouteEngine, TextIdentifier, VisualVerifier
 from src.run_journal import AttemptHandle, RunJournal, SQLiteRunJournal
 from src.modality import bookmark_modality
+from src.review_learning import load_review_feedback
 from src.state_machine import (
     tags_for_decision,
 )
@@ -85,6 +86,7 @@ class LocalRoutingArtifacts:
     folder_id_map: dict[str, int]
     tag_rules: dict[str, Any]
     series_rules: dict[str, Any]
+    review_feedback: dict[str, Any]
     visual_index: Any | None
 
 
@@ -213,6 +215,7 @@ def _load_routing_artifacts(db_path: str) -> LocalRoutingArtifacts:
         folder_id_map=_load_folder_map(db_path),
         tag_rules=tag_rules,
         series_rules=load_series_rules(db_path),
+        review_feedback=load_review_feedback(db_path),
         visual_index=load_visual_exemplar_index(db_path),
     )
 
@@ -256,6 +259,7 @@ class LocalBatchProcessor:
         self.text_identifier = TextIdentifier(
             self.artifacts.tag_rules,
             self.artifacts.series_rules,
+            self.artifacts.review_feedback,
         )
         self.tagger = WD14Tagger(model_dir=model_dir)
         self.visual_index = self.artifacts.visual_index
@@ -421,6 +425,20 @@ class LocalBatchProcessor:
         should_stop: Callable[[], bool] | None = None,
         on_progress: Callable[[bool], None] | None = None,
     ) -> dict[str, Any]:
+        review_feedback = load_review_feedback(self.db_path)
+        if review_feedback != self.artifacts.review_feedback:
+            self.artifacts = LocalRoutingArtifacts(
+                folder_id_map=self.artifacts.folder_id_map,
+                tag_rules=self.artifacts.tag_rules,
+                series_rules=self.artifacts.series_rules,
+                review_feedback=review_feedback,
+                visual_index=self.artifacts.visual_index,
+            )
+            self.text_identifier = TextIdentifier(
+                self.artifacts.tag_rules,
+                self.artifacts.series_rules,
+                review_feedback,
+            )
         work = find_local_work(self.client, journal=self.journal, limit=limit)
         if self.cover_cache is not None:
             self.cover_cache.record_many(work)
@@ -602,7 +620,11 @@ def run_local_bookmark(
         tag_rules = artifacts.tag_rules
         series_rules = artifacts.series_rules
         visual_index = artifacts.visual_index
-        text = TextIdentifier(tag_rules, series_rules).identify(candidate)
+        text = TextIdentifier(
+            tag_rules,
+            series_rules,
+            artifacts.review_feedback,
+        ).identify(candidate)
         if journal is not None and attempt is not None:
             journal.record_event(attempt, "queued_in_journal", {"source": "unsorted"})
             journal.record_event(attempt, "text_identified", text.to_dict())

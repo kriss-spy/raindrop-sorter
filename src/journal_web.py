@@ -10,7 +10,7 @@ import webbrowser
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
 from dotenv import load_dotenv
@@ -58,6 +58,7 @@ def create_server(
     sorter_controller: Any | None = None,
     sorter_unavailable_reason: str | None = None,
     mutation_lock: threading.RLock | None = None,
+    on_reviews_changed: Callable[[], dict[str, Any]] | None = None,
 ) -> JournalHTTPServer:
     journal_path = Path(journal_path)
     if not journal_path.is_file():
@@ -88,6 +89,7 @@ def create_server(
             raindrop_client,
             mutation_lock=mutation_lock,
             cover_cache=cover_cache,
+            on_reviews_changed=on_reviews_changed,
         )
         if raindrop_client is not None
         else None
@@ -470,6 +472,14 @@ def main(argv: list[str] | None = None) -> None:
     controller = None
     sorter_unavailable_reason = None
     mutation_lock = threading.RLock()
+    on_reviews_changed = None
+    if client is not None:
+        from src.review_learning import learn_from_review_journal
+
+        on_reviews_changed = lambda: learn_from_review_journal(
+            journal_path=path,
+            db_path=args.db_path,
+        )
     if client is not None:
         try:
             validate_local_index(args.db_path)
@@ -516,6 +526,7 @@ def main(argv: list[str] | None = None) -> None:
             sorter_controller=controller,
             sorter_unavailable_reason=sorter_unavailable_reason,
             mutation_lock=mutation_lock,
+            on_reviews_changed=on_reviews_changed,
         )
     except FileNotFoundError as error:
         parser.error(str(error))
