@@ -121,6 +121,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "handleAttemptActivation" in page
     assert "event.shiftKey" in page
     assert "event.ctrlKey || event.metaKey" in page
+    assert ".attempt-cover,.table-cover{pointer-events:none}" in page
 
     overview = _json(f"{base_url}/api/overview")
     assert overview["total_attempts"] == 2
