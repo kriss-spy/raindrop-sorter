@@ -228,6 +228,26 @@ def test_automatic_claim_is_atomic_and_retryable_after_failure(tmp_path):
     assert retry.attempt_id != first.attempt_id
 
 
+def test_rerun_claim_requires_selected_attempt_to_remain_latest(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    bookmark = {"_id": 58, "title": "Rerun me"}
+    selected = journal.start_attempt(bookmark, mode="apply")
+    journal.record_decision(selected, _decision())
+    journal.complete(selected)
+
+    claim = journal.claim_rerun(
+        bookmark,
+        expected_attempt_id=selected.attempt_id,
+    )
+
+    assert claim is not None
+    assert journal.claim_rerun(
+        bookmark,
+        expected_attempt_id=selected.attempt_id,
+    ) is None
+    assert journal.renew_automatic_claim(claim) is True
+
+
 def test_automatic_claim_heartbeat_renews_a_stale_attempt(tmp_path):
     journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
     claim = journal.claim_automatic({"_id": 56, "title": "Long batch"})

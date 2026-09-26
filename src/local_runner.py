@@ -449,6 +449,101 @@ class LocalBatchProcessor:
                 )
         return analyses
 
+    def run_rerun_batch(
+        self,
+        selected: list[dict[str, Any]],
+        *,
+        batch_size: int = 100,
+    ) -> dict[str, Any]:
+        """Re-evaluate an explicit snapshot of journal attempts in model batches."""
+        if batch_size < 1:
+            raise ValueError("batch_size must be at least 1")
+        folder_map = self.artifacts.folder_id_map
+        results = []
+        errors = []
+        for start in range(0, len(selected), batch_size):
+            chunk = selected[start:start + batch_size]
+            work = []
+            attempts_by_id: dict[int, dict[str, Any]] = {}
+            claims: dict[int, AttemptHandle] = {}
+            for attempt in chunk:
+                bookmark_id = int(attempt["bookmark_id"])
+                try:
+                    bookmark = self.client.get_raindrop(bookmark_id)
+                except Exception as error:
+                    errors.append({
+                        "bookmark_id": bookmark_id,
+                        "type": type(error).__name__,
+                        "message": str(error),
+                    })
+                    continue
+                if self.apply:
+                    claim = self.journal.claim_rerun(
+                        bookmark,
+                        expected_attempt_id=str(attempt["attempt_id"]),
+                        pinned_index_version="native-local-index-v1",
+                        runner_version=RUNNER_VERSION,
+                    )
+                    if claim is None:
+                        results.append({
+                            "status": "skipped",
+                            "bookmark_id": bookmark_id,
+                            "action": "skip_superseded",
+                            "applied": False,
+                        })
+                        continue
+                    claims[bookmark_id] = claim
+                work.append(bookmark)
+                attempts_by_id[bookmark_id] = attempt
+            try:
+                with _automatic_claim_heartbeats(self.journal, claims) as heartbeat:
+                    ensure_claims, finish_claim = heartbeat
+                    if self.cover_cache is not None:
+                        self.cover_cache.record_many(work)
+                    source_health = self._batch_source_health(work)
+                    visual_analyses = self._batch_visual_analysis(work, source_health)
+                    ensure_claims()
+                    for bookmark in work:
+                        bookmark_id = int(bookmark["_id"])
+                        previous = attempts_by_id[bookmark_id]
+                        destination = previous.get("destination")
+                        expected_collection_id = (
+                            folder_map.get(destination)
+                            if destination
+                            else previous.get("collection_id")
+                        )
+                        try:
+                            results.append(self.run_one(
+                                bookmark_id,
+                                attempt=claims.get(bookmark_id),
+                                expected_collection_ids={expected_collection_id},
+                                bookmark_snapshot=bookmark,
+                                visual_analysis=visual_analyses[bookmark_id],
+                                source_health=source_health[bookmark_id],
+                            ))
+                            finish_claim(bookmark_id)
+                        except Exception as error:
+                            finish_claim(bookmark_id)
+                            errors.append({
+                                "bookmark_id": bookmark_id,
+                                "type": type(error).__name__,
+                                "message": str(error),
+                            })
+            finally:
+                primary_error = sys.exc_info()[1]
+                cleanup_errors: list[BaseException] = []
+                for claim in list(claims.values()):
+                    try:
+                        self.journal.fail(
+                            claim,
+                            RuntimeError("rerun batch stopped before processing"),
+                        )
+                    except BaseException as error:
+                        cleanup_errors.append(error)
+                if cleanup_errors and primary_error is None:
+                    raise cleanup_errors[0]
+        return {"results": results, "errors": errors}
+
     def __call__(
         self,
         limit: int,
@@ -551,6 +646,7 @@ def rerun_latest_outcomes(
     *,
     outcomes: list[str],
     limit: int,
+    batch_size: int = 100,
 ) -> dict[str, Any]:
     """Re-evaluate bookmarks whose latest journal outcome needs another pass."""
     if limit < 1:
@@ -570,27 +666,9 @@ def rerun_latest_outcomes(
         key=lambda attempt: (attempt["started_at"], attempt["attempt_id"]),
         reverse=True,
     )[:limit]
-    results = []
-    errors = []
-    for attempt in selected:
-        bookmark_id = int(attempt["bookmark_id"])
-        expected_collection_ids = {attempt.get("collection_id")}
-        destination = attempt.get("destination")
-        if destination:
-            destination_id = _load_folder_map(processor.db_path).get(destination)
-            if destination_id is not None:
-                expected_collection_ids.add(destination_id)
-        try:
-            results.append(processor.run_one(
-                bookmark_id,
-                expected_collection_ids=expected_collection_ids,
-            ))
-        except Exception as error:
-            errors.append({
-                "bookmark_id": bookmark_id,
-                "type": type(error).__name__,
-                "message": str(error),
-            })
+    batch = processor.run_rerun_batch(selected, batch_size=batch_size)
+    results = batch["results"]
+    errors = batch["errors"]
     return {
         "status": "ok",
         "mode": "rerun_outcomes",
@@ -662,6 +740,39 @@ def run_local_bookmark(
         ):
             journal.record_event(attempt, "source_checked", source_health.to_dict())
         if source_health.status is SourceHealthStatus.UNAVAILABLE:
+            if apply and expected_collection_ids is not None:
+                if (
+                    claimed_attempt
+                    and journal is not None
+                    and attempt is not None
+                    and not journal.renew_automatic_claim(attempt)
+                ):
+                    raise RuntimeError("automatic claim ownership was lost")
+                current = client.get_raindrop(bookmark_id)
+                current_collection = (current.get("collection") or {}).get("$id")
+                if current_collection not in expected_collection_ids:
+                    decision = unavailable_source_decision(candidate, source_health)
+                    if journal is not None and attempt is not None:
+                        journal.record_action(
+                            attempt,
+                            action_kind="skip_stale",
+                            status="succeeded",
+                            destination=None,
+                            request_count=1,
+                            payload={"current_collection_id": current_collection},
+                        )
+                        journal.complete(attempt, phase="skipped_stale")
+                    return {
+                        "status": "skipped",
+                        "bookmark_id": bookmark_id,
+                        "attempt_id": attempt.attempt_id if attempt is not None else None,
+                        "action": "skip",
+                        "target_collection_id": None,
+                        "target_folder": None,
+                        "decision": decision.to_dict(),
+                        "vision_tag_count": 0,
+                        "applied": False,
+                    }
             if journal is not None and attempt is not None:
                 decision = record_source_error(
                     journal,
@@ -726,6 +837,8 @@ def run_local_bookmark(
 
         action_kind = "move" if decision.destination is not None else "keep_unsorted"
         if apply:
+            mutation_request_count = 0
+
             def ensure_claim_ownership() -> None:
                 if (
                     claimed_attempt
@@ -768,18 +881,22 @@ def run_local_bookmark(
                                 "vision_tag_count": len(vision_tags),
                                 "applied": False,
                             }
+                        if target_id is not None and current_collection != target_id:
+                            mutation_request_count += 1
+                            client.update_raindrop(
+                                bookmark_id,
+                                collection_id=target_id,
+                                tags=tags_for_decision(current, decision.outcome.value),
+                            )
+                else:
+                    ensure_claim_ownership()
+                    if target_id is not None:
+                        mutation_request_count += 1
                         client.update_raindrop(
                             bookmark_id,
                             collection_id=target_id,
-                            tags=tags_for_decision(current, decision.outcome.value),
+                            tags=new_tags,
                         )
-                else:
-                    ensure_claim_ownership()
-                    client.update_raindrop(
-                        bookmark_id,
-                        collection_id=target_id,
-                        tags=new_tags,
-                    )
             except BaseException as error:
                 if journal is not None and attempt is not None:
                     journal.record_action(
@@ -787,7 +904,7 @@ def run_local_bookmark(
                         action_kind=action_kind,
                         status="failed",
                         destination=target_folder,
-                        request_count=1,
+                        request_count=mutation_request_count,
                         error_classification=type(error).__name__,
                         payload={"message": str(error)},
                     )
@@ -798,7 +915,7 @@ def run_local_bookmark(
                     action_kind=action_kind,
                     status="succeeded",
                     destination=target_folder,
-                    request_count=1,
+                    request_count=mutation_request_count,
                 )
                 journal.complete(attempt)
         elif journal is not None and attempt is not None:
@@ -883,6 +1000,12 @@ def main(argv: list[str] | None = None) -> None:
         default=100,
         help="Maximum bookmarks selected by --rerun-outcomes (default: 100)",
     )
+    parser.add_argument(
+        "--rerun-batch-size",
+        type=positive_integer,
+        default=100,
+        help="Bookmarks analyzed together during outcome reruns (default: 100)",
+    )
     parser.add_argument("--db-path", default="chroma_db")
     parser.add_argument(
         "--journal-path",
@@ -965,6 +1088,7 @@ def main(argv: list[str] | None = None) -> None:
             journal,
             outcomes=args.rerun_outcomes,
             limit=args.rerun_limit,
+            batch_size=args.rerun_batch_size,
         )
     elif args.bookmark_id is not None:
         result: dict[str, Any] = processor.run_one(args.bookmark_id)

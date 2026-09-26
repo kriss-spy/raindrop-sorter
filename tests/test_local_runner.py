@@ -193,6 +193,57 @@ def test_local_runner_refuses_remote_writes_without_a_journal(tmp_path):
     assert client.updates == []
 
 
+def test_applied_review_records_state_without_noop_raindrop_update(tmp_path):
+    _write_state(tmp_path)
+    journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
+    client = FakeRaindropClient({
+        "_id": 123,
+        "title": "unknown article",
+        "type": "article",
+        "collection": {"$id": -1},
+        "tags": ["personal"],
+    })
+
+    result = run_local_bookmark(
+        client,
+        bookmark_id=123,
+        db_path=str(tmp_path),
+        apply=True,
+        journal=journal,
+        expected_collection_ids={-1},
+    )
+
+    assert result["decision"]["outcome"] == "review"
+    assert client.updates == []
+    assert journal.explain(123)["actions"][0]["action_kind"] == "keep_unsorted"
+
+
+def test_applied_rerun_does_not_rewrite_unchanged_destination(tmp_path):
+    _write_state(tmp_path)
+    journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
+    client = FakeRaindropClient({
+        "_id": 123,
+        "title": "Hatsune Miku",
+        "type": "image",
+        "cover": "https://example.test/cover.jpg",
+        "collection": {"$id": 42},
+        "tags": [],
+    })
+
+    result = run_local_bookmark(
+        client,
+        bookmark_id=123,
+        db_path=str(tmp_path),
+        apply=True,
+        journal=journal,
+        expected_collection_ids={42},
+    )
+
+    assert result["target_collection_id"] == 42
+    assert client.updates == []
+    assert journal.explain(123)["actions"][0]["request_count"] == 0
+
+
 def test_unavailable_source_becomes_terminal_error_without_remote_write(tmp_path):
     _write_state(tmp_path)
     journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
@@ -232,6 +283,53 @@ def test_unavailable_source_becomes_terminal_error_without_remote_write(tmp_path
     assert trace["actions"][0]["request_count"] == 0
     assert [event["phase"] for event in trace["events"]].count("source_checked") == 1
     assert 123 in journal.automatic_processing_exclusions()
+
+
+def test_unavailable_source_rerun_skips_bookmark_moved_since_selection(tmp_path):
+    _write_state(tmp_path)
+    journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
+
+    class MovedClient(FakeRaindropClient):
+        def __init__(self):
+            super().__init__({
+                "_id": 123,
+                "title": "https://x.com/user/status/123",
+                "link": "https://x.com/user/status/123",
+                "domain": "x.com",
+                "collection": {"$id": -1},
+                "tags": [],
+            })
+
+        def get_raindrop(self, bookmark_id):
+            item = super().get_raindrop(bookmark_id)
+            item["collection"] = {"$id": 999}
+            return item
+
+    result = run_local_bookmark(
+        MovedClient(),
+        bookmark_id=123,
+        db_path=str(tmp_path),
+        apply=True,
+        journal=journal,
+        expected_collection_ids={-1},
+        bookmark={
+            "_id": 123,
+            "title": "https://x.com/user/status/123",
+            "link": "https://x.com/user/status/123",
+            "domain": "x.com",
+            "collection": {"$id": -1},
+            "tags": [],
+        },
+        source_health=SourceHealthResult(
+            SourceHealthStatus.UNAVAILABLE,
+            source="twitter_oembed",
+            reason="Twitter returned HTTP 403",
+            http_status=403,
+        ),
+    )
+
+    assert result["status"] == "skipped"
+    assert journal.explain(123)["attempt"]["current_phase"] == "skipped_stale"
 
 
 def test_coordinated_apply_skips_bookmark_moved_out_of_unsorted(tmp_path):
@@ -506,10 +604,13 @@ def test_rerun_latest_outcomes_only_processes_requested_latest_results():
         def __init__(self):
             self.ids = []
 
-        def run_one(self, bookmark_id, *, expected_collection_ids):
-            assert expected_collection_ids == {None}
-            self.ids.append(bookmark_id)
-            return {"bookmark_id": bookmark_id}
+        def run_rerun_batch(self, selected, *, batch_size):
+            assert batch_size == 100
+            self.ids = [int(attempt["bookmark_id"]) for attempt in selected]
+            return {
+                "results": [{"bookmark_id": bookmark_id} for bookmark_id in self.ids],
+                "errors": [],
+            }
 
     processor = Processor()
     result = rerun_latest_outcomes(
@@ -522,6 +623,70 @@ def test_rerun_latest_outcomes_only_processes_requested_latest_results():
     assert processor.ids == [4, 2, 1]
     assert result["count"] == 3
     assert result["applied"] is False
+
+
+def test_rerun_latest_outcomes_batches_visual_analysis(tmp_path, monkeypatch):
+    _write_state(tmp_path)
+
+    class Client:
+        def __init__(self):
+            self.items = {
+                bookmark_id: {
+                    "_id": bookmark_id,
+                    "title": "art",
+                    "type": "image",
+                    "cover": f"https://example.test/{bookmark_id}.jpg",
+                    "collection": {"$id": -1},
+                    "tags": [],
+                }
+                for bookmark_id in (1, 2)
+            }
+
+        def get_raindrop(self, bookmark_id):
+            return dict(self.items[bookmark_id])
+
+    class Journal:
+        def recent(self, **_kwargs):
+            return [
+                {
+                    "bookmark_id": bookmark_id,
+                    "started_at": f"2026-09-25T10:00:0{bookmark_id}",
+                    "attempt_id": str(bookmark_id),
+                    "collection_id": -1,
+                    "destination": None,
+                }
+                for bookmark_id in (1, 2)
+            ]
+
+    class Tagger:
+        def __init__(self):
+            self.batches = []
+
+        def predict_batch(self, images):
+            self.batches.append(list(images))
+            return [["hatsune_miku"] for _image in images]
+
+    processor = LocalBatchProcessor(
+        Client(),
+        db_path=str(tmp_path),
+        model_dir=str(tmp_path / "model"),
+        journal=SQLiteRunJournal(tmp_path / "journal.sqlite"),
+        apply=False,
+    )
+    tagger = Tagger()
+    processor.tagger = tagger
+    monkeypatch.setattr("src.local_runner.download_cover", lambda url: url.encode())
+
+    result = rerun_latest_outcomes(
+        processor,
+        Journal(),
+        outcomes=["review"],
+        limit=2,
+    )
+
+    assert result["succeeded"] == 2
+    assert len(tagger.batches) == 1
+    assert len(tagger.batches[0]) == 2
 
 
 def test_applied_rerun_skips_bookmark_moved_since_recorded_attempt(tmp_path):
@@ -596,6 +761,8 @@ def test_local_runner_journals_a_failed_apply(tmp_path):
         {
             "_id": 123,
             "title": "art",
+            "type": "image",
+            "cover": "https://example.test/cover.jpg",
             "domain": "example.test",
             "tags": ["ai:wdtag-hatsune_miku"],
         }
@@ -606,6 +773,7 @@ def test_local_runner_journals_a_failed_apply(tmp_path):
             client,
             bookmark_id=123,
             db_path=str(tmp_path),
+            analyze_vision=lambda _bookmark: ["ai:wdtag-hatsune_miku"],
             apply=True,
             journal=journal,
         )
@@ -615,6 +783,7 @@ def test_local_runner_journals_a_failed_apply(tmp_path):
     assert trace["attempt"]["current_phase"] == "failed"
     assert trace["actions"][0]["status"] == "failed"
     assert trace["actions"][0]["error_classification"] == "RuntimeError"
+    assert trace["actions"][0]["request_count"] == 1
 
 
 def test_find_local_work_uses_journal_state_and_scans_past_terminal_items(tmp_path):

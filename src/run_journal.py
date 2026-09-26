@@ -84,6 +84,15 @@ class RunJournal(Protocol):
         runner_version: str | None = None,
     ) -> AttemptHandle | None: ...
 
+    def claim_rerun(
+        self,
+        bookmark: dict[str, Any],
+        *,
+        expected_attempt_id: str,
+        pinned_index_version: str | None = None,
+        runner_version: str | None = None,
+    ) -> AttemptHandle | None: ...
+
     def renew_automatic_claim(self, attempt: AttemptHandle) -> bool: ...
 
 
@@ -634,6 +643,55 @@ class SQLiteRunJournal:
                     and latest["last_activity_at"] >= active_after
                 )
             ):
+                return None
+            connection.execute(
+                """
+                INSERT INTO attempts(
+                    attempt_id, bookmark_id, started_at, current_phase,
+                    pinned_index_version, runner_version, mode, claim_heartbeat_at,
+                    bookmark_snapshot_json
+                ) VALUES (?, ?, ?, ?, ?, ?, 'apply', ?, ?)
+                """,
+                (
+                    attempt.attempt_id,
+                    bookmark_id,
+                    now,
+                    "discovered",
+                    pinned_index_version,
+                    runner_version,
+                    now,
+                    _json(snapshot),
+                ),
+            )
+            self._append_event(connection, attempt.attempt_id, "discovered", snapshot)
+        return attempt
+
+    def claim_rerun(
+        self,
+        bookmark: dict[str, Any],
+        *,
+        expected_attempt_id: str,
+        pinned_index_version: str | None = None,
+        runner_version: str | None = None,
+    ) -> AttemptHandle | None:
+        """Claim a rerun only while its selected journal state is still latest."""
+        bookmark_id = int(bookmark["_id"])
+        attempt = AttemptHandle(str(uuid.uuid4()), bookmark_id)
+        snapshot = _bookmark_snapshot(bookmark)
+        now = _utc_now()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            latest = connection.execute(
+                """
+                SELECT attempt_id FROM attempts
+                WHERE bookmark_id = ?
+                  AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                ORDER BY started_at DESC, attempt_id DESC
+                LIMIT 1
+                """,
+                (bookmark_id,),
+            ).fetchone()
+            if latest is None or latest["attempt_id"] != expected_attempt_id:
                 return None
             connection.execute(
                 """
