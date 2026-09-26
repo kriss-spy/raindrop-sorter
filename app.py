@@ -1,4 +1,4 @@
-"""Modal app: Watcher (cron) + Resolver (on-demand) + Vision Worker (GPU)."""
+"""Modal app for weekly reindexing and retired legacy sorter entry points."""
 
 import json
 import os
@@ -46,6 +46,19 @@ RESOLVER_BATCH_SIZE = 25
 VISION_BATCH_SIZE = 25
 VISION_DISPATCH_LEASE_PREFIX = "vision_dispatch_lease:"
 VISION_DISPATCH_LEASE_SECONDS = 30 * 60
+
+# Lifecycle state is now owned by the local SQLite journal.  Keep the old
+# entry points importable for a safe transition, but make them inert so an old
+# runbook command cannot recreate remote workflow tags.
+LEGACY_REMOTE_STATE_ENABLED = False
+
+
+def _legacy_remote_state_disabled(**counts: int) -> dict[str, Any]:
+    return {
+        "status": "disabled",
+        "reason": "lifecycle state is owned by the local SQLite journal",
+        **counts,
+    }
 
 # ---------------------------------------------------------------------------
 # Modal App definition (must be before @app.function decorators)
@@ -99,14 +112,16 @@ def _load_state() -> tuple[dict[str, Any], dict[str, str], dict[str, int], dict[
 # ---------------------------------------------------------------------------
 @app.function(
     image=image,
-    schedule=modal.Cron(CRON_SCHEDULE),
     max_containers=1,
     volumes={"/data": vol},
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
 @pause_during_reindex({"status": "reindex_active", "processed": 0})
 def watcher() -> dict[str, Any]:
-    """Poll Raindrop Unsorted, tag items for Resolver processing."""
+    """Legacy manual entry point; no longer scheduled after journal migration."""
+    if not LEGACY_REMOTE_STATE_ENABLED:
+        return _legacy_remote_state_disabled(processed=0, skipped=0, total=0)
+
     from src.raindrop_client import RaindropClient
     from src.state_machine import (
         PENDING_RESOLUTION,
@@ -197,6 +212,11 @@ def resolver() -> dict[str, Any]:
     Low-confidence items with a cover URL are sent to the Vision Worker
     instead of being reviewed.
     """
+    if not LEGACY_REMOTE_STATE_ENABLED:
+        return _legacy_remote_state_disabled(
+            moved=0, rejected=0, vision=0, errors=0, total=0
+        )
+
     from src.embeddings import Embedder
     from src.raindrop_client import RaindropClient
     from src.resolver import resolve_bookmark
@@ -391,6 +411,9 @@ def vision_worker(bookmark_id: int, lease_owner: str | None = None) -> dict[str,
         GPU cold-start is ~10 s while the T4 loads the WD14 ONNX weights.
         This is acceptable for the on-demand + cron hybrid model.
     """
+    if not LEGACY_REMOTE_STATE_ENABLED:
+        return _legacy_remote_state_disabled(bookmark_id=bookmark_id)
+
     from src.raindrop_client import RaindropClient
     from src.reindex_lease import release_item_lease
     from src.state_machine import is_pending_vision, tag_after_vision
@@ -436,13 +459,17 @@ def vision_worker(bookmark_id: int, lease_owner: str | None = None) -> dict[str,
 # ---------------------------------------------------------------------------
 @app.function(
     image=image,
-    schedule=modal.Cron(VISION_CRON_SCHEDULE),
     max_containers=1,
     secrets=[modal.Secret.from_name("raindrop-token")],
 )
 @pause_during_reindex({"status": "reindex_active", "dispatched": 0})
 def vision_cron() -> dict[str, Any]:
-    """Dispatch bookmarks still tagged as pending-vision to GPU workers."""
+    """Legacy manual entry point; no longer scheduled after journal migration."""
+    if not LEGACY_REMOTE_STATE_ENABLED:
+        return _legacy_remote_state_disabled(
+            dispatched=0, skipped_inflight=0, total=0
+        )
+
     from src.raindrop_client import RaindropClient
     from src.reindex_lease import acquire_item_lease, release_item_lease
     from src.state_machine import PENDING_VISION_PREFIX, is_pending_vision

@@ -3,9 +3,11 @@
 import argparse
 import json
 import os
+import sys
+import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from typing import Any
 
@@ -14,12 +16,6 @@ from src.routing import RouteEngine, TextIdentifier, VisualVerifier
 from src.run_journal import AttemptHandle, RunJournal, SQLiteRunJournal
 from src.modality import bookmark_modality
 from src.state_machine import (
-    NEEDS_REVIEW_PREFIX,
-    PENDING_RESOLUTION,
-    PENDING_VISION_PREFIX,
-    REVIEWED_PREFIX,
-    UNREVIEWED,
-    tag_unreviewed,
     tags_for_decision,
 )
 from src.tag_rules import load_series_rules, load_tag_rules
@@ -34,6 +30,55 @@ REQUIRED_INDEX_FILES = (
 RUNNER_VERSION = "native-two-step-v1"
 DEFAULT_VISUAL_BATCH_SIZE = 8
 DEFAULT_DOWNLOAD_WORKERS = 8
+CLAIM_HEARTBEAT_SECONDS = 5 * 60
+
+
+@contextmanager
+def _automatic_claim_heartbeats(
+    journal: RunJournal,
+    claims: dict[int, AttemptHandle],
+):
+    """Keep batch claims live while model work is in progress."""
+    stop = threading.Event()
+    claims_lock = threading.Lock()
+    failures: list[BaseException] = []
+
+    def heartbeat() -> None:
+        while not stop.wait(CLAIM_HEARTBEAT_SECONDS):
+            with claims_lock:
+                active_claims = list(claims.values())
+            for claim in active_claims:
+                try:
+                    if not journal.renew_automatic_claim(claim):
+                        failures.append(
+                            RuntimeError(
+                                f"automatic claim lost for bookmark {claim.bookmark_id}"
+                            )
+                        )
+                        stop.set()
+                        return
+                except BaseException as error:
+                    failures.append(error)
+                    stop.set()
+                    return
+
+    def ensure_healthy() -> None:
+        if failures:
+            raise RuntimeError("automatic claim heartbeat failed") from failures[0]
+
+    def finish(bookmark_id: int) -> None:
+        with claims_lock:
+            claims.pop(bookmark_id, None)
+
+    thread = threading.Thread(target=heartbeat, daemon=True)
+    thread.start()
+    try:
+        yield ensure_healthy, finish
+    finally:
+        stop.set()
+        thread.join()
+        if failures and sys.exc_info()[0] is None:
+            ensure_healthy()
 
 
 @dataclass(frozen=True)
@@ -117,57 +162,39 @@ def validate_local_index(db_path: str) -> None:
                 )
 
 
-def find_local_work(client: Any, *, limit: int) -> list[dict[str, Any]]:
-    """Select a bounded local batch in state-machine priority order."""
+def find_local_work(
+    client: Any,
+    *,
+    journal: RunJournal,
+    limit: int,
+    page_size: int = 100,
+) -> list[dict[str, Any]]:
+    """Select Unsorted work using the journal instead of remote lifecycle tags."""
     if limit < 1:
         raise ValueError("limit must be at least 1")
+    if page_size < 1 or page_size > 100:
+        raise ValueError("page_size must be between 1 and 100")
 
-    state_tags = {
-        str(tag["_id"])
-        for tag in client.get_tags(-1)
-        if str(tag.get("_id", "")) == PENDING_RESOLUTION
-        or str(tag.get("_id", "")) == UNREVIEWED
-        or str(tag.get("_id", "")).startswith(PENDING_VISION_PREFIX)
-        or str(tag.get("_id", "")).startswith(REVIEWED_PREFIX)
-        or str(tag.get("_id", "")).startswith(NEEDS_REVIEW_PREFIX)
-    }
+    excluded_ids = journal.automatic_processing_exclusions()
     selected: list[dict[str, Any]] = []
     selected_ids: set[int] = set()
-
-    def collect(search: str) -> None:
-        remaining = limit - len(selected)
-        if remaining <= 0:
-            return
-        items, _has_more = client.get_raindrops(
+    page = 0
+    while len(selected) < limit:
+        items, has_more = client.get_raindrops(
             -1,
-            perpage=remaining,
-            search=search,
+            page=page,
+            perpage=page_size,
         )
         for item in items:
-            bookmark_id = item["_id"]
-            if bookmark_id not in selected_ids:
+            bookmark_id = int(item["_id"])
+            if bookmark_id not in excluded_ids and bookmark_id not in selected_ids:
                 selected.append(item)
                 selected_ids.add(bookmark_id)
             if len(selected) == limit:
                 break
-
-    pending_vision_tags = sorted(
-        tag for tag in state_tags if tag.startswith(PENDING_VISION_PREFIX)
-    )
-    for tag in pending_vision_tags:
-        collect(f'#"{tag}"')
-
-    vision_exclusions = " ".join(f'-#"{tag}"' for tag in pending_vision_tags)
-    pending_search = f'#"{PENDING_RESOLUTION}"'
-    if vision_exclusions:
-        pending_search = f"{pending_search} {vision_exclusions}"
-    collect(pending_search)
-
-    if UNREVIEWED in state_tags:
-        collect(f'#"{UNREVIEWED}"')
-
-    state_exclusions = " ".join(f'-#"{tag}"' for tag in sorted(state_tags))
-    collect(state_exclusions)
+        if not has_more:
+            break
+        page += 1
     return selected
 
 
@@ -196,45 +223,6 @@ def _has_image_source(bookmark: dict[str, Any]) -> bool:
         str(item.get("type", "")).casefold() == "image" and item.get("link")
         for item in bookmark.get("media") or []
     )
-
-
-def backfill_unreviewed(
-    client: Any,
-    *,
-    limit: int,
-    apply: bool = False,
-) -> dict[str, Any]:
-    """Boundedly migrate untagged Unsorted bookmarks to explicit lifecycle state."""
-    if limit < 1:
-        raise ValueError("limit must be at least 1")
-    lifecycle_tags = sorted(
-        str(tag["_id"])
-        for tag in client.get_tags(-1)
-        if str(tag.get("_id", "")) == UNREVIEWED
-        or str(tag.get("_id", "")) == PENDING_RESOLUTION
-        or str(tag.get("_id", "")).startswith(
-            (PENDING_VISION_PREFIX, REVIEWED_PREFIX, NEEDS_REVIEW_PREFIX)
-        )
-    )
-    search = " ".join(f'-#"{tag}"' for tag in lifecycle_tags)
-    bookmarks, _has_more = client.get_raindrops(
-        -1,
-        perpage=limit,
-        search=search,
-    )
-    migrated = []
-    for bookmark in bookmarks:
-        tags = tag_unreviewed(bookmark)
-        if apply:
-            client.update_raindrop(bookmark["_id"], tags=tags)
-        migrated.append({"bookmark_id": bookmark["_id"], "tags": tags})
-    return {
-        "status": "ok",
-        "mode": "backfill_unreviewed",
-        "count": len(migrated),
-        "applied": apply,
-        "items": migrated,
-    }
 
 
 class LocalBatchProcessor:
@@ -280,6 +268,7 @@ class LocalBatchProcessor:
         self,
         bookmark_id: int,
         *,
+        attempt: AttemptHandle | None = None,
         expected_collection_ids: set[int | None] | None = None,
         bookmark_snapshot: dict[str, Any] | None = None,
         visual_analysis: VisualAnalysis | None = None,
@@ -329,6 +318,7 @@ class LocalBatchProcessor:
             analyze_visual=analyze_visual,
             apply=self.apply,
             journal=self.journal,
+            attempt=attempt,
             mutation_lock=self.mutation_lock,
             expected_collection_ids=expected_collection_ids,
             bookmark=bookmark_snapshot,
@@ -429,29 +419,63 @@ class LocalBatchProcessor:
         should_stop: Callable[[], bool] | None = None,
         on_progress: Callable[[bool], None] | None = None,
     ) -> dict[str, Any]:
-        work = find_local_work(self.client, limit=limit)
-        visual_analyses = self._batch_visual_analysis(work)
+        work = find_local_work(self.client, journal=self.journal, limit=limit)
+        claims: dict[int, AttemptHandle] = {}
         results = []
         errors = []
-        for item in work:
-            if should_stop is not None and should_stop():
-                break
-            try:
-                results.append(self.run_one(
-                    int(item["_id"]),
-                    bookmark_snapshot=item,
-                    visual_analysis=visual_analyses[int(item["_id"])],
-                ))
-                if on_progress is not None:
-                    on_progress(True)
-            except Exception as error:
-                errors.append({
-                    "bookmark_id": int(item["_id"]),
-                    "type": type(error).__name__,
-                    "message": str(error),
-                })
-                if on_progress is not None:
-                    on_progress(False)
+        try:
+            if self.apply:
+                for item in work:
+                    claim = self.journal.claim_automatic(
+                        item,
+                        pinned_index_version="native-local-index-v1",
+                        runner_version=RUNNER_VERSION,
+                    )
+                    if claim is not None:
+                        claims[int(item["_id"])] = claim
+                work = [item for item in work if int(item["_id"]) in claims]
+            with _automatic_claim_heartbeats(self.journal, claims) as heartbeat:
+                ensure_claims, finish_claim = heartbeat
+                visual_analyses = self._batch_visual_analysis(work)
+                ensure_claims()
+                for item in work:
+                    if should_stop is not None and should_stop():
+                        break
+                    bookmark_id = int(item["_id"])
+                    ensure_claims()
+                    try:
+                        result = self.run_one(
+                            bookmark_id,
+                            attempt=claims.get(bookmark_id),
+                            bookmark_snapshot=item,
+                            visual_analysis=visual_analyses[bookmark_id],
+                        )
+                        finish_claim(bookmark_id)
+                        results.append(result)
+                        if on_progress is not None:
+                            on_progress(True)
+                    except Exception as error:
+                        finish_claim(bookmark_id)
+                        errors.append({
+                            "bookmark_id": bookmark_id,
+                            "type": type(error).__name__,
+                            "message": str(error),
+                        })
+                        if on_progress is not None:
+                            on_progress(False)
+        finally:
+            primary_error = sys.exc_info()[1]
+            cleanup_errors: list[BaseException] = []
+            for claim in list(claims.values()):
+                try:
+                    self.journal.fail(
+                        claim,
+                        RuntimeError("automatic batch stopped before processing"),
+                    )
+                except BaseException as error:
+                    cleanup_errors.append(error)
+            if cleanup_errors and primary_error is None:
+                raise cleanup_errors[0]
         return {
             "status": "ok",
             "mode": "batch",
@@ -482,7 +506,7 @@ def rerun_latest_outcomes(
             limit=limit,
             outcome=outcome,
             latest_per_bookmark=True,
-            mode=("apply", "manual-review"),
+            mode=("apply", "manual-review", "legacy-tag-migration"),
             exclude_phase="skipped_stale",
         ):
             candidates[int(attempt["bookmark_id"])] = attempt
@@ -537,20 +561,27 @@ def run_local_bookmark(
     analyze_visual: Callable[[dict[str, Any]], Any | None] | None = None,
     apply: bool = False,
     journal: RunJournal | None = None,
+    attempt: AttemptHandle | None = None,
     mutation_lock: Any | None = None,
     expected_collection_ids: set[int | None] | None = None,
     bookmark: dict[str, Any] | None = None,
     artifacts: LocalRoutingArtifacts | None = None,
 ) -> dict[str, Any]:
     """Run the native two-step route; writes require ``apply=True``."""
+    if apply and journal is None:
+        raise ValueError("journal is required for applied lifecycle state")
     artifacts = artifacts or _load_routing_artifacts(db_path)
     bookmark = (
         dict(bookmark)
         if bookmark is not None
         else client.get_raindrop(bookmark_id)
     )
-    attempt: AttemptHandle | None = None
-    if journal is not None:
+    if attempt is not None and journal is None:
+        raise ValueError("journal is required for a claimed attempt")
+    if attempt is not None and attempt.bookmark_id != int(bookmark["_id"]):
+        raise ValueError("claimed attempt does not match bookmark")
+    claimed_attempt = attempt is not None
+    if journal is not None and attempt is None:
         attempt = journal.start_attempt(
             bookmark,
             mode="apply" if apply else "dry-run",
@@ -566,11 +597,7 @@ def run_local_bookmark(
         visual_index = artifacts.visual_index
         text = TextIdentifier(tag_rules, series_rules).identify(candidate)
         if journal is not None and attempt is not None:
-            journal.record_event(
-                attempt,
-                "marked_unreviewed",
-                {"tags": tag_unreviewed(candidate)},
-            )
+            journal.record_event(attempt, "queued_in_journal", {"source": "unsorted"})
             journal.record_event(attempt, "text_identified", text.to_dict())
 
         verifier = VisualVerifier(tag_rules, series_rules, visual_index)
@@ -603,9 +630,19 @@ def run_local_bookmark(
 
         action_kind = "move" if decision.destination is not None else "keep_unsorted"
         if apply:
+            def ensure_claim_ownership() -> None:
+                if (
+                    claimed_attempt
+                    and journal is not None
+                    and attempt is not None
+                    and not journal.renew_automatic_claim(attempt)
+                ):
+                    raise RuntimeError("automatic claim ownership was lost")
+
             try:
                 if mutation_lock is not None or expected_collection_ids is not None:
                     with mutation_lock if mutation_lock is not None else nullcontext():
+                        ensure_claim_ownership()
                         current = client.get_raindrop(bookmark_id)
                         current_collection = (current.get("collection") or {}).get("$id")
                         allowed_collections = (
@@ -641,6 +678,7 @@ def run_local_bookmark(
                             tags=tags_for_decision(current, decision.outcome.value),
                         )
                 else:
+                    ensure_claim_ownership()
                     client.update_raindrop(
                         bookmark_id,
                         collection_id=target_id,
@@ -716,16 +754,15 @@ def main(argv: list[str] | None = None) -> None:
         help="Process a bounded queue batch (vision, resolution, then new)",
     )
     target.add_argument(
-        "--backfill-unreviewed",
-        type=int,
-        metavar="LIMIT",
-        help="Mark a bounded set of untagged Unsorted bookmarks as sorter-unreviewed",
+        "--migrate-lifecycle-tags",
+        action="store_true",
+        help="Persist legacy Raindrop lifecycle tags in SQLite, then remove them",
     )
     target.add_argument(
         "--rerun-outcomes",
         nargs="+",
-        choices=("provisional", "conflict"),
-        help="Re-evaluate bookmarks whose latest outcome is provisional or conflict",
+        choices=("provisional", "review", "conflict"),
+        help="Re-evaluate bookmarks whose latest journal outcome needs another pass",
     )
     parser.add_argument(
         "--rerun-limit",
@@ -752,18 +789,29 @@ def main(argv: list[str] | None = None) -> None:
         parser.error("RAINDROP_TOKEN is required in the environment or .env")
 
     client = RaindropClient(token=token)
-    if args.backfill_unreviewed is not None:
-        result = backfill_unreviewed(
-            client,
-            limit=args.backfill_unreviewed,
-            apply=args.apply,
-        )
-        print(json.dumps(result, ensure_ascii=False, indent=2))
-        return
-
     journal = SQLiteRunJournal(
         args.journal_path or os.path.join(args.db_path, "run-journal.sqlite")
     )
+    if args.migrate_lifecycle_tags:
+        from src.lifecycle_migration import migrate_remote_lifecycle
+
+        folder_map = _load_folder_map(args.db_path)
+        result = migrate_remote_lifecycle(
+            client,
+            journal,
+            apply=args.apply,
+            destination_paths={
+                collection_id: path for path, collection_id in folder_map.items()
+            },
+            progress=(
+                lambda item: print(
+                    json.dumps({"migration_progress": item}),
+                    flush=True,
+                )
+            ) if args.apply else None,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
     processor = LocalBatchProcessor(
         client,
         db_path=args.db_path,

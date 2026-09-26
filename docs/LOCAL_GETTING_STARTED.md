@@ -107,24 +107,25 @@ destinations. The resulting files remain local under `chroma_db/`.
 This step is optional. Without it, visual verification can still use WD14 labels,
 but it will not have nearest-exemplar evidence.
 
-## 5. Migrate existing Unsorted lifecycle state
+## 5. Migrate lifecycle state into SQLite
 
-The native sorter distinguishes bookmarks it has not seen from bookmarks it has
-reviewed. Preview a bounded backfill of currently untagged items in `Unsorted`:
-
-```bash
-uv run python local_run.py --backfill-unreviewed 50
-```
-
-The output lists the affected bookmark IDs and proposed tags. It does not modify
-Raindrop. After reviewing it, apply the same bounded migration:
+Preview the one-time migration of legacy Raindrop workflow tags into the local
+journal:
 
 ```bash
-uv run python local_run.py --backfill-unreviewed 50 --apply
+uv run python local_run.py --migrate-lifecycle-tags
 ```
 
-This only adds `sorter-unreviewed`; it does not move bookmarks. Repeat in bounded
-batches until the command returns `"count": 0`.
+The preview reports how many bookmarks already have journal state and how many
+need an imported record. It does not modify SQLite or Raindrop. Apply it with:
+
+```bash
+uv run python local_run.py --migrate-lifecycle-tags --apply
+```
+
+Each bookmark is persisted in SQLite before its obsolete `sorter-*`, `ai:sorted:*`,
+and `ai:new-rule-*` tags are removed. The command is idempotent and reports
+per-bookmark failures for safe retry. It never changes collection membership.
 
 ## 6. Dry-run one bookmark
 
@@ -153,15 +154,15 @@ Important output fields:
 
 Outcome behavior:
 
-| Outcome | Destination | Final tag when applied |
+| Outcome | Destination | Database state when applied |
 | --- | --- | --- |
-| `confirmed` | Move to the agreed destination | `ai:sorted:<date>` |
-| `provisional` | Move, but flag for inspection | `sorter-needs-review:<date>` |
-| `review` | Keep in `Unsorted` | `sorter-reviewed:<date>` |
-| `conflict` | Keep in `Unsorted` | `sorter-reviewed:<date>` and `sorter-edge-case:conflict` |
+| `confirmed` | Move to the agreed destination | Journal outcome `confirmed` |
+| `provisional` | Move, but flag for inspection | Journal outcome `provisional` |
+| `review` | Keep in `Unsorted` | Journal outcome `review` |
+| `conflict` | Keep in `Unsorted` | Journal outcome `conflict` |
 
-Existing user tags are preserved. Transient `ai:wdtag-*`, `ai:sauce-*`, and obsolete
-sorter lifecycle tags are removed when the final outcome is applied.
+Existing user tags are preserved. Lifecycle state is not written back as a
+Raindrop tag; the SQLite journal is authoritative.
 
 ## 7. Dry-run a bounded queue batch
 
