@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 
-SYSTEM_COLLECTION_IDS = (0, -1, -99)
+@dataclass(frozen=True)
+class SystemCollection:
+    id: int
+    title: str
+
+
+SYSTEM_COLLECTIONS = (
+    SystemCollection(0, "All bookmarks"),
+    SystemCollection(-1, "Unsorted"),
+    SystemCollection(-99, "Trash"),
+)
 
 
 class LibrarySource(Protocol):
@@ -103,9 +114,10 @@ class LiveLibraryBrowser:
             })
 
         system_nodes = []
-        for collection_id in SYSTEM_COLLECTION_IDS:
+        for system_collection in SYSTEM_COLLECTIONS:
+            collection_id = system_collection.id
             collection = self.source.get_collection(collection_id)
-            title = str(collection.get("title") or _system_title(collection_id))
+            title = str(collection.get("title") or system_collection.title)
             system_nodes.append({
                 "id": collection_id,
                 "title": title,
@@ -165,7 +177,3 @@ def _parent_id(value: Any) -> int | None:
 
 def _collection_order(collection: dict[str, Any]) -> int:
     return int(collection.get("sort") or 0)
-
-
-def _system_title(collection_id: int) -> str:
-    return {0: "All bookmarks", -1: "Unsorted", -99: "Trash"}[collection_id]

@@ -99,6 +99,7 @@ let liveLibraryItems = [];
 let liveLibraryPage = 0;
 let liveLibraryHasMore = false;
 let liveLibraryLoading = false;
+let liveLibraryRequestRevision = 0;
 let expandedCollectionIds = new Set();
 try {
   expandedCollectionIds = new Set(JSON.parse(localStorage.getItem(expandedCollectionsStorageKey) || '[]').map(String));
@@ -468,6 +469,7 @@ async function renderAttempts() {
   if (select('#outcome').value) params.set('outcome', select('#outcome').value);
   if (select('#phase').value) params.set('phase', select('#phase').value);
   const result = await fetchJson('/api/attempts?' + params);
+  if (liveLibraryMode) return;
   if (selectedAttemptId && !result.items.some(attempt => attempt.attempt_id === selectedAttemptId)) clearDetail();
   renderedAttempts = result.items;
   [...selectedAttempts].filter(id => !result.items.some(attempt => attempt.attempt_id === id)).forEach(id => selectedAttempts.delete(id));
@@ -748,6 +750,9 @@ function renderLiveLibraryItems() {
 }
 async function loadLiveLibraryPage({append = false} = {}) {
   if (!selectedLiveCollection || liveLibraryLoading) return;
+  const requestRevision = liveLibraryRequestRevision;
+  const collectionId = selectedLiveCollection.id;
+  const requestedPage = append ? liveLibraryPage : 0;
   liveLibraryLoading = true;
   if (!append) {
     select('#attempts').replaceChildren(element('div', 'skeleton'));
@@ -757,26 +762,31 @@ async function loadLiveLibraryPage({append = false} = {}) {
   }
   try {
     const params = new URLSearchParams({
-      collection_id:String(selectedLiveCollection.id),
-      page:String(append ? liveLibraryPage : 0),
+      collection_id:String(collectionId),
+      page:String(requestedPage),
       per_page:'50',
     });
     const result = await fetchJson('/api/library/bookmarks?' + params);
+    if (requestRevision !== liveLibraryRequestRevision) return;
     liveLibraryItems = append ? [...liveLibraryItems, ...result.items] : result.items;
     liveLibraryHasMore = Boolean(result.has_more);
     liveLibraryPage = result.next_page ?? result.page;
     renderLiveLibraryItems();
   } catch (error) {
+    if (requestRevision !== liveLibraryRequestRevision) return;
     select('#attempts').replaceChildren(element('div', 'error', error.message));
     liveLibraryHasMore = false;
     select('#library-load-more').hidden = true;
   } finally {
+    if (requestRevision !== liveLibraryRequestRevision) return;
     liveLibraryLoading = false;
     select('#library-load-more').disabled = false;
     select('#library-load-more').textContent = 'Load more';
   }
 }
 async function selectLiveCollection(node) {
+  liveLibraryRequestRevision += 1;
+  liveLibraryLoading = false;
   liveLibraryMode = true;
   selectedLiveCollection = node;
   localStorage.setItem(selectedCollectionStorageKey, String(node.id));
@@ -804,7 +814,10 @@ async function loadCollectionTree() {
 }
 async function refreshDashboard() {
   if (liveLibraryMode) return;
-  try { await renderOverview(); await renderAttempts(); }
+  try {
+    await renderOverview();
+    if (!liveLibraryMode) await renderAttempts();
+  }
   catch (error) { select('#attempts').replaceChildren(element('div', 'error', error.message)); }
 }
 function closeBatchDestinationResults() {
@@ -927,6 +940,8 @@ async function sorterAction(action) {
   }
 }
 select('#journal-select').onclick = () => {
+  liveLibraryRequestRevision += 1;
+  liveLibraryLoading = false;
   liveLibraryMode = false;
   select('#library-load-more').hidden = true;
   renderCollectionTree();

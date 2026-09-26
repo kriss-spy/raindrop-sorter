@@ -67,7 +67,8 @@ def create_server(
         "127.0.0.1", "localhost", "::1"
     }:
         raise ValueError(
-            "image previews, review actions, and sorter controls require a loopback host"
+            "live library access, image previews, review actions, and sorter controls "
+            "require a loopback host"
         )
     server = JournalHTTPServer((host, port), JournalRequestHandler)
     server.journal = SQLiteRunJournal(
@@ -131,14 +132,11 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
 
     def _library_tree(self) -> None:
-        if self.server.live_library is None:
-            self._send_json(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                {"error": "live library browsing requires RAINDROP_TOKEN"},
-            )
+        live_library = self._live_library_or_unavailable()
+        if live_library is None:
             return
         try:
-            tree = self.server.live_library.collection_tree()
+            tree = live_library.collection_tree()
         except Exception as error:
             self._send_json(
                 HTTPStatus.BAD_GATEWAY,
@@ -148,17 +146,14 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.OK, tree)
 
     def _library_bookmarks(self, query: dict[str, list[str]]) -> None:
-        if self.server.live_library is None:
-            self._send_json(
-                HTTPStatus.SERVICE_UNAVAILABLE,
-                {"error": "live library browsing requires RAINDROP_TOKEN"},
-            )
+        live_library = self._live_library_or_unavailable()
+        if live_library is None:
             return
         collection_id = int(query["collection_id"][0])
         page = int(query.get("page", ["0"])[0])
         per_page = int(query.get("per_page", ["50"])[0])
         try:
-            result = self.server.live_library.browse_collection(
+            result = live_library.browse_collection(
                 collection_id,
                 page=page,
                 per_page=per_page,
@@ -172,6 +167,15 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             )
             return
         self._send_json(HTTPStatus.OK, result)
+
+    def _live_library_or_unavailable(self) -> LiveLibraryBrowser | None:
+        live_library = self.server.live_library
+        if live_library is None:
+            self._send_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "live library browsing requires RAINDROP_TOKEN"},
+            )
+        return live_library
 
     def _review_collections(self) -> None:
         if self.server.reviewer is None:
