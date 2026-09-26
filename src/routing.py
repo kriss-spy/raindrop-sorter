@@ -83,9 +83,23 @@ class RouteDecision:
 class TextIdentifier:
     """Identify destinations only from user-visible text and user tags."""
 
-    def __init__(self, tag_rules: dict[str, RuleTarget], series_rules: dict[str, RuleTarget]):
+    def __init__(
+        self,
+        tag_rules: dict[str, RuleTarget],
+        series_rules: dict[str, RuleTarget],
+        review_feedback: dict[str, Any] | None = None,
+    ):
         self.tag_rules = {normalize_tag(key): value for key, value in tag_rules.items()}
         self.series_rules = {normalize_tag(key): value for key, value in series_rules.items()}
+        feedback = review_feedback or {}
+        self.confirmed_tag_rules = {
+            normalize_tag(key): value["destination"]
+            for key, value in feedback.get("tag_rules", {}).items()
+        }
+        self.confirmed_alias_rules = {
+            unicodedata.normalize("NFKC", key).casefold(): value["destination"]
+            for key, value in feedback.get("alias_rules", {}).items()
+        }
 
     def identify(self, bookmark: dict[str, Any]) -> TextEvidence:
         bookmark_id = _bookmark_id(bookmark)
@@ -101,6 +115,39 @@ class TextIdentifier:
         visible_tags = [str(tag) for tag in bookmark.get("tags", []) if not str(tag).startswith(("ai:", "sorter-"))]
         fields = {field: unicodedata.normalize("NFKC", str(bookmark.get(field, "") or "")) for field in ("title", "excerpt", "note")}
         hashtags = [match for value in fields.values() for match in re.findall(r"#([\w-]+)", value, flags=re.UNICODE)]
+        searchable = "\n".join(fields.values()).casefold()
+        confirmed_matches: list[tuple[str, str]] = []
+        for value in [*visible_tags, *hashtags]:
+            destination = _resolve_target(
+                self.confirmed_tag_rules.get(normalize_tag(value)),
+                modality,
+            )
+            if destination is not None:
+                confirmed_matches.append((str(value), destination))
+        for alias, target in self.confirmed_alias_rules.items():
+            destination = _resolve_target(target, modality)
+            if destination is not None and _contains_alias(searchable, alias):
+                confirmed_matches.append((alias, destination))
+        confirmed_destinations = sorted({match[1] for match in confirmed_matches})
+        if len(confirmed_destinations) == 1:
+            return TextEvidence(
+                kind="user_confirmed_rule",
+                destination=confirmed_destinations[0],
+                strength="strong",
+                matched_value=", ".join(dict.fromkeys(match[0] for match in confirmed_matches)),
+                source="review_feedback",
+                explanation="Repeated dashboard reviews confirmed this routing signal.",
+            )
+        if len(confirmed_destinations) > 1:
+            return TextEvidence(
+                kind="personal_interest_text",
+                destination=None,
+                strength="conflicting",
+                matched_value=", ".join(dict.fromkeys(match[0] for match in confirmed_matches)),
+                source="review_feedback",
+                explanation="Confirmed review signals lead to multiple destinations.",
+                candidates=tuple(confirmed_destinations),
+            )
         matches: list[TextEvidence] = []
         for value in [*visible_tags, *hashtags]:
             key = normalize_tag(value)
@@ -113,7 +160,6 @@ class TextIdentifier:
                     explanation=f"Explicit tag or hashtag {value!r} matched.",
                 ))
 
-        searchable = "\n".join(fields.values()).casefold()
         for alias, target in TEXT_ROUTES.items():
             normalized_alias = unicodedata.normalize("NFKC", alias).casefold()
             destination = _resolve_target(target, modality)

@@ -140,6 +140,28 @@ def test_review_service_resolves_conflict_as_new_confirmed_attempt(tmp_path):
     assert trace["actions"][0]["payload"]["selection_source"] == "text"
 
 
+def test_review_service_refreshes_learning_after_successful_assignment(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    original = _seed_conflict(journal)
+    refreshes = []
+    service = JournalReviewService(
+        journal,
+        FakeReviewClient(),
+        on_reviews_changed=lambda: refreshes.append("refreshed") or {
+            "promoted_signals": 2,
+        },
+    )
+
+    result = service.resolve(
+        original.attempt_id,
+        collection_id=10,
+        selection_source="text",
+    )
+
+    assert refreshes == ["refreshed"]
+    assert result["learning"] == {"promoted_signals": 2}
+
+
 def test_review_outcome_can_be_assigned_only_with_custom_picker(tmp_path):
     journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
     original = _seed_review(journal)

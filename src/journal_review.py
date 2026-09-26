@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable
 from enum import StrEnum
 from typing import Any
 
@@ -56,11 +57,13 @@ class JournalReviewService:
         client: Any,
         mutation_lock: threading.RLock | None = None,
         cover_cache: SQLiteCoverCache | None = None,
+        on_reviews_changed: Callable[[], dict[str, Any]] | None = None,
     ):
         self.journal = journal
         self.client = client
         self._lock = mutation_lock or threading.RLock()
         self.cover_cache = cover_cache
+        self.on_reviews_changed = on_reviews_changed
 
     def art_collections(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -86,11 +89,13 @@ class JournalReviewService:
         selection_source: str = "custom",
     ) -> dict[str, Any]:
         collection = self._art_destination(collection_id)
-        return self._resolve_validated(
+        result = self._resolve_validated(
             attempt_id,
             collection=collection,
             selection_source=selection_source,
         )
+        result["learning"] = self._refresh_learning()
+        return result
 
     def resolve_batch(
         self,
@@ -129,13 +134,31 @@ class JournalReviewService:
                     "error": str(error),
                     "type": type(error).__name__,
                 })
-        return {
+        response = {
             "status": "ok" if not errors else "partial",
             "resolved": len(results),
             "failed": len(errors),
             "results": results,
             "errors": errors,
         }
+        if results:
+            response["learning"] = self._refresh_learning()
+        return response
+
+    def _refresh_learning(self) -> dict[str, Any] | None:
+        if self.on_reviews_changed is None:
+            return None
+        try:
+            return self.on_reviews_changed()
+        except Exception as error:
+            # The Raindrop move and journal record already succeeded. Learning is
+            # an independent derived artifact and must not make that review look
+            # failed or encourage the user to retry the mutation.
+            return {
+                "status": "error",
+                "error": type(error).__name__,
+                "message": str(error),
+            }
 
     def _art_destination(self, collection_id: int) -> dict[str, Any]:
         collection = next(
