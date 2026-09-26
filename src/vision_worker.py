@@ -23,7 +23,15 @@ def _is_x_placeholder(url: str) -> bool:
     )
 
 
-def _recover_x_photo_url(bookmark: dict[str, Any], timeout: int = 15) -> str | None:
+def _is_x_generated_preview(url: str) -> bool:
+    parsed = urlparse(url)
+    return (
+        parsed.netloc.casefold() == "jf.x.com"
+        and parsed.path.startswith("/images/media-preview/")
+    )
+
+
+def _recover_x_media_url(bookmark: dict[str, Any], timeout: int = 15) -> str | None:
     match = X_STATUS_PATTERN.search(str(bookmark.get("link", "")))
     if match is None:
         return None
@@ -38,6 +46,9 @@ def _recover_x_photo_url(bookmark: dict[str, Any], timeout: int = 15) -> str | N
         for item in candidates:
             if item.get("type") == "photo" and item.get("url"):
                 return str(item["url"])
+        for item in candidates:
+            if item.get("thumbnail_url"):
+                return str(item["thumbnail_url"])
     except Exception:
         return None
     return None
@@ -46,7 +57,10 @@ def _recover_x_photo_url(bookmark: dict[str, Any], timeout: int = 15) -> str | N
 def resolve_cover_url(bookmark: dict[str, Any]) -> str | None:
     """Return real image media, recovering legacy X placeholder covers."""
     cover_url = str(bookmark.get("cover", "") or "")
-    if cover_url and not _is_x_placeholder(cover_url):
+    needs_recovery = _is_x_placeholder(cover_url) or _is_x_generated_preview(
+        cover_url
+    )
+    if cover_url and not needs_recovery:
         return cover_url
 
     for media_item in bookmark.get("media") or []:
@@ -55,11 +69,16 @@ def resolve_cover_url(bookmark: dict[str, Any]) -> str | None:
             str(media_item.get("type", "")).casefold() == "image"
             and media_url
             and not _is_x_placeholder(media_url)
+            and not _is_x_generated_preview(media_url)
         ):
             return media_url
 
-    if _is_x_placeholder(cover_url):
-        return _recover_x_photo_url(bookmark)
+    if needs_recovery:
+        recovered = _recover_x_media_url(bookmark)
+        if recovered:
+            return recovered
+        if _is_x_generated_preview(cover_url):
+            return cover_url
     return None
 
 

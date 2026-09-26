@@ -49,3 +49,18 @@ def test_cover_migration_populates_cache_from_paged_raindrop_lists(tmp_path):
     second = migrate_cover_cache(source, journal, cover_cache)
     assert second["journal_bookmarks"] == 0
     assert source.calls == [(0, 0, 50), (0, 1, 50)]
+
+
+def test_cover_cache_prefers_direct_x_media_over_generated_preview(tmp_path):
+    cover_cache = SQLiteCoverCache(tmp_path / "cover-cache.sqlite")
+
+    cover_cache.record({
+        "_id": 7,
+        "cover": "https://jf.x.com/images/media-preview/123",
+        "media": [
+            {"type": "image", "link": "https://jf.x.com/images/media-preview/123"},
+            {"type": "image", "link": "https://pbs.twimg.com/media/example.jpg:large"},
+        ],
+    })
+
+    assert cover_cache.get(7) == "https://pbs.twimg.com/media/example.jpg:large"
