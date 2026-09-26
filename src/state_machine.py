@@ -21,6 +21,7 @@ LIFECYCLE_PREFIXES = (
     REVIEWED_PREFIX,
     NEEDS_REVIEW_PREFIX,
 )
+EXTRACTION_PREFIXES = ("ai:wdtag-", "ai:sauce-")
 
 
 def _today_tag(prefix: str) -> str:
@@ -36,7 +37,7 @@ def get_clean_tags(bookmark: dict[str, Any]) -> list[str]:
 
 def cleanup_transient_tags(tags: list[str]) -> list[str]:
     """Remove transient extraction tags so the Raindrop tag cloud stays clean."""
-    return [t for t in tags if not t.startswith(("ai:wdtag-", "ai:sauce-"))]
+    return [t for t in tags if not t.startswith(EXTRACTION_PREFIXES)]
 
 
 def add_tag(tags: list[str], new_tag: str) -> list[str]:
@@ -170,6 +171,17 @@ def is_remote_lifecycle_tag(tag: object) -> bool:
         or any(value.startswith(f"{prefix}:") for prefix in qualified_prefixes)
         or value.startswith(f"{NEW_RULE_PREFIX}-")
     )
+
+
+def is_remote_sorter_tag(tag: object) -> bool:
+    """Return whether a remote tag is state or extraction residue owned by the sorter."""
+    value = str(tag)
+    return is_remote_lifecycle_tag(value) or value.startswith(EXTRACTION_PREFIXES)
+
+
+def without_remote_sorter_tags(tags: list[str]) -> list[str]:
+    """Remove every sorter-owned tag while preserving user-authored near-prefixes."""
+    return [tag for tag in tags if not is_remote_sorter_tag(tag)]
 
 
 def tag_unreviewed(bookmark: dict[str, Any]) -> list[str]:

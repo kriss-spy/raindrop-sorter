@@ -1,6 +1,6 @@
-from src.lifecycle_migration import _legacy_state, migrate_remote_lifecycle
+from src.lifecycle_migration import _legacy_state, migrate_remote_sorter_tags
 from src.run_journal import SQLiteRunJournal
-from src.state_machine import is_remote_lifecycle_tag
+from src.state_machine import is_remote_sorter_tag
 
 
 class FakeMigrationClient:
@@ -11,6 +11,7 @@ class FakeMigrationClient:
             2: {"_id": 2, "title": "Conflict", "tags": ["favorite", "sorter-reviewed:2026-09-25", "sorter-edge-case:conflict"]},
             3: {"_id": 3, "title": "Pending", "tags": ["favorite", "sorter-pending-resolution"]},
             4: {"_id": 4, "title": "Sorted", "collection": {"$id": 42}, "tags": ["favorite", "ai:sorted:2026-09-25"]},
+            5: {"_id": 5, "title": "Extraction only", "tags": ["favorite", "ai:wdtag-1girl", "ai:sauce-pixiv"]},
         }
 
     def get_tags(self, collection_id):
@@ -22,7 +23,7 @@ class FakeMigrationClient:
                 tag
                 for item in self.items.values()
                 for tag in item["tags"]
-                if is_remote_lifecycle_tag(tag)
+                if is_remote_sorter_tag(tag)
             })
         ]
 
@@ -33,6 +34,8 @@ class FakeMigrationClient:
             '#"sorter-edge-case:conflict"': [self.items[2]],
             '#"sorter-pending-resolution"': [self.items[3]],
             '#"ai:sorted:2026-09-25"': [self.items[4]],
+            '#"ai:sauce-pixiv"': [self.items[5]],
+            '#"ai:wdtag-1girl"': [self.items[5]],
         }
         return ([dict(item) for item in matches[search]], False)
 
@@ -48,14 +51,19 @@ def test_lifecycle_migration_is_dry_run_by_default(tmp_path):
     client = FakeMigrationClient()
     journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
 
-    result = migrate_remote_lifecycle(client, journal)
+    result = migrate_remote_sorter_tags(client, journal)
 
-    assert result["discovered"] == 4
+    assert result["discovered"] == 5
     assert result["would_import"] == 4
-    assert result["would_clean"] == 4
+    assert result["would_clean"] == 5
     assert result["applied"] is False
     assert result["items"][1]["outcome"] == "conflict"
     assert result["items"][1]["cleaned_tags"] == ["favorite"]
+    extraction_only = next(item for item in result["items"] if item["bookmark_id"] == 5)
+    assert extraction_only["phase"] is None
+    assert extraction_only["outcome"] is None
+    assert extraction_only["requires_import"] is False
+    assert extraction_only["source_tags"] == ["ai:wdtag-1girl", "ai:sauce-pixiv"]
     assert client.updates == []
     assert journal.terminal_bookmark_ids() == set()
 
@@ -65,19 +73,20 @@ def test_lifecycle_migration_persists_before_cleaning_and_is_idempotent(tmp_path
     journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
     journal.import_legacy_state(client.items[1], outcome="review", phase="applied")
 
-    first = migrate_remote_lifecycle(client, journal, apply=True)
-    second = migrate_remote_lifecycle(client, journal, apply=True)
+    first = migrate_remote_sorter_tags(client, journal, apply=True)
+    second = migrate_remote_sorter_tags(client, journal, apply=True)
 
     assert first["imported"] == 3
     assert first["already_journaled"] == 1
-    assert first["cleaned"] == 4
+    assert first["cleaned"] == 5
     assert first["failed"] == 0
     assert first["remaining"] == 0
     assert second["imported"] == 0
     assert second["discovered"] == 0
-    assert {bookmark_id for bookmark_id, _tags in client.updates} == {1, 2, 3, 4}
+    assert {bookmark_id for bookmark_id, _tags in client.updates} == {1, 2, 3, 4, 5}
     assert all(tags == ["favorite"] for _bookmark_id, tags in client.updates)
     assert journal.terminal_bookmark_ids() == {1, 2, 4}
+    assert journal.explain(5) is None
     pending = journal.explain(3)
     assert pending is not None
     assert pending["attempt"]["current_phase"] == "pending_resolution"
@@ -92,7 +101,7 @@ def test_failed_attempt_does_not_count_as_reconciled_legacy_state(tmp_path):
     failed = journal.start_attempt(client.items[1], mode="apply")
     journal.fail(failed, RuntimeError("offline"))
 
-    result = migrate_remote_lifecycle(client, journal, apply=True)
+    result = migrate_remote_sorter_tags(client, journal, apply=True)
 
     assert result["imported"] == 4
     assert result["remaining"] == 0
@@ -111,7 +120,7 @@ def test_migration_reimports_when_destination_differs(tmp_path):
         destination="Old/Folder",
     )
 
-    result = migrate_remote_lifecycle(
+    result = migrate_remote_sorter_tags(
         client,
         journal,
         apply=True,
@@ -135,9 +144,24 @@ def test_apply_refetches_before_cleanup_and_preserves_late_user_tags(tmp_path):
 
     client.get_raindrop = get_with_late_tag
 
-    migrate_remote_lifecycle(client, journal, apply=True)
+    migrate_remote_sorter_tags(client, journal, apply=True)
 
     assert all("late-user-tag" in tags for _bookmark_id, tags in client.updates)
+
+
+def test_migration_is_bounded_and_resumable(tmp_path):
+    client = FakeMigrationClient()
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+
+    first = migrate_remote_sorter_tags(client, journal, apply=True, batch_size=2)
+    second = migrate_remote_sorter_tags(client, journal, apply=True, batch_size=2)
+    third = migrate_remote_sorter_tags(client, journal, apply=True, batch_size=2)
+
+    assert first["cleaned"] == 2
+    assert second["cleaned"] == 2
+    assert third["cleaned"] == 1
+    assert third["remaining"] == 0
+    assert {bookmark_id for bookmark_id, _tags in client.updates} == {1, 2, 3, 4, 5}
 
 
 def test_legacy_state_ignores_near_prefix_user_tags_and_tracks_vision_attempt():

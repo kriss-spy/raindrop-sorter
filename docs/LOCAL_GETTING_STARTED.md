@@ -107,25 +107,29 @@ destinations. The resulting files remain local under `chroma_db/`.
 This step is optional. Without it, visual verification can still use WD14 labels,
 but it will not have nearest-exemplar evidence.
 
-## 5. Migrate lifecycle state into SQLite
+## 5. Migrate lifecycle state and remove sorter tags
 
 Preview the one-time migration of legacy Raindrop workflow tags into the local
 journal:
 
 ```bash
-uv run python local_run.py --migrate-lifecycle-tags
+uv run python local_run.py --migrate-sorter-tags
 ```
 
 The preview reports how many bookmarks already have journal state and how many
 need an imported record. It does not modify SQLite or Raindrop. Apply it with:
 
 ```bash
-uv run python local_run.py --migrate-lifecycle-tags --apply
+uv run python local_run.py --migrate-sorter-tags --apply
 ```
 
-Each bookmark is persisted in SQLite before its obsolete `sorter-*`, `ai:sorted:*`,
-and `ai:new-rule-*` tags are removed. The command is idempotent and reports
-per-bookmark failures for safe retry. It never changes collection membership.
+Bookmarks with legacy sorter state tags are persisted in SQLite before their obsolete
+`sorter-*`, `ai:sorted:*`, and `ai:new-rule-*` tags are removed. Extraction-only
+`ai:wdtag-*` and `ai:sauce-*` residue is removed without inventing lifecycle state.
+The command processes at most 100 bookmarks per run by default, is idempotent, and
+reports per-bookmark failures for safe retry. Repeat it until `remaining` is zero.
+It never changes collection membership. The old `--migrate-lifecycle-tags` spelling
+remains available for compatibility.
 
 ## 6. Dry-run one bookmark
 
