@@ -125,6 +125,12 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "image.onerror = () => loadFallbackPreview(image)" in page
     assert "image.dataset.fallbackStarted" in page
     assert "previewImage(attempt.bookmark_id, attempt.title, 'attempt-cover', attempt.cover)" in page
+    assert "const attemptElementCache = new Map()" in page
+    assert "function reconcileChildren(" in page
+    assert "attemptList.replaceChildren()" not in page
+    assert "function clearDataCaches()" in page
+    assert "function clearPreviewCache()" in page
+    assert "clearDataCaches();\n    select('#batch-message')" in page
     assert "Latest status" in page
     assert "Search Art collections" in page
     assert "Move & confirm" in page

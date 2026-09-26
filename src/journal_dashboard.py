@@ -82,6 +82,7 @@ let selectedAttemptId = null;
 let detailSelectionRevision = 0;
 const attemptTraceCache = new Map();
 const previewUrlCache = new Map();
+const attemptElementCache = new Map();
 const MAX_CONCURRENT_PREVIEW_FETCHES = 2;
 const previewFetchQueue = [];
 let activePreviewFetches = 0;
@@ -286,18 +287,24 @@ async function previewUrl(bookmarkId) {
     throw error;
   }
 }
-function clearCaches() {
+function clearDataCaches() {
   attemptTraceCache.clear();
-  previewCacheGeneration += 1;
-  previewUrlCache.forEach(value => {
-    if (typeof value === 'string') URL.revokeObjectURL(value);
-  });
-  previewUrlCache.clear();
   artCollectionsPromise = null;
   const batchDestination = select('#batch-destination-search');
   batchDestination.dataset.loaded = 'false';
   batchDestinationCollections = [];
   closeBatchDestinationResults();
+}
+function clearPreviewCache() {
+  previewCacheGeneration += 1;
+  previewUrlCache.forEach(value => {
+    if (typeof value === 'string') URL.revokeObjectURL(value);
+  });
+  previewUrlCache.clear();
+}
+function clearCaches() {
+  clearDataCaches();
+  clearPreviewCache();
 }
 function invalidateDetailSelection() {
   detailSelectionRevision += 1;
@@ -445,6 +452,53 @@ function renderCard(attempt) {
   card.append(cover, body);
   return card;
 }
+function renderTableRow(attempt) {
+  const row = element('tr', (attempt.attempt_id === selectedAttemptId ? 'active' : '')
+    + (selectedAttempts.has(attempt.attempt_id) ? ' selected' : ''));
+  activateAttempt(row, attempt);
+  const checkCell = element('td');
+  if (isAssignable(attempt)) checkCell.append(selectionCheckbox(attempt));
+  const coverCell = element('td');
+  const coverWrap = element('div', 'attempt-cover-wrap table-cover-wrap');
+  coverWrap.append(previewImage(attempt.bookmark_id, attempt.title, 'table-cover', attempt.cover));
+  coverCell.append(coverWrap);
+  const titleCell = element('td');
+  titleCell.append(element('div', 'table-title', attempt.title), element('div', 'meta', `#${attempt.bookmark_id}`));
+  const outcomeCell = element('td'); outcomeCell.append(outcomeBadge(attempt.current_phase === 'failed' ? 'failed' : attempt.outcome));
+  const destinationCell = element('td', 'table-destination', attempt.destination ? '→ ' + attempt.destination : '—');
+  const runCell = element('td', 'meta', `${attempt.mode} · ${formatDuration(attempt.duration_ms)}`);
+  const timeCell = element('td', 'meta', formatTime(attempt.started_at));
+  const openCell = element('td'); openCell.append(raindropLink(attempt.bookmark_id));
+  row.append(checkCell, coverCell, titleCell, outcomeCell, destinationCell, runCell, timeCell, openCell);
+  return row;
+}
+function cachedAttemptElement(attempt, layout, createElement) {
+  const key = String(attempt.attempt_id);
+  const signature = JSON.stringify(attempt);
+  let cached = attemptElementCache.get(key);
+  if (!cached || cached.layout !== layout || cached.signature !== signature) {
+    cached = {layout, signature, node:createElement(attempt)};
+    attemptElementCache.set(key, cached);
+  } else {
+    activateAttempt(cached.node, attempt);
+    cached.node.classList.toggle('active', attempt.attempt_id === selectedAttemptId);
+    cached.node.classList.toggle('selected', selectedAttempts.has(attempt.attempt_id));
+  }
+  return cached.node;
+}
+function reconcileChildren(parent, desiredChildren) {
+  desiredChildren.forEach((child, index) => {
+    const current = parent.children[index];
+    if (current !== child) parent.insertBefore(child, current || null);
+  });
+  while (parent.children.length > desiredChildren.length) parent.lastElementChild.remove();
+}
+function pruneAttemptElementCache(attempts) {
+  const visibleIds = new Set(attempts.map(attempt => String(attempt.attempt_id)));
+  [...attemptElementCache.keys()].forEach(key => {
+    if (!visibleIds.has(key)) attemptElementCache.delete(key);
+  });
+}
 function renderTable(attempts) {
   const wrap = element('div', 'attempt-table-wrap');
   const table = element('table', 'attempt-table');
@@ -468,39 +522,22 @@ function renderTable(attempts) {
   });
   head.append(headRow); table.append(head);
   const body = document.createElement('tbody');
-  attempts.forEach(attempt => {
-    const row = element('tr', (attempt.attempt_id === selectedAttemptId ? 'active' : '')
-      + (selectedAttempts.has(attempt.attempt_id) ? ' selected' : ''));
-    activateAttempt(row, attempt);
-    const checkCell = element('td');
-    if (isAssignable(attempt)) checkCell.append(selectionCheckbox(attempt));
-    const coverCell = element('td');
-    const coverWrap = element('div', 'attempt-cover-wrap table-cover-wrap');
-    coverWrap.append(previewImage(attempt.bookmark_id, attempt.title, 'table-cover', attempt.cover));
-    coverCell.append(coverWrap);
-    const titleCell = element('td');
-    titleCell.append(element('div', 'table-title', attempt.title), element('div', 'meta', `#${attempt.bookmark_id}`));
-    const outcomeCell = element('td'); outcomeCell.append(outcomeBadge(attempt.current_phase === 'failed' ? 'failed' : attempt.outcome));
-    const destinationCell = element('td', 'table-destination', attempt.destination ? '→ ' + attempt.destination : '—');
-    const runCell = element('td', 'meta', `${attempt.mode} · ${formatDuration(attempt.duration_ms)}`);
-    const timeCell = element('td', 'meta', formatTime(attempt.started_at));
-    const openCell = element('td'); openCell.append(raindropLink(attempt.bookmark_id));
-    row.append(checkCell, coverCell, titleCell, outcomeCell, destinationCell, runCell, timeCell, openCell);
-    body.append(row);
-  });
+  attempts.forEach(attempt => body.append(cachedAttemptElement(attempt, 'table', renderTableRow)));
   table.append(body); wrap.append(table); return wrap;
 }
 function renderAttemptResults() {
   const attemptList = select('#attempts');
-  attemptList.replaceChildren();
   attemptList.className = resultLayout === 'cards' ? 'attempt-grid' : 'attempt-table-wrap';
+  let children;
   if (!renderedAttempts.length) {
-    attemptList.append(element('div', 'empty', 'No attempts match these filters.'));
+    children = [element('div', 'empty', 'No attempts match these filters.')];
   } else if (resultLayout === 'cards') {
-    renderedAttempts.forEach(attempt => attemptList.append(renderCard(attempt)));
+    children = renderedAttempts.map(attempt => cachedAttemptElement(attempt, 'cards', renderCard));
   } else {
-    attemptList.append(renderTable(renderedAttempts));
+    children = [renderTable(renderedAttempts)];
   }
+  reconcileChildren(attemptList, children);
+  pruneAttemptElementCache(renderedAttempts);
   select('#card-view').classList.toggle('active', resultLayout === 'cards');
   select('#table-view').classList.toggle('active', resultLayout === 'table');
 }
@@ -1024,7 +1061,7 @@ async function assignSelected() {
     clearAttemptSelection();
     result.errors.forEach(item => selectedAttempts.add(item.retry_attempt_id || item.attempt_id));
     selectionAnchorAttemptId = selectedAttempts.values().next().value || null;
-    clearCaches();
+    clearDataCaches();
     select('#batch-message').textContent = result.failed
       ? `${result.resolved} assigned · ${result.failed} failed`
       : `${result.resolved} assigned`;
