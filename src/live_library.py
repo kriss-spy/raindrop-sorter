@@ -36,6 +36,7 @@ class LibrarySource(Protocol):
         page: int = 0,
         perpage: int = 50,
         search: str | None = None,
+        sort: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool]: ...
 
 
@@ -140,20 +141,27 @@ class LiveLibraryBrowser:
         *,
         page: int = 0,
         per_page: int = 50,
+        search: str | None = None,
+        sort: str | None = None,
     ) -> dict[str, Any]:
         if page < 0:
             raise ValueError("page must not be negative")
         if not 1 <= per_page <= 100:
             raise ValueError("per_page must be between 1 and 100")
-        items, has_more = self.source.get_raindrops(
-            collection_id,
-            page=page,
-            perpage=per_page,
-        )
+        request = {
+            "page": page,
+            "perpage": per_page,
+            "search": search,
+        }
+        if sort is not None:
+            request["sort"] = sort
+        items, has_more = self.source.get_raindrops(collection_id, **request)
         return {
             "collection_id": collection_id,
             "page": page,
             "per_page": per_page,
+            "search": search,
+            "sort": sort,
             "has_more": has_more,
             "next_page": page + 1 if has_more else None,
             "items": items,

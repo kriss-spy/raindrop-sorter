@@ -145,11 +145,14 @@ class RaindropClient:
         page: int = 0,
         perpage: int = 50,
         search: str | None = None,
+        sort: str | None = None,
     ) -> tuple[list[dict[str, Any]], bool]:
         """Return raindrops in a collection and whether more pages exist."""
         params: dict[str, Any] = {"page": page, "perpage": perpage}
         if search is not None:
             params["search"] = search
+        if sort is not None:
+            params["sort"] = sort
         data = self._get(
             f"raindrops/{collection_id}",
             params=params,

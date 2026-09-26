@@ -14,6 +14,7 @@ button,input,select{font:inherit}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--lime);box-shadow:0 0 14px var(--lime)}
 .panel{background:color-mix(in srgb,var(--panel) 94%,transparent);border:1px solid var(--line);border-radius:12px}
 .toolbar{display:grid}
+.toolbar [hidden]{display:none!important}
 .control{border:1px solid var(--line);background:#0e151c;color:var(--text);border-radius:9px;outline:none}
 .control:focus{border-color:var(--cyan)}
 button.control{cursor:pointer;color:var(--cyan)}
@@ -50,7 +51,7 @@ html,body{height:100%;overflow:hidden}
 .shell{height:100dvh;max-width:none;padding:10px 16px;display:grid;grid-template-rows:auto auto auto auto minmax(0,1fr);gap:8px}
 .top{align-items:center;min-height:32px}.brand{font-size:20px;margin:0}
 .toolbar{grid-template-columns:minmax(220px,1fr) 180px 190px 140px 76px repeat(3,36px);grid-template-areas:"search outcome phase scope view refresh control detail";gap:8px;margin:0}
-.toolbar #search{grid-area:search}.toolbar #outcome{grid-area:outcome}.toolbar #phase{grid-area:phase}.toolbar #scope{grid-area:scope}.toolbar .view-switch{grid-area:view}.toolbar button[type="submit"]{grid-area:refresh}.toolbar #sorter-toggle{grid-area:control}.toolbar #detail-toggle{grid-area:detail}
+.toolbar #search{grid-area:search}.toolbar #outcome,.toolbar #library-sort{grid-area:outcome}.toolbar #phase{grid-area:phase}.toolbar #scope{grid-area:scope}.toolbar .view-switch{grid-area:view}.toolbar button[type="submit"]{grid-area:refresh}.toolbar #sorter-toggle{grid-area:control}.toolbar #detail-toggle{grid-area:detail}
 .control{padding:8px 10px}.icon-button{display:inline-grid;place-items:center;border:1px solid var(--line);background:#0e151c;color:var(--cyan);width:36px;height:36px;padding:0;border-radius:9px;cursor:pointer}.icon-button:hover,.icon-button:focus-visible{border-color:var(--cyan);background:#122129}.icon-button svg,.icon-link svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.icon-button.active{color:var(--lime);border-color:var(--lime)}
 .view-switch{display:flex}.view-switch .icon-button{border-radius:0}.view-switch .icon-button:first-child{border-radius:9px 0 0 9px}.view-switch .icon-button:last-child{border-radius:0 9px 9px 0;margin-left:-1px}
 .action-bar,.sorter-panel{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#101820}.action-bar[hidden],.sorter-panel[hidden]{display:none}.action-bar .control{min-width:260px}.action-message{color:var(--muted);margin-left:auto}.sorter-panel{justify-content:flex-end}.sorter-status{margin-right:auto}.sorter-status strong{color:var(--lime)}.sorter-panel .explain{margin:0}.batch-picker{position:relative;flex:0 1 520px}.batch-picker .control{width:100%}.batch-destination-results{position:absolute;z-index:10;top:calc(100% + 5px);left:0;right:0;max-height:min(380px,60vh);overflow:auto;padding:5px;background:#0e151c;border:1px solid var(--line);border-radius:9px;box-shadow:0 18px 42px #05080bcc}.batch-destination-results[hidden]{display:none}.batch-destination-option{display:block;width:100%;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;cursor:pointer}.batch-destination-option:hover,.batch-destination-option.active{background:#183039;color:var(--cyan)}.batch-destination-empty{padding:10px;color:var(--muted)}
@@ -65,7 +66,7 @@ html,body{height:100%;overflow:hidden}
 @media(max-height:520px){html,body{overflow:auto}.shell{height:auto;min-height:520px}.workspace{min-height:260px}}
 </style></head><body><main class="shell">
 <header class="top"><h1 class="brand">Raindrop Sorter</h1><div class="live"><i class="dot"></i><span id="updated">Connecting…</span></div></header>
-<form class="toolbar" id="filters"><input class="control" id="search" placeholder="Search bookmarks, destinations, summaries"><select class="control" id="outcome" aria-label="Filter by outcome"><option value="">All outcomes</option></select><select class="control" id="phase"><option value="">All lifecycle phases</option></select><select class="control" id="scope" aria-label="Dashboard view"><option value="latest">Latest status</option><option value="history">Attempt history</option></select><div class="view-switch" role="group" aria-label="Results layout"><button class="icon-button active" id="card-view" type="button" aria-label="Image card layout" title="Image card layout"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button><button class="icon-button" id="table-view" type="button" aria-label="Table layout" title="Table layout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v16"/></svg></button></div><button class="icon-button" type="submit" aria-label="Refresh dashboard" title="Refresh dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a7.5 7.5 0 1 0 .2 5"/></svg></button><button class="icon-button" id="sorter-toggle" type="button" aria-label="Show sorter controls" title="Show sorter controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg></button><button class="icon-button detail-toggle" id="detail-toggle" type="button" aria-label="Show attempt details" title="Show attempt details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button></form>
+<form class="toolbar" id="filters"><input class="control" id="search" placeholder="Search bookmarks, destinations, summaries"><select class="control" id="outcome" aria-label="Filter by outcome"><option value="">All outcomes</option></select><select class="control" id="library-sort" aria-label="Sort live collection" hidden><option value="">Newest first</option><option value="created">Oldest first</option><option value="score">Most relevant</option><option value="-sort">Manual collection order</option><option value="title">Title A–Z</option><option value="-title">Title Z–A</option></select><select class="control" id="phase"><option value="">All lifecycle phases</option></select><select class="control" id="scope" aria-label="Dashboard view"><option value="latest">Latest status</option><option value="history">Attempt history</option></select><div class="view-switch" role="group" aria-label="Results layout"><button class="icon-button active" id="card-view" type="button" aria-label="Image card layout" title="Image card layout"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button><button class="icon-button" id="table-view" type="button" aria-label="Table layout" title="Table layout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v16"/></svg></button></div><button class="icon-button" type="submit" aria-label="Refresh dashboard" title="Refresh dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a7.5 7.5 0 1 0 .2 5"/></svg></button><button class="icon-button" id="sorter-toggle" type="button" aria-label="Show sorter controls" title="Show sorter controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg></button><button class="icon-button detail-toggle" id="detail-toggle" type="button" aria-label="Show attempt details" title="Show attempt details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button></form>
 <section class="action-bar" id="batch-bar" hidden><strong id="selection-count">0 selected</strong><div class="batch-picker"><input class="control" id="batch-destination-search" role="combobox" aria-label="Batch destination" aria-autocomplete="list" aria-controls="batch-destination-results" aria-expanded="false" autocomplete="off" placeholder="Search Art destinations…"><div class="batch-destination-results" id="batch-destination-results" role="listbox" hidden></div></div><button class="icon-button" id="batch-assign" type="button" aria-label="Assign selected Raindrops" title="Assign selected Raindrops" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><path d="M5 5v14"/></svg></button><button class="icon-button" id="selection-clear" type="button" aria-label="Clear selection" title="Clear selection"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><span class="action-message" id="batch-message"></span></section>
 <section class="sorter-panel" id="sorter-panel" hidden><div class="sorter-status"><strong id="sorter-state">Loading…</strong><div class="explain" id="sorter-summary">Reading local sorter status</div></div><button class="icon-button" id="process-all" type="button" aria-label="Process all Unsorted Raindrops" title="Process all Unsorted Raindrops"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/><path d="m15 15 3 3 4-5"/></svg></button><button class="icon-button" id="sorter-stop" type="button" aria-label="Stop processing Unsorted Raindrops" title="Stop processing after the current Raindrop"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button><button class="icon-button" id="sorter-start" type="button" aria-label="Start automatic sorter" title="Start automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg></button><button class="icon-button" id="sorter-pause" type="button" aria-label="Pause automatic sorter" title="Pause automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg></button></section>
 <section class="workspace" id="workspace"><aside class="panel library-tree-panel" aria-label="Live library collections"><header class="panel-head"><button class="journal-select active" id="journal-select" type="button">Sorter journal</button></header><div class="collection-tree" id="collection-tree"><div class="skeleton"></div></div></aside><div class="panel attempt-panel"><div class="panel-head"><span id="list-title">Latest Raindrop status</span><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div><button class="library-load-more" id="library-load-more" type="button" hidden>Load more</button></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
@@ -92,14 +93,26 @@ let batchDestinationFocusIndex = 0;
 let batchDestinationWantsOpen = false;
 const selectedCollectionStorageKey = 'sorter-library-selected-collection';
 const expandedCollectionsStorageKey = 'sorter-library-expanded-collections';
+const initialLibraryParams = new URLSearchParams(location.search);
+const initialCollectionValue = initialLibraryParams.get('collection');
+const initialCollectionId = initialCollectionValue !== null && /^-?\d+$/.test(initialCollectionValue)
+  ? Number(initialCollectionValue)
+  : null;
+const initialLibrarySearch = initialLibraryParams.get('q') || '';
+const initialLibrarySort = initialLibraryParams.get('sort') || '';
+const initialLibraryPage = Math.max(0, Number.parseInt(initialLibraryParams.get('page') || '0', 10) || 0);
 let collectionTreeGroups = [];
-let liveLibraryMode = false;
+let liveLibraryMode = initialCollectionId !== null;
 let selectedLiveCollection = null;
 let liveLibraryItems = [];
-let liveLibraryPage = 0;
+let liveLibraryNextPage = 0;
+let liveLibraryCurrentPage = 0;
 let liveLibraryHasMore = false;
 let liveLibraryLoading = false;
 let liveLibraryRequestRevision = 0;
+let liveLibrarySearch = initialLibrarySearch;
+let liveLibrarySort = initialLibrarySort;
+let journalSearchValue = '';
 let expandedCollectionIds = new Set();
 try {
   expandedCollectionIds = new Set(JSON.parse(localStorage.getItem(expandedCollectionsStorageKey) || '[]').map(String));
@@ -690,6 +703,33 @@ function collectionNodes() {
 function persistExpandedCollections() {
   localStorage.setItem(expandedCollectionsStorageKey, JSON.stringify([...expandedCollectionIds]));
 }
+function updateLiveLibraryUrl(page = liveLibraryCurrentPage) {
+  if (!selectedLiveCollection) return;
+  const params = new URLSearchParams({collection:String(selectedLiveCollection.id)});
+  if (liveLibrarySearch) params.set('q', liveLibrarySearch);
+  if (liveLibrarySort) params.set('sort', liveLibrarySort);
+  if (page > 0) params.set('page', String(page));
+  history.replaceState(null, '', `${location.pathname}?${params}${location.hash}`);
+}
+function syncDashboardMode() {
+  const search = select('#search');
+  ['#outcome', '#phase', '#scope'].forEach(selector => { select(selector).hidden = liveLibraryMode; });
+  select('#library-sort').hidden = !liveLibraryMode;
+  select('.view-switch').hidden = liveLibraryMode;
+  select('#sorter-toggle').hidden = liveLibraryMode;
+  if (liveLibraryMode) {
+    select('#sorter-panel').hidden = true;
+    select('#sorter-toggle').classList.remove('active');
+    search.placeholder = 'Search this collection with Raindrop syntax';
+    search.setAttribute('aria-label', 'Search selected live collection');
+    search.value = liveLibrarySearch;
+    select('#library-sort').value = liveLibrarySort;
+  } else {
+    search.placeholder = 'Search bookmarks, destinations, summaries';
+    search.setAttribute('aria-label', 'Search sorter journal');
+    search.value = journalSearchValue;
+  }
+}
 function renderCollectionTree() {
   const tree = select('#collection-tree');
   tree.replaceChildren();
@@ -730,7 +770,7 @@ function renderLiveLibraryItems() {
   container.className = 'live-bookmark-list';
   container.replaceChildren();
   if (!liveLibraryItems.length) {
-    container.append(element('div', 'empty', 'This collection is empty.'));
+    container.append(element('div', 'empty', liveLibrarySearch ? 'No Raindrops match this search.' : 'This collection is empty.'));
   }
   liveLibraryItems.forEach(item => {
     const bookmark = element('article', 'live-bookmark');
@@ -748,11 +788,11 @@ function renderLiveLibraryItems() {
   more.disabled = liveLibraryLoading;
   more.textContent = liveLibraryLoading ? 'Loading…' : 'Load more';
 }
-async function loadLiveLibraryPage({append = false} = {}) {
+async function loadLiveLibraryPage({append = false, page = null} = {}) {
   if (!selectedLiveCollection || liveLibraryLoading) return;
   const requestRevision = liveLibraryRequestRevision;
   const collectionId = selectedLiveCollection.id;
-  const requestedPage = append ? liveLibraryPage : 0;
+  const requestedPage = page ?? (append ? liveLibraryNextPage : 0);
   liveLibraryLoading = true;
   if (!append) {
     select('#attempts').replaceChildren(element('div', 'skeleton'));
@@ -766,11 +806,15 @@ async function loadLiveLibraryPage({append = false} = {}) {
       page:String(requestedPage),
       per_page:'50',
     });
+    if (liveLibrarySearch) params.set('q', liveLibrarySearch);
+    if (liveLibrarySort) params.set('sort', liveLibrarySort);
     const result = await fetchJson('/api/library/bookmarks?' + params);
     if (requestRevision !== liveLibraryRequestRevision) return;
     liveLibraryItems = append ? [...liveLibraryItems, ...result.items] : result.items;
     liveLibraryHasMore = Boolean(result.has_more);
-    liveLibraryPage = result.next_page ?? result.page;
+    liveLibraryNextPage = result.next_page ?? result.page;
+    liveLibraryCurrentPage = result.page;
+    updateLiveLibraryUrl(result.page);
     renderLiveLibraryItems();
   } catch (error) {
     if (requestRevision !== liveLibraryRequestRevision) return;
@@ -784,36 +828,60 @@ async function loadLiveLibraryPage({append = false} = {}) {
     select('#library-load-more').textContent = 'Load more';
   }
 }
-async function selectLiveCollection(node) {
+async function reloadLiveLibrary(targetPage = 0) {
   liveLibraryRequestRevision += 1;
   liveLibraryLoading = false;
+  liveLibraryItems = [];
+  liveLibraryNextPage = 0;
+  liveLibraryCurrentPage = 0;
+  liveLibraryHasMore = false;
+  for (let page = 0; page <= targetPage; page += 1) {
+    await loadLiveLibraryPage({append:page > 0, page});
+    if (page < targetPage && !liveLibraryHasMore) break;
+  }
+}
+async function selectLiveCollection(node, {search = '', sort = '', restorePage = 0} = {}) {
+  if (!liveLibraryMode) journalSearchValue = select('#search').value;
   liveLibraryMode = true;
   selectedLiveCollection = node;
+  liveLibrarySearch = search;
+  liveLibrarySort = sort;
   localStorage.setItem(selectedCollectionStorageKey, String(node.id));
-  liveLibraryItems = [];
-  liveLibraryPage = 0;
-  liveLibraryHasMore = false;
   clearAttemptSelection();
   clearDetail();
   select('#batch-bar').hidden = true;
   select('#list-title').textContent = node.path;
+  syncDashboardMode();
   renderCollectionTree();
-  await loadLiveLibraryPage();
+  updateLiveLibraryUrl(restorePage);
+  await reloadLiveLibrary(restorePage);
 }
 async function loadCollectionTree() {
   try {
     const result = await fetchJson('/api/library/tree');
     collectionTreeGroups = result.groups || [];
     renderCollectionTree();
-    const stored = localStorage.getItem(selectedCollectionStorageKey);
-    const restored = stored == null ? null : collectionNodes().find(node => String(node.id) === stored);
-    if (restored) await selectLiveCollection(restored);
+    const restored = initialCollectionId == null
+      ? null
+      : collectionNodes().find(node => node.id === initialCollectionId);
+    if (restored) await selectLiveCollection(restored, {search:initialLibrarySearch, sort:initialLibrarySort, restorePage:initialLibraryPage});
+    else if (initialCollectionId != null) {
+      select('#attempts').replaceChildren(element('div', 'error', 'The collection in this URL is unavailable.'));
+    }
   } catch (error) {
     select('#collection-tree').replaceChildren(element('div', 'library-message', error.message));
+    if (liveLibraryMode) {
+      select('#attempts').replaceChildren(element('div', 'error', error.message));
+      select('#list-title').textContent = 'Live library unavailable';
+      select('#count').textContent = 'Unavailable';
+    }
   }
 }
 async function refreshDashboard() {
-  if (liveLibraryMode) return;
+  if (liveLibraryMode) {
+    await reloadLiveLibrary(liveLibraryCurrentPage);
+    return;
+  }
   try {
     await renderOverview();
     if (!liveLibraryMode) await renderAttempts();
@@ -943,24 +1011,41 @@ select('#journal-select').onclick = () => {
   liveLibraryRequestRevision += 1;
   liveLibraryLoading = false;
   liveLibraryMode = false;
+  selectedLiveCollection = null;
   select('#library-load-more').hidden = true;
+  history.replaceState(null, '', `${location.pathname}${location.hash}`);
+  syncDashboardMode();
   renderCollectionTree();
   refreshDashboard();
 };
 select('#library-load-more').onclick = () => void loadLiveLibraryPage({append:true});
 select('#filters').onsubmit = event => {
   event.preventDefault();
-  if (liveLibraryMode) return;
+  if (liveLibraryMode) {
+    void reloadLiveLibrary(liveLibraryCurrentPage);
+    return;
+  }
   invalidateDetailSelection();
   clearCaches();
   refreshDashboard();
 };
 let searchTimer;
 select('#search').oninput = () => {
-  if (liveLibraryMode) return;
-  invalidateDetailSelection();
   clearTimeout(searchTimer);
+  if (liveLibraryMode) {
+    liveLibrarySearch = select('#search').value;
+    updateLiveLibraryUrl(0);
+    searchTimer = setTimeout(() => void reloadLiveLibrary(0), 250);
+    return;
+  }
+  journalSearchValue = select('#search').value;
+  invalidateDetailSelection();
   searchTimer = setTimeout(renderAttempts, 250);
+};
+select('#library-sort').onchange = () => {
+  liveLibrarySort = select('#library-sort').value;
+  updateLiveLibraryUrl(0);
+  void reloadLiveLibrary(0);
 };
 select('#outcome').onchange = () => { invalidateDetailSelection(); renderAttempts(); };
 select('#phase').onchange = () => { invalidateDetailSelection(); renderAttempts(); };
@@ -1038,6 +1123,7 @@ document.addEventListener('keydown', event => {
     setDetailOpen(false);
   }
 });
+syncDashboardMode();
 refreshDashboard();
 refreshSorterStatus();
 void loadCollectionTree();

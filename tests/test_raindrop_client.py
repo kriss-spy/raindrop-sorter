@@ -104,6 +104,16 @@ def test_collection_page_passes_exact_tag_search_to_raindrop():
     }
 
 
+def test_collection_page_passes_sort_to_raindrop():
+    session = FakeSession([FakeResponse(200, {"items": []})])
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    client.get_raindrops(0, sort="-title")
+
+    assert session.requests[0][2]["params"]["sort"] == "-title"
+
+
 def test_collection_page_uses_total_count_for_exact_last_full_page():
     session = FakeSession(
         [FakeResponse(200, {"items": [{"_id": item_id} for item_id in range(25)], "count": 25})]
