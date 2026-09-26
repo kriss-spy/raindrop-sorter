@@ -483,24 +483,39 @@ def test_dashboard_batch_resolves_selected_attempts(tmp_path):
     class FakeClient:
         def __init__(self):
             self.updates = []
+            self.collection_reads = 0
+            self.group_reads = 0
+            self.http_requests = 0
+            self.simulated_network_seconds = 0
+
+        def record_requests(self, count=1):
+            self.http_requests += count
+            self.simulated_network_seconds += count * 0.75
 
         def get_collections(self):
+            self.collection_reads += 1
+            # RaindropClient fetches roots and child collections separately.
+            self.record_requests(2)
             return [{"_id": 10, "title": "TOUHOU", "parent": None}]
 
         def get_collection_groups(self):
+            self.group_reads += 1
+            self.record_requests()
             return [{"title": "Art", "collections": [10]}]
 
         def get_raindrop(self, bookmark_id):
+            self.record_requests()
             return {"_id": bookmark_id, "title": str(bookmark_id), "tags": []}
 
         def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
+            self.record_requests()
             self.updates.append((bookmark_id, collection_id, tags))
             return {"result": True}
 
     path = tmp_path / "journal.sqlite"
     journal = SQLiteRunJournal(path)
     attempt_ids = []
-    for bookmark_id in (101, 102):
+    for bookmark_id in (101, 102, 103, 104):
         attempt = journal.start_attempt(
             {"_id": bookmark_id, "title": str(bookmark_id)}, mode="dry-run"
         )
@@ -527,9 +542,18 @@ def test_dashboard_batch_resolves_selected_attempts(tmp_path):
             f"http://127.0.0.1:{server.server_port}/api/attempts/resolve-batch",
             {"attempt_ids": attempt_ids, "collection_id": 10},
         )
-        assert result["resolved"] == 2
+        assert result["resolved"] == 4
         assert result["failed"] == 0
-        assert [update[:2] for update in client.updates] == [(101, 10), (102, 10)]
+        assert [update[:2] for update in client.updates] == [
+            (101, 10),
+            (102, 10),
+            (103, 10),
+            (104, 10),
+        ]
+        assert client.collection_reads == 1
+        assert client.group_reads == 1
+        assert client.http_requests == 11
+        assert client.simulated_network_seconds <= 10
     finally:
         server.shutdown()
         server.server_close()

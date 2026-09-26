@@ -82,6 +82,80 @@ class JournalReviewService:
         collection_id: int,
         selection_source: str = "custom",
     ) -> dict[str, Any]:
+        collection = self._art_destination(collection_id)
+        return self._resolve_validated(
+            attempt_id,
+            collection=collection,
+            selection_source=selection_source,
+        )
+
+    def resolve_batch(
+        self,
+        attempt_ids: list[str],
+        *,
+        collection_id: int,
+    ) -> dict[str, Any]:
+        """Resolve a batch after validating its shared destination once."""
+        collection = self._art_destination(collection_id)
+        results = []
+        errors = []
+        for attempt_id in attempt_ids:
+            trace = self.journal.explain_attempt(attempt_id)
+            bookmark_id = trace["attempt"]["bookmark_id"] if trace is not None else None
+            try:
+                results.append(
+                    self._resolve_validated(
+                        attempt_id,
+                        collection=collection,
+                        selection_source="custom",
+                    )
+                )
+            except Exception as error:
+                latest = (
+                    self.journal.explain(int(bookmark_id))
+                    if bookmark_id is not None
+                    else None
+                )
+                errors.append({
+                    "attempt_id": attempt_id,
+                    "retry_attempt_id": (
+                        latest["attempt"]["attempt_id"]
+                        if latest is not None
+                        else attempt_id
+                    ),
+                    "error": str(error),
+                    "type": type(error).__name__,
+                })
+        return {
+            "status": "ok" if not errors else "partial",
+            "resolved": len(results),
+            "failed": len(errors),
+            "results": results,
+            "errors": errors,
+        }
+
+    def _art_destination(self, collection_id: int) -> dict[str, Any]:
+        collection = next(
+            (
+                item
+                for item in self.art_collections()
+                if item["collection_id"] == collection_id
+            ),
+            None,
+        )
+        if collection is None:
+            raise InvalidReviewDestination(
+                "destination must be a live collection in the Art group"
+            )
+        return collection
+
+    def _resolve_validated(
+        self,
+        attempt_id: str,
+        *,
+        collection: dict[str, Any],
+        selection_source: str,
+    ) -> dict[str, Any]:
         with self._lock:
             trace = self.journal.explain_attempt(attempt_id)
             if trace is None:
@@ -115,19 +189,7 @@ class JournalReviewService:
                     "selection_source must be text, visual, or custom"
                 ) from error
 
-            collection = next(
-                (
-                    item
-                    for item in self.art_collections()
-                    if item["collection_id"] == collection_id
-                ),
-                None,
-            )
-            if collection is None:
-                raise InvalidReviewDestination(
-                    "destination must be a live collection in the Art group"
-                )
-
+            collection_id = int(collection["collection_id"])
             destination = str(collection["path"])
             if retrying_manual_review:
                 prior_selection = next(
