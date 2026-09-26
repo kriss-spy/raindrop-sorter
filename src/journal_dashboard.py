@@ -174,19 +174,28 @@ function previewImage(bookmarkId, title, className, coverUrl = '') {
   image.referrerPolicy = 'no-referrer';
   image.dataset.bookmarkId = String(bookmarkId);
   image.dataset.coverUrl = directCoverUrl(coverUrl);
-  image.onerror = () => image.parentElement?.classList.add('missing');
+  image.onerror = () => loadFallbackPreview(image);
+  image.onload = () => image.parentElement?.classList.remove('missing');
   if (previewObserver) previewObserver.observe(image);
   else loadPreviewImage(image);
   return image;
+}
+function loadFallbackPreview(image) {
+  if (image.dataset.fallbackStarted) {
+    image.parentElement?.classList.add('missing');
+    return;
+  }
+  image.dataset.fallbackStarted = 'true';
+  previewUrl(image.dataset.bookmarkId)
+    .then(url => { if (image.isConnected) image.src = url; })
+    .catch(() => image.parentElement?.classList.add('missing'));
 }
 function loadPreviewImage(image) {
   if (image.dataset.coverUrl) {
     image.src = image.dataset.coverUrl;
     return;
   }
-  previewUrl(image.dataset.bookmarkId)
-    .then(url => { if (image.isConnected) image.src = url; })
-    .catch(() => image.parentElement?.classList.add('missing'));
+  loadFallbackPreview(image);
 }
 async function fetchJson(url) {
   const response = await fetch(url);

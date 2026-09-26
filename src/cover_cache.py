@@ -9,10 +9,27 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _cover_url(bookmark: dict[str, Any]) -> str | None:
+    """Prefer a normal X media CDN URL over its generated preview endpoint."""
+    cover = str(bookmark.get("cover") or "")
+    if urlparse(cover).netloc.casefold() == "jf.x.com":
+        for media_item in bookmark.get("media") or []:
+            if not isinstance(media_item, dict):
+                continue
+            candidate = str(media_item.get("link") or "")
+            if (
+                str(media_item.get("type") or "").casefold() == "image"
+                and urlparse(candidate).netloc.casefold() == "pbs.twimg.com"
+            ):
+                return candidate
+    return cover or None
 
 
 class SQLiteCoverCache:
@@ -50,7 +67,7 @@ class SQLiteCoverCache:
         observations = []
         now = _utc_now()
         for bookmark in bookmarks:
-            cover = str(bookmark.get("cover") or "") or None
+            cover = _cover_url(bookmark)
             fingerprint = (
                 hashlib.sha256(cover.encode("utf-8")).hexdigest() if cover else None
             )

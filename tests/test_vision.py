@@ -252,6 +252,53 @@ def test_resolve_cover_url_does_not_call_metadata_for_real_cover(mock_get):
 
 
 @patch("src.vision_worker.requests.get")
+def test_resolve_cover_url_replaces_generated_x_preview_with_photo(mock_get):
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        "tweet": {"media": {"all": [{
+            "type": "photo",
+            "url": "https://pbs.twimg.com/media/photo.jpg?name=orig",
+        }]}}
+    }
+    mock_get.return_value = response
+
+    assert resolve_cover_url({
+        "link": "https://x.com/example/status/123",
+        "cover": "https://jf.x.com/images/media-preview/123",
+    }) == "https://pbs.twimg.com/media/photo.jpg?name=orig"
+
+
+@patch("src.vision_worker.requests.get")
+def test_resolve_cover_url_replaces_generated_x_preview_with_video_thumbnail(mock_get):
+    response = MagicMock()
+    response.raise_for_status.return_value = None
+    response.json.return_value = {
+        "tweet": {"media": {"all": [{
+            "type": "video",
+            "thumbnail_url": "https://pbs.twimg.com/video_thumb/thumb.jpg",
+        }]}}
+    }
+    mock_get.return_value = response
+
+    assert resolve_cover_url({
+        "link": "https://x.com/example/status/456",
+        "cover": "https://jf.x.com/images/media-preview/456",
+    }) == "https://pbs.twimg.com/video_thumb/thumb.jpg"
+
+
+@patch("src.vision_worker.requests.get")
+def test_resolve_cover_url_keeps_generated_x_preview_when_metadata_fails(mock_get):
+    mock_get.side_effect = Exception("metadata unavailable")
+    generated = "https://jf.x.com/images/media-preview/789"
+
+    assert resolve_cover_url({
+        "link": "https://x.com/example/status/789",
+        "cover": generated,
+    }) == generated
+
+
+@patch("src.vision_worker.requests.get")
 def test_resolve_cover_url_skips_unrecoverable_x_placeholder(mock_get):
     mock_get.side_effect = Exception("metadata unavailable")
     bookmark = {

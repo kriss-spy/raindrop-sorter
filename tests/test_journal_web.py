@@ -122,6 +122,8 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "image.dataset.bookmarkId" in page
     assert "image.dataset.coverUrl" in page
     assert "image.referrerPolicy = 'no-referrer'" in page
+    assert "image.onerror = () => loadFallbackPreview(image)" in page
+    assert "image.dataset.fallbackStarted" in page
     assert "previewImage(attempt.bookmark_id, attempt.title, 'attempt-cover', attempt.cover)" in page
     assert "Latest status" in page
     assert "Search Art collections" in page
