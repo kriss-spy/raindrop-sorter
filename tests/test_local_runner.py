@@ -16,6 +16,7 @@ from src.local_runner import (
     validate_local_index,
 )
 from src.run_journal import AttemptHandle, SQLiteRunJournal
+from src.source_health import SourceHealthResult, SourceHealthStatus
 from src.tag_rules import save_series_rules, save_tag_rules
 from src.visual_exemplars import (
     DEFAULT_CLIP_MODEL,
@@ -190,6 +191,47 @@ def test_local_runner_refuses_remote_writes_without_a_journal(tmp_path):
         )
 
     assert client.updates == []
+
+
+def test_unavailable_source_becomes_terminal_error_without_remote_write(tmp_path):
+    _write_state(tmp_path)
+    journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
+    client = FakeRaindropClient(
+        {
+            "_id": 123,
+            "title": "https://x.com/user/status/123",
+            "link": "https://x.com/user/status/123",
+            "domain": "x.com",
+            "collection": {"$id": -1},
+            "tags": [],
+        }
+    )
+
+    result = run_local_bookmark(
+        client,
+        bookmark_id=123,
+        db_path=str(tmp_path),
+        apply=True,
+        journal=journal,
+        source_health=SourceHealthResult(
+            SourceHealthStatus.UNAVAILABLE,
+            source="twitter_oembed",
+            reason="Twitter returned HTTP 403",
+            http_status=403,
+        ),
+    )
+
+    assert result["action"] == "ignore"
+    assert result["decision"]["outcome"] == "error"
+    assert result["applied"] is True
+    assert client.updates == []
+    trace = journal.explain(123)
+    assert trace["attempt"]["current_phase"] == "applied"
+    assert trace["attempt"]["outcome"] == "error"
+    assert trace["actions"][0]["action_kind"] == "ignore_broken_source"
+    assert trace["actions"][0]["request_count"] == 0
+    assert [event["phase"] for event in trace["events"]].count("source_checked") == 1
+    assert 123 in journal.automatic_processing_exclusions()
 
 
 def test_coordinated_apply_skips_bookmark_moved_out_of_unsorted(tmp_path):

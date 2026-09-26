@@ -30,7 +30,7 @@ button.control{cursor:pointer;color:var(--cyan)}
 .meta,.when{color:var(--muted);font-size:12px}
 .destination{color:var(--cyan)}
 .badge{align-self:start;border:1px solid currentColor;border-radius:99px;padding:2px 8px;font-size:10px;text-transform:uppercase}
-.confirmed{color:var(--lime)}.provisional{color:var(--amber)}.review,.pending{color:var(--violet)}.conflict,.failed{color:var(--red)}
+.confirmed{color:var(--lime)}.provisional{color:var(--amber)}.review,.pending{color:var(--violet)}.conflict,.error,.failed{color:var(--red)}
 .empty{display:grid;place-content:center;text-align:center;color:var(--muted)}
 .detail-title{font-family:system-ui;font-weight:700;margin:4px 0}
 .external{color:var(--cyan);text-decoration:none}
@@ -336,7 +336,7 @@ function outcomeBadge(value) {
 function updateOutcomeOptions(outcomes, total) {
   const outcomeSelect = select('#outcome');
   const selectedOutcome = outcomeSelect.value;
-  const preferredOrder = ['confirmed', 'provisional', 'review', 'conflict', 'pending', 'failed'];
+  const preferredOrder = ['confirmed', 'provisional', 'review', 'conflict', 'error', 'pending', 'failed'];
   const outcomeNames = [...new Set([...preferredOrder, ...Object.keys(outcomes)])];
   outcomeSelect.replaceChildren(new Option(`All outcomes · ${total}`, ''));
   outcomeNames.forEach(outcome => {

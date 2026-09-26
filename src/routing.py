@@ -23,6 +23,7 @@ class RouteOutcome(StrEnum):
     PROVISIONAL = "provisional"
     REVIEW = "review"
     CONFLICT = "conflict"
+    ERROR = "error"
 
 
 TextStrength = Literal["strong", "contextual", "weak", "conflicting"]

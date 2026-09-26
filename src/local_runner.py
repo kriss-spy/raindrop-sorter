@@ -15,6 +15,13 @@ from src.cover_cache import SQLiteCoverCache
 from src.destinations import is_art_destination
 from src.routing import RouteEngine, TextIdentifier, VisualVerifier
 from src.run_journal import AttemptHandle, RunJournal, SQLiteRunJournal
+from src.source_error_lifecycle import record_source_error
+from src.source_health import (
+    SourceHealthResult,
+    SourceHealthStatus,
+    TwitterSourceHealthChecker,
+    unavailable_source_decision,
+)
 from src.modality import bookmark_modality
 from src.review_learning import load_review_feedback
 from src.state_machine import (
@@ -242,6 +249,7 @@ class LocalBatchProcessor:
         visual_batch_size: int = DEFAULT_VISUAL_BATCH_SIZE,
         download_workers: int = DEFAULT_DOWNLOAD_WORKERS,
         cover_cache: SQLiteCoverCache | None = None,
+        source_health_checker: Any | None = None,
     ):
         if visual_batch_size < 1:
             raise ValueError("visual_batch_size must be at least 1")
@@ -255,6 +263,7 @@ class LocalBatchProcessor:
         self.visual_batch_size = visual_batch_size
         self.download_workers = download_workers
         self.cover_cache = cover_cache
+        self.source_health_checker = source_health_checker or TwitterSourceHealthChecker()
         self.artifacts = _load_routing_artifacts(db_path)
         self.text_identifier = TextIdentifier(
             self.artifacts.tag_rules,
@@ -277,6 +286,7 @@ class LocalBatchProcessor:
         expected_collection_ids: set[int | None] | None = None,
         bookmark_snapshot: dict[str, Any] | None = None,
         visual_analysis: VisualAnalysis | None = None,
+        source_health: SourceHealthResult | None = None,
     ) -> dict[str, Any]:
         image: bytes | None | object = _IMAGE_NOT_LOADED
 
@@ -329,11 +339,29 @@ class LocalBatchProcessor:
             bookmark=bookmark_snapshot,
             artifacts=self.artifacts,
             cover_cache=self.cover_cache,
+            source_health=source_health,
+            source_health_checker=self.source_health_checker,
         )
+
+    def _batch_source_health(
+        self,
+        work: list[dict[str, Any]],
+    ) -> dict[int, SourceHealthResult]:
+        if not work:
+            return {}
+        with ThreadPoolExecutor(
+            max_workers=min(self.download_workers, len(work))
+        ) as executor:
+            results = list(executor.map(self.source_health_checker.check, work))
+        return {
+            int(bookmark["_id"]): result
+            for bookmark, result in zip(work, results)
+        }
 
     def _batch_visual_analysis(
         self,
         work: list[dict[str, Any]],
+        source_health: dict[int, SourceHealthResult] | None = None,
     ) -> dict[int, VisualAnalysis]:
         analyses = {
             int(bookmark["_id"]): VisualAnalysis([])
@@ -341,6 +369,9 @@ class LocalBatchProcessor:
         }
         candidates = []
         for bookmark in work:
+            health = (source_health or {}).get(int(bookmark["_id"]))
+            if health is not None and health.status is SourceHealthStatus.UNAVAILABLE:
+                continue
             text = self.text_identifier.identify(bookmark)
             if (
                 text.kind != "user_confirmed_rule"
@@ -458,7 +489,8 @@ class LocalBatchProcessor:
                 work = [item for item in work if int(item["_id"]) in claims]
             with _automatic_claim_heartbeats(self.journal, claims) as heartbeat:
                 ensure_claims, finish_claim = heartbeat
-                visual_analyses = self._batch_visual_analysis(work)
+                source_health = self._batch_source_health(work)
+                visual_analyses = self._batch_visual_analysis(work, source_health)
                 ensure_claims()
                 for item in work:
                     if should_stop is not None and should_stop():
@@ -471,6 +503,7 @@ class LocalBatchProcessor:
                             attempt=claims.get(bookmark_id),
                             bookmark_snapshot=item,
                             visual_analysis=visual_analyses[bookmark_id],
+                            source_health=source_health[bookmark_id],
                         )
                         finish_claim(bookmark_id)
                         results.append(result)
@@ -589,6 +622,8 @@ def run_local_bookmark(
     bookmark: dict[str, Any] | None = None,
     artifacts: LocalRoutingArtifacts | None = None,
     cover_cache: SQLiteCoverCache | None = None,
+    source_health: SourceHealthResult | None = None,
+    source_health_checker: Any | None = None,
 ) -> dict[str, Any]:
     """Run the native two-step route; writes require ``apply=True``."""
     if apply and journal is None:
@@ -616,6 +651,38 @@ def run_local_bookmark(
 
     try:
         candidate = dict(bookmark)
+        source_health = source_health or (
+            source_health_checker or TwitterSourceHealthChecker()
+        ).check(candidate)
+        if (
+            journal is not None
+            and attempt is not None
+            and source_health.status
+            not in (SourceHealthStatus.NOT_APPLICABLE, SourceHealthStatus.UNAVAILABLE)
+        ):
+            journal.record_event(attempt, "source_checked", source_health.to_dict())
+        if source_health.status is SourceHealthStatus.UNAVAILABLE:
+            if journal is not None and attempt is not None:
+                decision = record_source_error(
+                    journal,
+                    attempt,
+                    candidate,
+                    source_health,
+                    apply=apply,
+                )
+            else:
+                decision = unavailable_source_decision(candidate, source_health)
+            return {
+                "status": "ok",
+                "bookmark_id": bookmark_id,
+                "attempt_id": attempt.attempt_id if attempt is not None else None,
+                "action": "ignore",
+                "target_collection_id": None,
+                "target_folder": None,
+                "decision": decision.to_dict(),
+                "vision_tag_count": 0,
+                "applied": apply,
+            }
         folder_id_map = artifacts.folder_id_map
         tag_rules = artifacts.tag_rules
         series_rules = artifacts.series_rules
@@ -794,6 +861,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Cache current Raindrop cover URLs for fast dashboard previews",
     )
     target.add_argument(
+        "--ignore-broken-twitter",
+        action="store_true",
+        help="Mark inaccessible unresolved X/Twitter posts as terminal errors",
+    )
+    target.add_argument(
         "--rerun-outcomes",
         nargs="+",
         choices=("provisional", "review", "conflict"),
@@ -866,6 +938,16 @@ def main(argv: list[str] | None = None) -> None:
                 json.dumps({"cover_migration_progress": item}),
                 flush=True,
             ),
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
+    if args.ignore_broken_twitter:
+        from src.source_health_migration import ignore_broken_twitter_sources
+
+        result = ignore_broken_twitter_sources(
+            journal,
+            client=client,
+            apply=args.apply,
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
