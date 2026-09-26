@@ -91,8 +91,31 @@ class FakeCoordination:
 
 @pytest.fixture(autouse=True)
 def local_coordination_store():
-    with patch.object(app_module, "coordination", FakeCoordination()):
+    with (
+        patch.object(app_module, "coordination", FakeCoordination()),
+        patch.object(app_module, "LEGACY_REMOTE_STATE_ENABLED", True),
+    ):
         yield
+
+
+@pytest.mark.parametrize(
+    ("function", "args"),
+    [
+        (app_module.watcher, ()),
+        (app_module.resolver, ()),
+        (app_module.vision_worker, (123,)),
+        (app_module.vision_cron, ()),
+    ],
+)
+def test_legacy_remote_state_entry_points_are_disabled_by_default(
+    function, args, monkeypatch
+):
+    monkeypatch.setattr(app_module, "LEGACY_REMOTE_STATE_ENABLED", False)
+
+    result = function.local(*args)
+
+    assert result["status"] == "disabled"
+    assert "SQLite journal" in result["reason"]
 
 
 def test_watcher_dispatches_resolver_after_tagging_new_bookmarks():

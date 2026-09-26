@@ -12,7 +12,6 @@ import numpy as np
 
 from src.centroids import compute_folder_centroids, save_centroids
 from src.embeddings import build_text_input
-from src.state_machine import strip_reviewed_tags
 from src.tag_rules import (
     RuleTarget,
     extract_candidate_tag_rules,
@@ -191,33 +190,6 @@ def disable_overmatched_rules(
     return kept_rules, kept_mismatches
 
 
-def strip_reviewed_tags_from_unsorted(
-    client: Any,
-    unsorted_items: list[dict[str, Any]],
-) -> int:
-    """Remove sorter-reviewed tags from Unsorted items so they are retried.
-
-    Returns the number of bookmarks updated.
-    """
-    from src.raindrop_client import RaindropClient
-
-    if client is None:
-        client = RaindropClient()
-
-    updated = 0
-    for item in unsorted_items:
-        tags = item.get("tags", [])
-        cleaned = strip_reviewed_tags(tags)
-        if cleaned != tags:
-            try:
-                client.update_raindrop(item["_id"], tags=cleaned)
-                updated += 1
-            except Exception as exc:
-                print(f"Error stripping reviewed tags for {item['_id']}: {exc}")
-
-    return updated
-
-
 def atomic_swap_new_db(new_path: str, current_path: str) -> None:
     """Atomically replace current_path with new_path.
 
@@ -277,11 +249,10 @@ def rebuild_index(
         3. Detect manual corrections and update rule mismatch counts.
         4. Extract candidate tag rules from current library state.
         5. Validate rules against live folders and disable overmatched rules.
-        6. Strip sorter-reviewed tags from Unsorted items.
-        7. Build embeddings and write to a new ChromaDB directory.
-        8. Recompute folder centroids recursively.
-        9. Atomically swap the new DB into place.
-        10. Persist centroids, rules, mismatches, and folder ID map.
+        6. Build embeddings and write to a new ChromaDB directory.
+        7. Recompute folder centroids recursively.
+        8. Atomically swap the new DB into place.
+        9. Persist centroids, rules, mismatches, and folder ID map.
     """
     from src.raindrop_client import RaindropClient
 
@@ -349,15 +320,9 @@ def rebuild_index(
     validated_rules = validate_tag_rules(merged_rules, live_folders)
     final_rules, final_mismatches = disable_overmatched_rules(validated_rules, mismatches)
 
-    # 6. Strip reviewed tags from Unsorted so they are retried
-    unsorted_id = -1
-    unsorted_items = [
-        bm for bm in all_bookmarks if bm.get("_collection_id") == unsorted_id
-    ]
-    retried = strip_reviewed_tags_from_unsorted(client, unsorted_items)
     record_phase("prepare", phase_started)
 
-    # 7. Build embeddings and write to new ChromaDB
+    # 6. Build embeddings and write to new ChromaDB
     phase_started = time.monotonic()
     texts = [build_text_input(bm) for bm in all_bookmarks]
     embeddings = embed_texts_in_chunks(embedder, texts)
@@ -392,16 +357,16 @@ def rebuild_index(
             metadatas=metadatas[i:end],
         )
 
-    # 8. Compute centroids
+    # 7. Compute centroids
     folders = [bm.get("folder_path", "") for bm in all_bookmarks]
     hierarchy = build_folder_hierarchy(collections, groups)
     centroids = compute_folder_centroids(embeddings, folders, hierarchy)
     save_centroids(centroids, new_db_path)
 
-    # 9. Atomic swap
+    # 8. Atomic swap
     atomic_swap_new_db(new_db_path, db_path)
 
-    # 10. Persist rules, mismatches, and folder ID map
+    # 9. Persist rules, mismatches, and folder ID map
     save_tag_rules(final_rules, final_mismatches, db_path)
     save_series_rules(extract_series_rules(list(folder_map)), db_path)
     with open(os.path.join(db_path, "folder_id_map.json"), "w", encoding="utf-8") as f:
@@ -426,7 +391,7 @@ def rebuild_index(
         "collections": len(collections),
         "rules": len(final_rules),
         "disabled_rules": len(merged_rules) - len(final_rules),
-        "retried": retried,
+        "retried": 0,
         "timings_seconds": timings,
         "raindrop_requests": request_count,
         "rate_limit_wait_seconds": rate_limit_wait_seconds,

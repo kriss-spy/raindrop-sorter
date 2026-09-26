@@ -9,14 +9,16 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
 from src.routing import RouteDecision, TextEvidence, VisualEvidence
+from src.state_machine import is_remote_lifecycle_tag
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+AUTOMATIC_ATTEMPT_LEASE_SECONDS = 60 * 60
 _LATEST_ATTEMPTS_CTE = """
     WITH latest_attempts AS (
         SELECT *, ROW_NUMBER() OVER (
@@ -70,6 +72,20 @@ class RunJournal(Protocol):
 
     def fail(self, attempt: AttemptHandle, error: BaseException) -> None: ...
 
+    def terminal_bookmark_ids(self) -> set[int]: ...
+
+    def automatic_processing_exclusions(self) -> set[int]: ...
+
+    def claim_automatic(
+        self,
+        bookmark: dict[str, Any],
+        *,
+        pinned_index_version: str | None = None,
+        runner_version: str | None = None,
+    ) -> AttemptHandle | None: ...
+
+    def renew_automatic_claim(self, attempt: AttemptHandle) -> bool: ...
+
 
 class SQLiteRunJournal:
     """Durable local implementation of the revised ``RunJournal`` seam."""
@@ -120,6 +136,7 @@ class SQLiteRunJournal:
                     pinned_index_version TEXT,
                     runner_version TEXT,
                     mode TEXT NOT NULL,
+                    claim_heartbeat_at TEXT,
                     bookmark_snapshot_json TEXT NOT NULL,
                     decision_json TEXT,
                     error_json TEXT
@@ -167,10 +184,22 @@ class SQLiteRunJournal:
                 );
                 """
             )
+            connection.execute("BEGIN IMMEDIATE")
             connection.execute(
-                "INSERT OR IGNORE INTO metadata(key, value) VALUES (?, ?)",
+                """
+                INSERT INTO metadata(key, value) VALUES (?, ?)
+                ON CONFLICT(key) DO UPDATE SET value = excluded.value
+                """,
                 ("schema_version", str(SCHEMA_VERSION)),
             )
+            attempt_columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(attempts)").fetchall()
+            }
+            if "claim_heartbeat_at" not in attempt_columns:
+                connection.execute(
+                    "ALTER TABLE attempts ADD COLUMN claim_heartbeat_at TEXT"
+                )
 
     def start_attempt(
         self,
@@ -484,6 +513,269 @@ class SQLiteRunJournal:
                 (bookmark_id,),
             ).fetchone()
         return row is not None
+
+    def state_matches(
+        self,
+        bookmark_id: int,
+        *,
+        phase: str,
+        outcome: str | None,
+        destination: str | None = None,
+    ) -> bool:
+        """Return whether latest database state matches the legacy state exactly."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT current_phase, outcome, destination FROM attempts
+                WHERE bookmark_id = ?
+                  AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                ORDER BY started_at DESC, attempt_id DESC
+                LIMIT 1
+                """,
+                (bookmark_id,),
+            ).fetchone()
+        return (
+            row is not None
+            and row["current_phase"] == phase
+            and row["outcome"] == outcome
+            and row["destination"] == destination
+        )
+
+    def terminal_bookmark_ids(self) -> set[int]:
+        """Return bookmarks whose latest database-backed mutation is complete."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                WITH mutating_attempts AS (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY bookmark_id
+                        ORDER BY started_at DESC, attempt_id DESC
+                    ) AS bookmark_rank
+                    FROM attempts
+                    WHERE mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                )
+                SELECT bookmark_id FROM mutating_attempts
+                WHERE bookmark_rank = 1 AND current_phase = 'applied'
+                """
+            ).fetchall()
+        return {int(row["bookmark_id"]) for row in rows}
+
+    def automatic_processing_exclusions(self) -> set[int]:
+        """Exclude completed/manual work and fresh in-flight automatic attempts."""
+        active_after = (
+            datetime.now(timezone.utc)
+            - timedelta(seconds=AUTOMATIC_ATTEMPT_LEASE_SECONDS)
+        ).isoformat()
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                WITH mutating_attempts AS (
+                    SELECT attempts.*,
+                           COALESCE(claim_heartbeat_at, started_at) AS last_activity_at,
+                           ROW_NUMBER() OVER (
+                        PARTITION BY bookmark_id
+                        ORDER BY started_at DESC, attempt_id DESC
+                    ) AS bookmark_rank
+                    FROM attempts
+                    WHERE mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                )
+                SELECT bookmark_id FROM mutating_attempts
+                WHERE bookmark_rank = 1
+                  AND (
+                      current_phase = 'applied'
+                      OR mode = 'manual-review'
+                      OR (
+                          mode = 'apply'
+                          AND current_phase != 'failed'
+                          AND last_activity_at >= ?
+                      )
+                  )
+                """,
+                (active_after,),
+            ).fetchall()
+        return {int(row["bookmark_id"]) for row in rows}
+
+    def claim_automatic(
+        self,
+        bookmark: dict[str, Any],
+        *,
+        pinned_index_version: str | None = None,
+        runner_version: str | None = None,
+    ) -> AttemptHandle | None:
+        """Atomically claim a bookmark unless newer state already owns it."""
+        bookmark_id = int(bookmark["_id"])
+        attempt = AttemptHandle(str(uuid.uuid4()), bookmark_id)
+        snapshot = _bookmark_snapshot(bookmark)
+        now = _utc_now()
+        active_after = (
+            datetime.now(timezone.utc)
+            - timedelta(seconds=AUTOMATIC_ATTEMPT_LEASE_SECONDS)
+        ).isoformat()
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            latest = connection.execute(
+                """
+                SELECT current_phase, mode, started_at,
+                       COALESCE(claim_heartbeat_at, started_at) AS last_activity_at
+                FROM attempts
+                WHERE bookmark_id = ?
+                  AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                ORDER BY started_at DESC, attempt_id DESC
+                LIMIT 1
+                """,
+                (bookmark_id,),
+            ).fetchone()
+            if latest is not None and (
+                latest["current_phase"] == "applied"
+                or latest["mode"] == "manual-review"
+                or (
+                    latest["mode"] == "apply"
+                    and latest["current_phase"] != "failed"
+                    and latest["last_activity_at"] >= active_after
+                )
+            ):
+                return None
+            connection.execute(
+                """
+                INSERT INTO attempts(
+                    attempt_id, bookmark_id, started_at, current_phase,
+                    pinned_index_version, runner_version, mode, claim_heartbeat_at,
+                    bookmark_snapshot_json
+                ) VALUES (?, ?, ?, ?, ?, ?, 'apply', ?, ?)
+                """,
+                (
+                    attempt.attempt_id,
+                    bookmark_id,
+                    now,
+                    "discovered",
+                    pinned_index_version,
+                    runner_version,
+                    now,
+                    _json(snapshot),
+                ),
+            )
+            self._append_event(connection, attempt.attempt_id, "discovered", snapshot)
+        return attempt
+
+    def renew_automatic_claim(self, attempt: AttemptHandle) -> bool:
+        """Refresh an active automatic claim without changing its lifecycle phase."""
+        with self._connect() as connection:
+            cursor = connection.execute(
+                """
+                UPDATE attempts SET claim_heartbeat_at = ?
+                WHERE attempt_id = ? AND bookmark_id = ?
+                  AND mode = 'apply'
+                  AND current_phase NOT IN ('applied', 'failed')
+                  AND attempt_id = (
+                      SELECT attempt_id FROM attempts
+                      WHERE bookmark_id = ?
+                        AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                      ORDER BY started_at DESC, attempt_id DESC
+                      LIMIT 1
+                  )
+                """,
+                (
+                    _utc_now(),
+                    attempt.attempt_id,
+                    attempt.bookmark_id,
+                    attempt.bookmark_id,
+                ),
+            )
+            if cursor.rowcount == 1:
+                return True
+            latest = connection.execute(
+                """
+                SELECT attempt_id, current_phase FROM attempts
+                WHERE bookmark_id = ?
+                  AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                ORDER BY started_at DESC, attempt_id DESC
+                LIMIT 1
+                """,
+                (attempt.bookmark_id,),
+            ).fetchone()
+        return (
+            latest is not None
+            and latest["attempt_id"] == attempt.attempt_id
+            and latest["current_phase"] in ("applied", "failed")
+        )
+
+    def import_legacy_state(
+        self,
+        bookmark: dict[str, Any],
+        *,
+        outcome: str | None,
+        phase: str,
+        destination: str | None = None,
+    ) -> bool:
+        """Persist one idempotent journal state before removing legacy tags."""
+        bookmark_id = int(bookmark["_id"])
+        now = _utc_now()
+        decision = (
+            {
+                "bookmark_id": bookmark_id,
+                "outcome": outcome,
+                "destination": destination,
+                "text_evidence": [],
+                "visual_evidence": [],
+                "summary": "Imported from legacy Raindrop lifecycle tags.",
+            }
+            if outcome is not None
+            else None
+        )
+        with self._connect() as connection:
+            latest = connection.execute(
+                """
+                SELECT current_phase, outcome, destination FROM attempts
+                WHERE bookmark_id = ?
+                  AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                ORDER BY started_at DESC, attempt_id DESC
+                LIMIT 1
+                """,
+                (bookmark_id,),
+            ).fetchone()
+            if (
+                latest is not None
+                and latest["current_phase"] == phase
+                and latest["outcome"] == outcome
+                and latest["destination"] == destination
+            ):
+                return False
+            attempt_id = f"legacy-tag-migration:{bookmark_id}:{uuid.uuid4()}"
+            connection.execute(
+                """
+                INSERT INTO attempts(
+                    attempt_id, bookmark_id, started_at, ended_at, current_phase,
+                    outcome, destination, runner_version, mode,
+                    bookmark_snapshot_json, decision_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    attempt_id,
+                    bookmark_id,
+                    now,
+                    now if phase == "applied" else None,
+                    phase,
+                    outcome,
+                    destination,
+                    "legacy-tag-migration-v1",
+                    "legacy-tag-migration",
+                    _json(_bookmark_snapshot(bookmark)),
+                    _json(decision) if decision is not None else None,
+                ),
+            )
+            self._append_event(
+                connection,
+                attempt_id,
+                phase,
+                {
+                    "source": "raindrop_lifecycle_tags",
+                    "tags": [
+                        str(tag) for tag in bookmark.get("tags", [])
+                        if is_remote_lifecycle_tag(tag)
+                    ],
+                },
+            )
+        return True
 
     def status(self) -> dict[str, int]:
         with self._connect() as connection:

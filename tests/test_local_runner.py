@@ -7,7 +7,6 @@ import pytest
 from src.centroids import save_centroids
 from src.local_runner import (
     LocalBatchProcessor,
-    backfill_unreviewed,
     find_local_work,
     rerun_latest_outcomes,
     run_local_bookmark,
@@ -40,22 +39,12 @@ class FakeQueueClient:
         self.searches = []
         self.updates = []
 
-    def get_tags(self, collection_id):
+    def get_raindrops(self, collection_id, page=0, perpage=50, search=None):
         assert collection_id == -1
-        return [
-            {"_id": "sorter-pending-vision:2026-09-18"},
-            {"_id": "sorter-pending-resolution"},
-            {"_id": "sorter-reviewed:2026-09-17"},
-        ]
-
-    def get_raindrops(self, collection_id, perpage, search):
-        assert collection_id == -1
-        self.searches.append(search)
-        if search == '#"sorter-pending-vision:2026-09-18"':
-            return ([{"_id": 1}], False)
-        if search.startswith('#"sorter-pending-resolution"'):
-            return ([{"_id": 2}], False)
-        return ([{"_id": 3}], False)
+        self.searches.append((page, search))
+        if page == 0:
+            return ([{"_id": 1}, {"_id": 2}], True)
+        return ([{"_id": 3}, {"_id": 4}], False)
 
     def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
         self.updates.append((bookmark_id, collection_id, tags))
@@ -155,6 +144,7 @@ def test_local_runner_runs_vision_for_pixiv_link_with_image_media(tmp_path):
 
 def test_local_runner_writes_only_when_apply_is_explicit(tmp_path):
     _write_state(tmp_path)
+    journal = SQLiteRunJournal(tmp_path / "run-journal.sqlite")
     client = FakeRaindropClient(
         {
             "_id": 123,
@@ -172,11 +162,28 @@ def test_local_runner_writes_only_when_apply_is_explicit(tmp_path):
         db_path=str(tmp_path),
         analyze_vision=lambda _bookmark: ["ai:wdtag-hatsune_miku"],
         apply=True,
+        journal=journal,
     )
 
     assert result["applied"] is True
     assert client.updates[0][0:2] == (123, 42)
-    assert any(tag.startswith("sorter-needs-review:") for tag in client.updates[0][2])
+    assert all(not tag.startswith(("sorter-", "ai:sorted:")) for tag in client.updates[0][2])
+    assert journal.explain(123)["attempt"]["current_phase"] == "applied"
+
+
+def test_local_runner_refuses_remote_writes_without_a_journal(tmp_path):
+    _write_state(tmp_path)
+    client = FakeRaindropClient({"_id": 123, "title": "art", "tags": []})
+
+    with pytest.raises(ValueError, match="journal is required"):
+        run_local_bookmark(
+            client,
+            bookmark_id=123,
+            db_path=str(tmp_path),
+            apply=True,
+        )
+
+    assert client.updates == []
 
 
 def test_coordinated_apply_skips_bookmark_moved_out_of_unsorted(tmp_path):
@@ -278,10 +285,9 @@ def test_batch_processor_batches_visual_models_and_reuses_queue_snapshots(
             assert collection_id == -1
             return [{"_id": "sorter-unreviewed"}]
 
-        def get_raindrops(self, collection_id, perpage, search):
-            if search == '#"sorter-unreviewed"':
-                return ([dict(item) for item in self.items], False)
-            return ([], False)
+        def get_raindrops(self, collection_id, page=0, perpage=50, search=None):
+            assert page == 0
+            return ([dict(item) for item in self.items], False)
 
         def get_raindrop(self, bookmark_id):
             self.get_calls += 1
@@ -350,19 +356,18 @@ def test_batch_processor_isolates_a_bad_image_without_losing_the_batch(
         def get_tags(self, _collection_id):
             return [{"_id": "sorter-unreviewed"}]
 
-        def get_raindrops(self, _collection_id, perpage, search):
-            if search == '#"sorter-unreviewed"':
-                return ([
-                    {
-                        "_id": bookmark_id,
-                        "title": "art",
-                        "type": "image",
-                        "cover": f"https://example.test/{bookmark_id}.jpg",
-                        "tags": ["sorter-unreviewed"],
-                    }
-                    for bookmark_id in (1, 2)
-                ], False)
-            return ([], False)
+        def get_raindrops(self, _collection_id, page=0, perpage=50, search=None):
+            assert page == 0
+            return ([
+                {
+                    "_id": bookmark_id,
+                    "title": "art",
+                    "type": "image",
+                    "cover": f"https://example.test/{bookmark_id}.jpg",
+                    "tags": ["sorter-unreviewed"],
+                }
+                for bookmark_id in (1, 2)
+            ], False)
 
         def update_raindrop(self, *_args, **_kwargs):
             return None
@@ -397,10 +402,8 @@ def test_batch_processor_stops_before_the_next_bookmark_when_cancelled(
     tmp_path, monkeypatch
 ):
     class QueueClient(FakeQueueClient):
-        def get_raindrops(self, collection_id, perpage, search):
-            if search.startswith('#"sorter-pending-vision:'):
-                return ([{"_id": 1}, {"_id": 2}], False)
-            return ([], False)
+        def get_raindrops(self, collection_id, page=0, perpage=50, search=None):
+            return ([{"_id": 1}, {"_id": 2}], False)
 
     _write_state(tmp_path)
     monkeypatch.setattr("src.local_runner.WD14Tagger", lambda **_kwargs: object())
@@ -434,11 +437,14 @@ def test_rerun_latest_outcomes_only_processes_requested_latest_results():
                 "current_phase": "skipped_stale",
             },
         ],
+        "review": [
+            {"bookmark_id": 4, "started_at": "2026-09-25T13:00:00", "attempt_id": "d"},
+        ],
     }
 
     class Journal:
         def recent(self, *, outcome, mode, exclude_phase, **_kwargs):
-            assert mode == ("apply", "manual-review")
+            assert mode == ("apply", "manual-review", "legacy-tag-migration")
             assert exclude_phase == "skipped_stale"
             return [
                 attempt
@@ -461,12 +467,12 @@ def test_rerun_latest_outcomes_only_processes_requested_latest_results():
     result = rerun_latest_outcomes(
         processor,
         Journal(),
-        outcomes=["provisional", "conflict"],
+        outcomes=["provisional", "review", "conflict"],
         limit=10,
     )
 
-    assert processor.ids == [2, 1]
-    assert result["count"] == 2
+    assert processor.ids == [4, 2, 1]
+    assert result["count"] == 3
     assert result["applied"] is False
 
 
@@ -524,7 +530,7 @@ def test_local_runner_journals_a_structured_dry_run(tmp_path):
     assert result["decision"]["outcome"] == "provisional"
     assert [event["phase"] for event in trace["events"]] == [
         "discovered",
-        "marked_unreviewed",
+        "queued_in_journal",
         "text_identified",
         "visual_queued",
         "visual_completed",
@@ -563,40 +569,18 @@ def test_local_runner_journals_a_failed_apply(tmp_path):
     assert trace["actions"][0]["error_classification"] == "RuntimeError"
 
 
-def test_find_local_work_prioritizes_queues_and_includes_new_items():
+def test_find_local_work_uses_journal_state_and_scans_past_terminal_items(tmp_path):
     client = FakeQueueClient()
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    completed = journal.start_attempt({"_id": 1}, mode="apply")
+    journal.complete(completed)
+    failed = journal.start_attempt({"_id": 3}, mode="apply")
+    journal.fail(failed, RuntimeError("retry"))
 
-    items = find_local_work(client, limit=3)
+    items = find_local_work(client, journal=journal, limit=2, page_size=2)
 
-    assert [item["_id"] for item in items] == [1, 2, 3]
-    assert client.searches[0] == '#"sorter-pending-vision:2026-09-18"'
-    assert client.searches[1].startswith('#"sorter-pending-resolution"')
-    assert all(
-        f'-#"{tag}"' in client.searches[2]
-        for tag in (
-            "sorter-pending-vision:2026-09-18",
-            "sorter-pending-resolution",
-            "sorter-reviewed:2026-09-17",
-        )
-    )
-
-
-def test_backfill_unreviewed_preserves_user_tags_and_is_dry_run_by_default():
-    client = FakeQueueClient()
-
-    result = backfill_unreviewed(client, limit=3)
-
-    assert result["count"] == 1
-    assert result["items"][0]["tags"] == ["sorter-unreviewed"]
-    assert client.updates == []
-
-
-def test_backfill_unreviewed_applies_only_when_requested():
-    client = FakeQueueClient()
-
-    backfill_unreviewed(client, limit=3, apply=True)
-
-    assert client.updates == [(3, None, ["sorter-unreviewed"])]
+    assert [item["_id"] for item in items] == [2, 3]
+    assert client.searches == [(0, None), (1, None)]
 
 
 def test_local_runner_reports_an_incomplete_index_before_fetching(tmp_path):

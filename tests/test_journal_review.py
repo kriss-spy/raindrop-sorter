@@ -127,7 +127,7 @@ def test_review_service_resolves_conflict_as_new_confirmed_attempt(tmp_path):
     assert result["selection_source"] == "text"
     assert client.updates[0][0:2] == (123, 10)
     assert "favorite" in client.updates[0][2]
-    assert any(tag.startswith("ai:sorted:") for tag in client.updates[0][2])
+    assert not any(tag.startswith("ai:sorted:") for tag in client.updates[0][2])
     assert not any(tag.startswith("sorter-reviewed:") for tag in client.updates[0][2])
     assert "sorter-edge-case:conflict" not in client.updates[0][2]
 

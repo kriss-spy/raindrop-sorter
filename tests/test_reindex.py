@@ -541,7 +541,7 @@ def test_rebuild_index_detects_manual_corrections_and_disables_rule():
         assert result["disabled_rules"] == 1  # miku rule disabled after 4th mismatch
 
 
-def test_rebuild_index_strips_reviewed_tags_from_unsorted():
+def test_rebuild_index_does_not_mutate_database_owned_lifecycle_state():
     collections = [
         {"_id": -1, "title": "Unsorted", "parent": {}},
         {"_id": 1, "title": "Art", "parent": {}},
@@ -566,11 +566,8 @@ def test_rebuild_index_strips_reviewed_tags_from_unsorted():
         result = rebuild_index(client, embedder, db_path=db_path)
 
         assert result["status"] == "ok"
-        assert result["retried"] == 1
-        assert any(
-            call[0] == 201 and "sorter-reviewed" not in (call[1].get("tags") or [])
-            for call in client._updated
-        )
+        assert result["retried"] == 0
+        assert client._updated == []
 
 
 # ---------------------------------------------------------------------------

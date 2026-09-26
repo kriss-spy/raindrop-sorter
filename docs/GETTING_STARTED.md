@@ -121,39 +121,31 @@ uv run modal secret list -e main
 uv run modal deploy -e main app.py
 ```
 
-This deploys five functions:
+This deploys the weekly reindex function. The historical watcher, resolver,
+and vision entry points remain inert during the transition and cannot write
+Raindrop lifecycle tags; local dashboard processing owns lifecycle state.
 
 | Function | Runtime | Schedule/trigger | Purpose |
 |----------|---------|------------------|---------|
-| `watcher` | CPU | Every 30 minutes | Discovers new Unsorted items and starts resolution |
-| `resolver` | CPU | Spawned on demand | Resolves a bounded batch and continues while work remains |
-| `vision_cron` | CPU | Every 15 minutes | Dispatches a bounded batch of pending vision items |
-| `vision_worker` | T4 GPU | Spawned on demand | Analyzes one cover image |
 | `reindex_worker` | CPU | Sunday 03:00 UTC | Rebuilds the index and learns from corrections |
 
-The watcher and vision schedules are offset so they do not normally hit Raindrop simultaneously. A reindex temporarily pauses the other Raindrop API consumers and owns the shared request budget.
+The reindex owns the shared Raindrop request budget while it is active.
 
 ## 7. Verify it's working
 
-After deployment, add a bookmark to your `Unsorted` collection. Allow at least one watcher cycle:
+After starting the local dashboard sorter, add a bookmark to `Unsorted`:
 
-1. Check the external [Modal web console](https://modal.com/apps) or use the CLI health checks below.
-2. In Raindrop, look for a state tag on the bookmark.
-3. A confident bookmark moves to the predicted folder; a low-confidence bookmark remains in Unsorted with a `sorter-reviewed:YYYY-MM-DD` tag.
+1. Open the local dashboard sorter controls.
+2. Process a bounded batch.
+3. Confirm the destination in Raindrop and inspect the decision in the journal.
 
 ## Monitoring
 
-### State tags in Raindrop
+### Lifecycle state
 
-In the Raindrop UI, filter by tag to see what the agent has done:
-
-- `sorter-pending-resolution` — waiting for the CPU resolver
-- `sorter-pending-vision:*` — waiting for a GPU vision worker
-- `ai:sorted:*` — successfully sorted
-- `sorter-reviewed:*` — low confidence; intentionally left in Unsorted
-- `ai:new-rule-*` — bookmarks sorted by a newly learned rule
-
-Dated tags use the UTC date. For backlog progress, compare pending-tag counts 15–30 minutes apart; a single count is not enough to distinguish active draining from a stall.
+Lifecycle state lives in `chroma_db/run-journal.sqlite`, not in Raindrop tags.
+Use the dashboard or `local_journal.py` commands below to inspect current state
+and history.
 
 ### Check deployment and recent logs
 
@@ -178,11 +170,9 @@ Empty stderr output means no application error was recorded during that interval
 uv run modal container list -e main
 ```
 
-Zero containers usually means the serverless app is idle between scheduled calls, not that it is broken. Confirm health using all three signals: the deployment exists, recent logs have no terminal error, and Raindrop backlog counts move over time.
-
-### Manual runs
-
-Do not manually start `watcher`, `resolver`, or `vision_cron` during normal operation. The deployed schedules and self-draining batches orchestrate them, while `modal run app.py::...` creates a separate ephemeral app that can make the Modal console confusing.
+Zero containers usually means the serverless app is idle between reindex calls,
+not that it is broken. Confirm health using the deployment and recent logs;
+normal sorting progress is visible in the local dashboard and journal.
 
 ## Updating after folder changes
 
@@ -195,7 +185,7 @@ uv run python -c 'import modal; print(modal.Function.from_name("raindrop-sorter"
 
 Only start one manual reindex. The command waits for the remote result. If the terminal disconnects, check the deployed function's call history or application logs before retrying.
 
-While reindexing, the other functions pause their Raindrop API activity so the rebuild owns the account's shared request budget. Logs report phase timings, request count, and time spent waiting for Raindrop rate-limit resets. The CPU worker allows up to two hours and stops billing when it finishes. The replacement index is built separately and swapped in near the end, so failures before that swap preserve the previous completed index.
+Logs report phase timings, request count, and time spent waiting for Raindrop rate-limit resets. The CPU worker allows up to two hours and stops billing when it finishes. The replacement index is built separately and swapped in near the end, so failures before that swap preserve the previous completed index.
 
 ## Troubleshooting
 
@@ -338,18 +328,16 @@ The journal records the bounded bookmark snapshot, lifecycle events, structured
 evidence, intended or completed action, and any failure. Dry runs record a
 `planned` action and never write to Raindrop.
 
-Before the first native apply run, preview the bounded lifecycle migration for
-existing untagged bookmarks in `Unsorted`:
+Before the first database-backed apply run, preview the lifecycle-tag migration:
 
 ```bash
 RAINDROP_TOKEN="your-token-here" uv run python local_run.py \
-  --backfill-unreviewed 50
+  --migrate-lifecycle-tags
 ```
 
-After reviewing the proposed IDs and preserved user tags, add `--apply`. This only
-adds `sorter-unreviewed`; it does not move bookmarks. Current collection assignments
-continue to seed learned tag rules and visual exemplars, while final routing follows
-only the native decision table.
+After reviewing the counts, add `--apply`. The migration persists any missing
+legacy state before removing obsolete lifecycle tags, preserves user tags, and
+does not move bookmarks.
 
 ## Uninstall
 

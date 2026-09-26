@@ -1,11 +1,35 @@
-from src.state_machine import CONFLICT_TAG, tag_unreviewed, tags_for_decision
+from src.state_machine import (
+    is_remote_lifecycle_tag,
+    tags_for_decision,
+    without_remote_lifecycle_tags,
+)
 
 
-def test_tag_unreviewed_preserves_user_tags_and_replaces_final_state():
-    tags = tag_unreviewed(
-        {"tags": ["favorite", "sorter-reviewed:2026-09-01", "ai:wdtag-1girl"]}
-    )
-    assert tags == ["favorite", "sorter-unreviewed"]
+def test_remote_lifecycle_cleanup_preserves_user_and_visual_evidence_tags():
+    tags = without_remote_lifecycle_tags([
+        "favorite",
+        "sorter-reviewed:2026-09-01",
+        "sorter-edge-case:conflict",
+        "ai:sorted:2026-09-01",
+        "ai:new-rule-miku",
+        "ai:wdtag-1girl",
+    ])
+
+    assert tags == ["favorite", "ai:wdtag-1girl"]
+
+
+def test_remote_lifecycle_cleanup_preserves_near_prefix_user_tags():
+    user_tags = [
+        "sorter-reviewed-books",
+        "sorter-unreviewed-notes",
+        "sorter-pending-resolution-later",
+        "sorter-edge-casebook",
+        "ai:sortedness",
+        "ai:new-rulebook",
+    ]
+
+    assert without_remote_lifecycle_tags(user_tags) == user_tags
+    assert not any(is_remote_lifecycle_tag(tag) for tag in user_tags)
 
 
 def test_confirmed_tags_remove_transient_and_lifecycle_state():
@@ -22,13 +46,12 @@ def test_confirmed_tags_remove_transient_and_lifecycle_state():
         "confirmed",
     )
     assert "favorite" in tags
-    assert any(tag.startswith("ai:sorted:") for tag in tags)
-    assert all(not tag.startswith("sorter-") for tag in tags)
+    assert tags == ["favorite"]
 
 
-def test_provisional_and_conflict_have_distinct_final_states():
+def test_outcomes_no_longer_render_database_state_as_raindrop_tags():
     provisional = tags_for_decision({"tags": ["favorite"]}, "provisional")
     conflict = tags_for_decision({"tags": ["favorite"]}, "conflict")
-    assert any(tag.startswith("sorter-needs-review:") for tag in provisional)
-    assert any(tag.startswith("sorter-reviewed:") for tag in conflict)
-    assert CONFLICT_TAG in conflict
+
+    assert provisional == ["favorite"]
+    assert conflict == ["favorite"]

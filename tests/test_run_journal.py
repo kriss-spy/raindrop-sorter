@@ -161,6 +161,114 @@ def test_latest_mutating_attempt_does_not_resurrect_pre_manual_outcome(tmp_path)
     ) == []
 
 
+def test_terminal_bookmark_ids_use_latest_database_backed_mutating_state(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    completed = journal.start_attempt({"_id": 1}, mode="apply")
+    journal.record_decision(completed, _decision())
+    journal.complete(completed)
+    dry_run = journal.start_attempt({"_id": 2}, mode="dry-run")
+    journal.record_decision(dry_run, _decision())
+    journal.complete(dry_run, phase="dry_run_completed")
+    failed = journal.start_attempt({"_id": 3}, mode="apply")
+    journal.fail(failed, RuntimeError("retry me"))
+    manual = journal.start_attempt(
+        {"_id": 4},
+        mode="manual-review",
+        initial_event=("manual_destination_selected", {"destination": "Art/MIKU"}),
+    )
+    active = journal.start_attempt({"_id": 5}, mode="apply")
+    stale = journal.start_attempt({"_id": 6}, mode="apply")
+    with journal._connect() as connection:
+        connection.execute(
+            "UPDATE attempts SET started_at = ? WHERE attempt_id = ?",
+            ("2000-01-01T00:00:00+00:00", stale.attempt_id),
+        )
+        connection.execute(
+            "UPDATE attempts SET claim_heartbeat_at = ? WHERE attempt_id = ?",
+            ("2000-01-01T00:00:00+00:00", stale.attempt_id),
+        )
+
+    assert journal.terminal_bookmark_ids() == {1}
+    assert journal.automatic_processing_exclusions() == {1, 4, 5}
+
+
+def test_imported_legacy_state_is_idempotent_and_queryable(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    bookmark = {"_id": 44, "title": "Legacy", "tags": ["sorter-reviewed:2026-09-25"]}
+
+    first = journal.import_legacy_state(bookmark, outcome="review", phase="applied")
+    second = journal.import_legacy_state(bookmark, outcome="review", phase="applied")
+
+    assert first is True
+    assert second is False
+    trace = journal.explain(44)
+    assert trace is not None
+    assert trace["attempt"]["mode"] == "legacy-tag-migration"
+    assert trace["attempt"]["outcome"] == "review"
+    assert trace["attempt"]["current_phase"] == "applied"
+    assert journal.terminal_bookmark_ids() == {44}
+
+
+def test_automatic_claim_is_atomic_and_retryable_after_failure(tmp_path):
+    path = tmp_path / "journal.sqlite"
+    first_journal = SQLiteRunJournal(path)
+    second_journal = SQLiteRunJournal(path)
+    bookmark = {"_id": 55, "title": "Claim me"}
+
+    first = first_journal.claim_automatic(bookmark)
+    blocked = second_journal.claim_automatic(bookmark)
+
+    assert first is not None
+    assert blocked is None
+
+    first_journal.fail(first, RuntimeError("retry"))
+    retry = second_journal.claim_automatic(bookmark)
+
+    assert retry is not None
+    assert retry.attempt_id != first.attempt_id
+
+
+def test_automatic_claim_heartbeat_renews_a_stale_attempt(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    claim = journal.claim_automatic({"_id": 56, "title": "Long batch"})
+    assert claim is not None
+    with journal._connect() as connection:
+        connection.execute(
+            "UPDATE attempts SET started_at = ? WHERE attempt_id = ?",
+            ("2000-01-01T00:00:00+00:00", claim.attempt_id),
+        )
+        connection.execute(
+            "UPDATE attempts SET claim_heartbeat_at = ? WHERE attempt_id = ?",
+            ("2000-01-01T00:00:00+00:00", claim.attempt_id),
+        )
+
+    assert journal.automatic_processing_exclusions() == set()
+    assert journal.renew_automatic_claim(claim) is True
+    assert journal.automatic_processing_exclusions() == {56}
+
+
+def test_old_owner_cannot_renew_after_stale_claim_is_replaced(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    old_claim = journal.claim_automatic({"_id": 57, "title": "Fence me"})
+    assert old_claim is not None
+    with journal._connect() as connection:
+        connection.execute(
+            "UPDATE attempts SET started_at = ?, claim_heartbeat_at = ? "
+            "WHERE attempt_id = ?",
+            (
+                "2000-01-01T00:00:00+00:00",
+                "2000-01-01T00:00:00+00:00",
+                old_claim.attempt_id,
+            ),
+        )
+
+    new_claim = journal.claim_automatic({"_id": 57, "title": "Fence me"})
+
+    assert new_claim is not None
+    assert journal.renew_automatic_claim(old_claim) is False
+    assert journal.renew_automatic_claim(new_claim) is True
+
+
 def test_recent_excludes_stale_skip_before_applying_limit(tmp_path):
     journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
     valid = journal.start_attempt({"_id": 123}, mode="apply")

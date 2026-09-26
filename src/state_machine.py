@@ -1,4 +1,4 @@
-"""Tag-based state machine using Raindrop tags as the sole ledger."""
+"""Legacy tag transitions and cleanup for database-backed lifecycle state."""
 
 from datetime import datetime, timezone
 from typing import Any
@@ -149,6 +149,29 @@ def has_sorter_lifecycle(bookmark: dict[str, Any]) -> bool:
     )
 
 
+def without_remote_lifecycle_tags(tags: list[str]) -> list[str]:
+    """Remove legacy workflow state now represented by the local journal."""
+    return [tag for tag in tags if not is_remote_lifecycle_tag(tag)]
+
+
+def is_remote_lifecycle_tag(tag: object) -> bool:
+    """Return whether a Raindrop tag belongs to the retired lifecycle ledger."""
+    value = str(tag)
+    exact_tags = (UNREVIEWED, PENDING_RESOLUTION, VISION_ATTEMPTED)
+    qualified_prefixes = (
+        PENDING_VISION_PREFIX,
+        REVIEWED_PREFIX,
+        NEEDS_REVIEW_PREFIX,
+        EDGE_CASE_PREFIX,
+        SORTED_PREFIX,
+    )
+    return (
+        value in exact_tags
+        or any(value.startswith(f"{prefix}:") for prefix in qualified_prefixes)
+        or value.startswith(f"{NEW_RULE_PREFIX}-")
+    )
+
+
 def tag_unreviewed(bookmark: dict[str, Any]) -> list[str]:
     """Mark a newly discovered Unsorted bookmark without deciding it."""
     tags = _without_final_lifecycle(bookmark.get("tags", []))
@@ -156,22 +179,11 @@ def tag_unreviewed(bookmark: dict[str, Any]) -> list[str]:
 
 
 def tags_for_decision(bookmark: dict[str, Any], outcome: str) -> list[str]:
-    """Render the revised decision policy into mutually exclusive Raindrop tags."""
-    tags = cleanup_transient_tags(bookmark.get("tags", []))
-    tags = [
-        tag
-        for tag in tags
-        if not str(tag).startswith((*LIFECYCLE_PREFIXES, EDGE_CASE_PREFIX))
-        and tag != VISION_ATTEMPTED
-    ]
-    if outcome == "confirmed":
-        return add_tag(tags, _today_tag(SORTED_PREFIX))
-    if outcome == "provisional":
-        return add_tag(tags, _today_tag(NEEDS_REVIEW_PREFIX))
-    tags = add_tag(tags, _today_tag(REVIEWED_PREFIX))
-    if outcome == "conflict":
-        tags = add_tag(tags, CONFLICT_TAG)
-    return tags
+    """Return user-facing tags after removing database-owned lifecycle state."""
+    del outcome
+    return without_remote_lifecycle_tags(
+        cleanup_transient_tags(bookmark.get("tags", []))
+    )
 
 
 def _without_final_lifecycle(tags: list[str]) -> list[str]:
