@@ -50,13 +50,11 @@ def _automatic_claim_heartbeats(
             for claim in active_claims:
                 try:
                     if not journal.renew_automatic_claim(claim):
-                        failures.append(
-                            RuntimeError(
-                                f"automatic claim lost for bookmark {claim.bookmark_id}"
-                            )
-                        )
-                        stop.set()
-                        return
+                        # A newer manual/automatic attempt may legitimately take
+                        # ownership after this worker's write. The synchronous
+                        # fence immediately before mutation is authoritative;
+                        # a missed heartbeat alone must not abort other claims.
+                        continue
                 except BaseException as error:
                     failures.append(error)
                     stop.set()

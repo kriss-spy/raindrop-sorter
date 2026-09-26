@@ -1,8 +1,10 @@
 import json
 import threading
+import time
 
 import numpy as np
 import pytest
+import src.local_runner as local_runner
 
 from src.centroids import save_centroids
 from src.local_runner import (
@@ -12,7 +14,7 @@ from src.local_runner import (
     run_local_bookmark,
     validate_local_index,
 )
-from src.run_journal import SQLiteRunJournal
+from src.run_journal import AttemptHandle, SQLiteRunJournal
 from src.tag_rules import save_series_rules, save_tag_rules
 from src.visual_exemplars import (
     DEFAULT_CLIP_MODEL,
@@ -581,6 +583,21 @@ def test_find_local_work_uses_journal_state_and_scans_past_terminal_items(tmp_pa
 
     assert [item["_id"] for item in items] == [2, 3]
     assert client.searches == [(0, None), (1, None)]
+
+
+def test_missed_heartbeat_does_not_abort_other_claims(monkeypatch):
+    class ReplacedClaimJournal:
+        def renew_automatic_claim(self, _claim):
+            return False
+
+    monkeypatch.setattr(local_runner, "CLAIM_HEARTBEAT_SECONDS", 0.001)
+    claims = {1: AttemptHandle("old-owner", 1)}
+
+    with local_runner._automatic_claim_heartbeats(
+        ReplacedClaimJournal(), claims
+    ) as (ensure_healthy, _finish):
+        time.sleep(0.01)
+        ensure_healthy()
 
 
 def test_local_runner_reports_an_incomplete_index_before_fetching(tmp_path):
