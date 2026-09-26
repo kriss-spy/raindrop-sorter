@@ -104,6 +104,10 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "All outcomes ·" in page
     assert "Search bookmarks" in page
     assert "bookmark-preview" in page
+    assert "MAX_CONCURRENT_PREVIEW_FETCHES = 2" in page
+    assert "fetchPreviewBlob(bookmarkId)" in page
+    assert "image.dataset.bookmarkId" in page
+    assert "image.src = image.dataset.src" not in page
     assert "Latest status" in page
     assert "Search Art collections" in page
     assert "Move & confirm" in page
