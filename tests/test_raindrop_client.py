@@ -117,6 +117,16 @@ def test_collection_page_uses_total_count_for_exact_last_full_page():
     assert has_more is False
 
 
+def test_collection_count_uses_raindrop_page_metadata_for_system_collections():
+    session = FakeSession([FakeResponse(200, {"items": [{"_id": 1}], "count": 1598})])
+    client = RaindropClient(token="test-token")
+    client.session = session
+
+    assert client.get_collection_count(-1) == 1598
+    assert session.requests[0][1].endswith("/raindrops/-1")
+    assert session.requests[0][2]["params"] == {"page": 0, "perpage": 1}
+
+
 def test_get_tags_can_be_scoped_to_unsorted():
     session = FakeSession(
         [FakeResponse(200, {"items": [{"_id": "sorter-reviewed:2026-09-16", "count": 41}]})]

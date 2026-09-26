@@ -125,6 +125,15 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "event.shiftKey" in page
     assert "event.ctrlKey || event.metaKey" in page
     assert ".attempt-cover,.table-cover{pointer-events:none}" in page
+    assert 'aria-label="Live library collections"' in page
+    assert 'id="collection-tree"' in page
+    assert 'id="library-load-more"' in page
+    assert "/api/library/tree" in page
+    assert "/api/library/bookmarks?" in page
+    assert "sorter-library-selected-collection" in page
+    assert "sorter-library-expanded-collections" in page
+    assert "function renderCollectionTree()" in page
+    assert "async function selectLiveCollection" in page
 
     overview = _json(f"{base_url}/api/overview")
     assert overview["total_attempts"] == 2
@@ -238,6 +247,119 @@ def test_dashboard_rejects_non_loopback_preview_binding(tmp_path):
             port=0,
             preview_loader=lambda bookmark_id: None,
         )
+
+
+def test_dashboard_exposes_live_collection_tree_and_bookmark_pages(tmp_path):
+    class FakeClient:
+        def get_collections(self):
+            return [
+                {"_id": 10, "title": "Art", "count": 2},
+                {"_id": 11, "title": "Miku", "count": 1, "parent": {"$id": 10}},
+            ]
+
+        def get_collection_groups(self):
+            return [{"title": "Creative", "sort": 0, "collections": [10]}]
+
+        def get_collection(self, collection_id):
+            return {"_id": collection_id, "title": {0: "All", -1: "Unsorted", -99: "Trash"}[collection_id], "count": 3}
+
+        def get_collection_count(self, collection_id):
+            return 3
+
+        def get_raindrops(self, collection_id, page=0, perpage=50, search=None):
+            assert (collection_id, page, perpage, search) == (11, 1, 25, None)
+            return [{"_id": 501, "title": "Live item", "collection": {"$id": 11}}], True
+
+        def get_raindrop(self, bookmark_id):
+            return {"_id": bookmark_id, "title": str(bookmark_id), "tags": []}
+
+        def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
+            return {"result": True}
+
+    path = tmp_path / "journal.sqlite"
+    SQLiteRunJournal(path)
+    server = create_server(
+        path,
+        host="127.0.0.1",
+        port=0,
+        raindrop_client=FakeClient(),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        tree = _json(f"{base_url}/api/library/tree")
+        assert tree["groups"][1]["collections"][0]["children"][0]["path"] == "Art/Miku"
+
+        page = _json(
+            f"{base_url}/api/library/bookmarks?collection_id=11&page=1&per_page=25"
+        )
+        assert page["items"][0]["title"] == "Live item"
+        assert page["next_page"] == 2
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_live_library_endpoint_rejects_invalid_page_requests(tmp_path):
+    class FakeClient:
+        def get_collections(self):
+            return []
+
+        def get_collection_groups(self):
+            return []
+
+        def get_collection(self, collection_id):
+            return {"_id": collection_id, "count": 0}
+
+        def get_raindrops(self, collection_id, page=0, perpage=50, search=None):
+            return [], False
+
+    path = tmp_path / "journal.sqlite"
+    SQLiteRunJournal(path)
+    server = create_server(path, host="127.0.0.1", port=0, raindrop_client=FakeClient())
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    base_url = f"http://127.0.0.1:{server.server_port}"
+    try:
+        with pytest.raises(HTTPError) as missing_collection:
+            urlopen(f"{base_url}/api/library/bookmarks")
+        assert missing_collection.value.code == 400
+
+        with pytest.raises(HTTPError) as bad_page_size:
+            urlopen(f"{base_url}/api/library/bookmarks?collection_id=-1&per_page=101")
+        assert bad_page_size.value.code == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_live_library_endpoint_translates_upstream_tree_failure(tmp_path):
+    class FailingClient:
+        def get_collections(self):
+            raise TimeoutError("token and upstream details stay behind the boundary")
+
+        def get_collection_groups(self):
+            return []
+
+    path = tmp_path / "journal.sqlite"
+    SQLiteRunJournal(path)
+    server = create_server(path, host="127.0.0.1", port=0, raindrop_client=FailingClient())
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(HTTPError) as upstream:
+            urlopen(f"http://127.0.0.1:{server.server_port}/api/library/tree")
+        assert upstream.value.code == 502
+        assert json.load(upstream.value) == {
+            "error": "could not load live collection tree: TimeoutError"
+        }
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
 
 
 def test_dashboard_exposes_art_picker_and_resolves_attempt(tmp_path):

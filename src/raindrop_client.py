@@ -161,6 +161,14 @@ class RaindropClient:
             has_more = len(items) == perpage
         return items, has_more
 
+    def get_collection_count(self, collection_id: int) -> int:
+        """Return Raindrop's authoritative item count for any collection ID."""
+        data = self._get(
+            f"raindrops/{collection_id}",
+            params={"page": 0, "perpage": 1},
+        )
+        return int(data.get("count") or 0)
+
     def get_all_raindrops(self, collection_id: int) -> list[dict[str, Any]]:
         """Paginate through all raindrops in a collection."""
         all_items: list[dict[str, Any]] = []

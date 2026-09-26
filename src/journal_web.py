@@ -26,6 +26,7 @@ from src.journal_review import (
 )
 from src.local_runner import LocalBatchProcessor, validate_local_index
 from src.local_sorter_control import LocalSorterController
+from src.live_library import LiveLibraryBrowser
 from src.raindrop_client import RaindropClient
 from src.run_journal import SQLiteRunJournal
 
@@ -36,6 +37,7 @@ class JournalHTTPServer(ThreadingHTTPServer):
     reviewer: JournalReviewService | None
     sorter_controller: Any | None
     sorter_unavailable_reason: str
+    live_library: LiveLibraryBrowser | None
 
     def server_close(self) -> None:
         if self.sorter_controller is not None:
@@ -81,6 +83,9 @@ def create_server(
         else None
     )
     server.sorter_controller = sorter_controller
+    server.live_library = (
+        LiveLibraryBrowser(raindrop_client) if raindrop_client is not None else None
+    )
     server.sorter_unavailable_reason = sorter_unavailable_reason or (
         "RAINDROP_TOKEN is required for sorter controls"
     )
@@ -105,6 +110,10 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                 self._attempts(parse_qs(request.query))
             elif request.path == "/api/review/collections":
                 self._review_collections()
+            elif request.path == "/api/library/tree":
+                self._library_tree()
+            elif request.path == "/api/library/bookmarks":
+                self._library_bookmarks(parse_qs(request.query))
             elif request.path == "/api/sorter/status":
                 self._sorter_status()
             elif request.path.startswith("/api/bookmarks/") and request.path.endswith("/preview"):
@@ -118,8 +127,51 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                     self._send_json(HTTPStatus.OK, trace)
             else:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
-        except (TypeError, ValueError) as error:
+        except (KeyError, TypeError, ValueError) as error:
             self._send_json(HTTPStatus.BAD_REQUEST, {"error": str(error)})
+
+    def _library_tree(self) -> None:
+        if self.server.live_library is None:
+            self._send_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "live library browsing requires RAINDROP_TOKEN"},
+            )
+            return
+        try:
+            tree = self.server.live_library.collection_tree()
+        except Exception as error:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {"error": f"could not load live collection tree: {type(error).__name__}"},
+            )
+            return
+        self._send_json(HTTPStatus.OK, tree)
+
+    def _library_bookmarks(self, query: dict[str, list[str]]) -> None:
+        if self.server.live_library is None:
+            self._send_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "live library browsing requires RAINDROP_TOKEN"},
+            )
+            return
+        collection_id = int(query["collection_id"][0])
+        page = int(query.get("page", ["0"])[0])
+        per_page = int(query.get("per_page", ["50"])[0])
+        try:
+            result = self.server.live_library.browse_collection(
+                collection_id,
+                page=page,
+                per_page=per_page,
+            )
+        except (TypeError, ValueError):
+            raise
+        except Exception as error:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {"error": f"could not browse live collection: {type(error).__name__}"},
+            )
+            return
+        self._send_json(HTTPStatus.OK, result)
 
     def _review_collections(self) -> None:
         if self.server.reviewer is None:
