@@ -82,6 +82,9 @@ let selectedAttemptId = null;
 let detailSelectionRevision = 0;
 const attemptTraceCache = new Map();
 const previewUrlCache = new Map();
+const MAX_CONCURRENT_PREVIEW_FETCHES = 2;
+const previewFetchQueue = [];
+let activePreviewFetches = 0;
 let previewCacheGeneration = 0;
 let artCollectionsPromise = null;
 let resultLayout = localStorage.getItem('sorter-result-layout') === 'table' ? 'table' : 'cards';
@@ -123,7 +126,7 @@ const previewObserver = 'IntersectionObserver' in window ? new IntersectionObser
   entries.filter(entry => entry.isIntersecting).forEach(entry => {
     const image = entry.target;
     previewObserver.unobserve(image);
-    image.src = image.dataset.src;
+    loadPreviewImage(image);
   });
 }, {rootMargin:'240px'}) : null;
 const shortDateTime = new Intl.DateTimeFormat('en-US', {
@@ -159,11 +162,16 @@ function previewImage(bookmarkId, title, className) {
   const image = element('img', className);
   image.alt = title ? `Preview of ${title}` : `Preview of Raindrop ${bookmarkId}`;
   image.loading = 'lazy';
-  image.dataset.src = `/api/bookmarks/${encodeURIComponent(bookmarkId)}/preview`;
+  image.dataset.bookmarkId = String(bookmarkId);
   image.onerror = () => image.parentElement?.classList.add('missing');
   if (previewObserver) previewObserver.observe(image);
-  else image.src = image.dataset.src;
+  else loadPreviewImage(image);
   return image;
+}
+function loadPreviewImage(image) {
+  previewUrl(image.dataset.bookmarkId)
+    .then(url => { if (image.isConnected) image.src = url; })
+    .catch(() => image.parentElement?.classList.add('missing'));
 }
 async function fetchJson(url) {
   const response = await fetch(url);
@@ -203,14 +211,36 @@ async function attemptTrace(attemptId) {
     throw error;
   }
 }
+function drainPreviewFetchQueue() {
+  while (activePreviewFetches < MAX_CONCURRENT_PREVIEW_FETCHES && previewFetchQueue.length) {
+    const item = previewFetchQueue.shift();
+    activePreviewFetches += 1;
+    fetch(item.url)
+      .then(response => {
+        if (!response.ok) throw new Error(response.statusText);
+        return response.blob();
+      })
+      .then(item.resolve, item.reject)
+      .finally(() => {
+        activePreviewFetches -= 1;
+        drainPreviewFetchQueue();
+      });
+  }
+}
+function fetchPreviewBlob(bookmarkId) {
+  return new Promise((resolve, reject) => {
+    previewFetchQueue.push({
+      url:`/api/bookmarks/${encodeURIComponent(bookmarkId)}/preview`,
+      resolve,
+      reject,
+    });
+    drainPreviewFetchQueue();
+  });
+}
 async function previewUrl(bookmarkId) {
   if (previewUrlCache.has(bookmarkId)) return previewUrlCache.get(bookmarkId);
   const generation = previewCacheGeneration;
-  const pending = fetch(`/api/bookmarks/${bookmarkId}/preview`)
-    .then(response => {
-      if (!response.ok) throw new Error(response.statusText);
-      return response.blob();
-    })
+  const pending = fetchPreviewBlob(bookmarkId)
     .then(blob => URL.createObjectURL(blob));
   previewUrlCache.set(bookmarkId, pending);
   try {
