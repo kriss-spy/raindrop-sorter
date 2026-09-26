@@ -1,5 +1,6 @@
 import json
 import threading
+from types import SimpleNamespace
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -266,8 +267,14 @@ def test_dashboard_exposes_live_collection_tree_and_bookmark_pages(tmp_path):
         def get_collection_count(self, collection_id):
             return 3
 
-        def get_raindrops(self, collection_id, page=0, perpage=50, search=None):
-            assert (collection_id, page, perpage, search) == (11, 1, 25, None)
+        def get_raindrops(self, collection_id, page=0, perpage=50, search=None, sort=None):
+            assert (collection_id, page, perpage, search, sort) == (
+                11,
+                1,
+                25,
+                '#tag "exact phrase" / 日本語',
+                "title",
+            )
             return [{"_id": 501, "title": "Live item", "collection": {"$id": 11}}], True
 
         def get_raindrop(self, bookmark_id):
@@ -293,6 +300,8 @@ def test_dashboard_exposes_live_collection_tree_and_bookmark_pages(tmp_path):
 
         page = _json(
             f"{base_url}/api/library/bookmarks?collection_id=11&page=1&per_page=25"
+            "&q=%23tag%20%22exact%20phrase%22%20%2F%20%E6%97%A5%E6%9C%AC%E8%AA%9E"
+            "&sort=title"
         )
         assert page["items"][0]["title"] == "Live item"
         assert page["next_page"] == 2
@@ -355,6 +364,39 @@ def test_live_library_endpoint_translates_upstream_tree_failure(tmp_path):
         assert upstream.value.code == 502
         assert json.load(upstream.value) == {
             "error": "could not load live collection tree: TimeoutError"
+        }
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_live_library_endpoint_gives_rate_limit_guidance(tmp_path):
+    class RateLimitedClient:
+        def get_raindrops(self, collection_id, page=0, perpage=50, search=None):
+            error = RuntimeError("upstream details stay private")
+            error.response = SimpleNamespace(status_code=429)
+            raise error
+
+    path = tmp_path / "journal.sqlite"
+    SQLiteRunJournal(path)
+    server = create_server(
+        path,
+        host="127.0.0.1",
+        port=0,
+        raindrop_client=RateLimitedClient(),
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(HTTPError) as upstream:
+            urlopen(
+                f"http://127.0.0.1:{server.server_port}/api/library/bookmarks"
+                "?collection_id=0"
+            )
+        assert upstream.value.code == 429
+        assert json.load(upstream.value) == {
+            "error": "Raindrop is rate-limiting requests. Wait about a minute, then retry."
         }
     finally:
         server.shutdown()

@@ -138,10 +138,7 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         try:
             tree = live_library.collection_tree()
         except Exception as error:
-            self._send_json(
-                HTTPStatus.BAD_GATEWAY,
-                {"error": f"could not load live collection tree: {type(error).__name__}"},
-            )
+            self._send_library_upstream_error("load live collection tree", error)
             return
         self._send_json(HTTPStatus.OK, tree)
 
@@ -157,16 +154,33 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                 collection_id,
                 page=page,
                 per_page=per_page,
+                search=query.get("q", [None])[0],
+                sort=query.get("sort", [None])[0],
             )
         except (TypeError, ValueError):
             raise
         except Exception as error:
-            self._send_json(
-                HTTPStatus.BAD_GATEWAY,
-                {"error": f"could not browse live collection: {type(error).__name__}"},
-            )
+            self._send_library_upstream_error("browse live collection", error)
             return
         self._send_json(HTTPStatus.OK, result)
+
+    def _send_library_upstream_error(self, action: str, error: Exception) -> None:
+        response = getattr(error, "response", None)
+        if getattr(response, "status_code", None) == HTTPStatus.TOO_MANY_REQUESTS:
+            self._send_json(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                {
+                    "error": (
+                        "Raindrop is rate-limiting requests. "
+                        "Wait about a minute, then retry."
+                    )
+                },
+            )
+            return
+        self._send_json(
+            HTTPStatus.BAD_GATEWAY,
+            {"error": f"could not {action}: {type(error).__name__}"},
+        )
 
     def _live_library_or_unavailable(self) -> LiveLibraryBrowser | None:
         live_library = self.server.live_library

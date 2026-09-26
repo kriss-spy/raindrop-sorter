@@ -5,6 +5,7 @@ from src.live_library import LiveLibraryBrowser
 
 class FakeLibrarySource:
     def __init__(self):
+        self.last_search = None
         self.collections = [
             {"_id": 10, "title": "Art", "count": 12, "sort": 0, "view": "grid"},
             {
@@ -39,8 +40,9 @@ class FakeLibrarySource:
     def get_collection_count(self, collection_id):
         return {0: 24, -1: 3, -99: 2}[collection_id]
 
-    def get_raindrops(self, collection_id, page=0, perpage=50, search=None):
-        assert (collection_id, page, perpage, search) == (11, 2, 2, None)
+    def get_raindrops(self, collection_id, page=0, perpage=50, search=None, sort=None):
+        self.last_search = search
+        assert (collection_id, page, perpage, sort) == (11, 2, 2, "-title")
         return [
             {"_id": 101, "title": "First", "collection": {"$id": 11}},
             {"_id": 102, "title": "Second", "collection": {"$id": 11}},
@@ -78,16 +80,21 @@ def test_collection_tree_preserves_groups_ancestry_counts_and_system_collections
 
 
 def test_browse_collection_returns_one_incremental_live_page():
-    page = LiveLibraryBrowser(FakeLibrarySource()).browse_collection(
+    source = FakeLibrarySource()
+    page = LiveLibraryBrowser(source).browse_collection(
         11,
         page=2,
         per_page=2,
+        search='#tag "exact phrase" / 日本語',
+        sort="-title",
     )
 
     assert page == {
         "collection_id": 11,
         "page": 2,
         "per_page": 2,
+        "search": '#tag "exact phrase" / 日本語',
+        "sort": "-title",
         "has_more": True,
         "next_page": 3,
         "items": [
@@ -95,6 +102,7 @@ def test_browse_collection_returns_one_incremental_live_page():
             {"_id": 102, "title": "Second", "collection": {"$id": 11}},
         ],
     }
+    assert source.last_search == '#tag "exact phrase" / 日本語'
 
 
 def test_collection_tree_keeps_duplicate_names_and_surfaces_missing_parents():
