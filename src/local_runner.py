@@ -752,15 +752,22 @@ def main(argv: list[str] | None = None) -> None:
         help="Process a bounded queue batch (vision, resolution, then new)",
     )
     target.add_argument(
-        "--migrate-lifecycle-tags",
+        "--migrate-sorter-tags", "--migrate-lifecycle-tags",
+        dest="migrate_sorter_tags",
         action="store_true",
-        help="Persist legacy Raindrop lifecycle tags in SQLite, then remove them",
+        help="Persist legacy lifecycle state, then remove all sorter-owned Raindrop tags",
     )
     target.add_argument(
         "--rerun-outcomes",
         nargs="+",
         choices=("provisional", "review", "conflict"),
         help="Re-evaluate bookmarks whose latest journal outcome needs another pass",
+    )
+    parser.add_argument(
+        "--migration-batch-size",
+        type=positive_integer,
+        default=100,
+        help="Maximum bookmarks cleaned by one sorter-tag migration run (default: 100)",
     )
     parser.add_argument(
         "--rerun-limit",
@@ -790,14 +797,15 @@ def main(argv: list[str] | None = None) -> None:
     journal = SQLiteRunJournal(
         args.journal_path or os.path.join(args.db_path, "run-journal.sqlite")
     )
-    if args.migrate_lifecycle_tags:
-        from src.lifecycle_migration import migrate_remote_lifecycle
+    if args.migrate_sorter_tags:
+        from src.lifecycle_migration import migrate_remote_sorter_tags
 
         folder_map = _load_folder_map(args.db_path)
-        result = migrate_remote_lifecycle(
+        result = migrate_remote_sorter_tags(
             client,
             journal,
             apply=args.apply,
+            batch_size=args.migration_batch_size,
             destination_paths={
                 collection_id: path for path, collection_id in folder_map.items()
             },

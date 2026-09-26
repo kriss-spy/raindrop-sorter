@@ -332,12 +332,14 @@ Before the first database-backed apply run, preview the lifecycle-tag migration:
 
 ```bash
 RAINDROP_TOKEN="your-token-here" uv run python local_run.py \
-  --migrate-lifecycle-tags
+  --migrate-sorter-tags
 ```
 
 After reviewing the counts, add `--apply`. The migration persists any missing
-legacy state before removing obsolete lifecycle tags, preserves user tags, and
-does not move bookmarks.
+legacy state before removing obsolete sorter state tags plus `ai:wdtag-*` and
+`ai:sauce-*` extraction residue. It preserves user tags, does not fabricate
+journal state for extraction-only bookmarks, and does not move bookmarks. Cleanup
+runs in resumable batches of at most 100 bookmarks; repeat it until `remaining` is zero.
 
 ## Uninstall
 
