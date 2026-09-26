@@ -262,9 +262,18 @@ uv run python local_dashboard.py \
 `--auto-start` fails before sorting if the token or local index is unavailable. Without
 that flag, launching the dashboard never starts the sorter automatically.
 
-Image previews and review actions use the configured `RAINDROP_TOKEN`; the token and
-cover URL are not stored in the journal or sent to the browser. Without a token, the
-dashboard remains usable for journal inspection but cannot preview or resolve items.
+The dashboard keeps current cover URLs in `chroma_db/cover-cache.sqlite`, separate
+from the Run Journal and its immutable attempt snapshots. It sends cached HTTPS cover URLs directly to the browser with a
+no-referrer policy, avoiding one API lookup and a full server-side image download for
+every visible card. Populate the cache for existing journal entries once with:
+
+```bash
+uv run python local_run.py --migrate-covers --db-path chroma_db
+```
+
+New sorter attempts update this cache automatically. Review actions still require the
+configured `RAINDROP_TOKEN`; without a token, uncached legacy previews and review
+actions are unavailable, while cached covers and journal inspection continue to work.
 Leave the command running while using the page, and press `Ctrl+C` to stop it.
 
 If port 8765 is already in use, choose another one with `--port 8766`. Use

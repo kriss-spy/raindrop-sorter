@@ -789,6 +789,14 @@ class SQLiteRunJournal:
             ).fetchall()
         return {str(row["current_phase"]): int(row["count"]) for row in rows}
 
+    def bookmark_ids(self) -> set[int]:
+        """Return every Raindrop represented by the Run Journal."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT DISTINCT bookmark_id FROM attempts"
+            ).fetchall()
+        return {int(row["bookmark_id"]) for row in rows}
+
     @staticmethod
     def _trace(
         connection: sqlite3.Connection, row: sqlite3.Row | None

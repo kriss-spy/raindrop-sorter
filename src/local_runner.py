@@ -11,6 +11,7 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from typing import Any
 
+from src.cover_cache import SQLiteCoverCache
 from src.destinations import is_art_destination
 from src.routing import RouteEngine, TextIdentifier, VisualVerifier
 from src.run_journal import AttemptHandle, RunJournal, SQLiteRunJournal
@@ -237,6 +238,7 @@ class LocalBatchProcessor:
         mutation_lock: Any | None = None,
         visual_batch_size: int = DEFAULT_VISUAL_BATCH_SIZE,
         download_workers: int = DEFAULT_DOWNLOAD_WORKERS,
+        cover_cache: SQLiteCoverCache | None = None,
     ):
         if visual_batch_size < 1:
             raise ValueError("visual_batch_size must be at least 1")
@@ -249,6 +251,7 @@ class LocalBatchProcessor:
         self.mutation_lock = mutation_lock
         self.visual_batch_size = visual_batch_size
         self.download_workers = download_workers
+        self.cover_cache = cover_cache
         self.artifacts = _load_routing_artifacts(db_path)
         self.text_identifier = TextIdentifier(
             self.artifacts.tag_rules,
@@ -321,6 +324,7 @@ class LocalBatchProcessor:
             expected_collection_ids=expected_collection_ids,
             bookmark=bookmark_snapshot,
             artifacts=self.artifacts,
+            cover_cache=self.cover_cache,
         )
 
     def _batch_visual_analysis(
@@ -418,6 +422,8 @@ class LocalBatchProcessor:
         on_progress: Callable[[bool], None] | None = None,
     ) -> dict[str, Any]:
         work = find_local_work(self.client, journal=self.journal, limit=limit)
+        if self.cover_cache is not None:
+            self.cover_cache.record_many(work)
         claims: dict[int, AttemptHandle] = {}
         results = []
         errors = []
@@ -564,6 +570,7 @@ def run_local_bookmark(
     expected_collection_ids: set[int | None] | None = None,
     bookmark: dict[str, Any] | None = None,
     artifacts: LocalRoutingArtifacts | None = None,
+    cover_cache: SQLiteCoverCache | None = None,
 ) -> dict[str, Any]:
     """Run the native two-step route; writes require ``apply=True``."""
     if apply and journal is None:
@@ -574,6 +581,8 @@ def run_local_bookmark(
         if bookmark is not None
         else client.get_raindrop(bookmark_id)
     )
+    if cover_cache is not None:
+        cover_cache.record(bookmark)
     if attempt is not None and journal is None:
         raise ValueError("journal is required for a claimed attempt")
     if attempt is not None and attempt.bookmark_id != int(bookmark["_id"]):
@@ -758,6 +767,11 @@ def main(argv: list[str] | None = None) -> None:
         help="Persist legacy lifecycle state, then remove all sorter-owned Raindrop tags",
     )
     target.add_argument(
+        "--migrate-covers",
+        action="store_true",
+        help="Cache current Raindrop cover URLs for fast dashboard previews",
+    )
+    target.add_argument(
         "--rerun-outcomes",
         nargs="+",
         choices=("provisional", "review", "conflict"),
@@ -797,6 +811,7 @@ def main(argv: list[str] | None = None) -> None:
     journal = SQLiteRunJournal(
         args.journal_path or os.path.join(args.db_path, "run-journal.sqlite")
     )
+    cover_cache = SQLiteCoverCache(os.path.join(args.db_path, "cover-cache.sqlite"))
     if args.migrate_sorter_tags:
         from src.lifecycle_migration import migrate_remote_sorter_tags
 
@@ -818,11 +833,26 @@ def main(argv: list[str] | None = None) -> None:
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return
+    if args.migrate_covers:
+        from src.cover_cache_migration import migrate_cover_cache
+
+        result = migrate_cover_cache(
+            client,
+            journal,
+            cover_cache,
+            progress=lambda item: print(
+                json.dumps({"cover_migration_progress": item}),
+                flush=True,
+            ),
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
     processor = LocalBatchProcessor(
         client,
         db_path=args.db_path,
         model_dir=args.model_dir,
         journal=journal,
+        cover_cache=cover_cache,
         apply=args.apply,
     )
     if args.rerun_outcomes is not None:
