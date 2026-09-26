@@ -82,6 +82,9 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert 'placeholder="Search Art destinations…"' in page
     assert 'role="listbox"' in page
     assert "renderBatchDestinationResults" in page
+    assert "function syncBatchControls()" in page
+    assert "renderBatchDestinationResults();\n  syncBatchControls();" in page
+    assert "closeBatchDestinationResults();\n  syncBatchControls();" in page
     assert "batchDestinationCollections" in page
     assert "batchDestinationWantsOpen" in page
     assert "option.tabIndex = -1" in page

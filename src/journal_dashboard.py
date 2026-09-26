@@ -429,8 +429,7 @@ function syncSelectionUi() {
   const count = selectedAttempts.size;
   select('#batch-bar').hidden = count === 0;
   if (count) void loadBatchDestinations();
-  select('#selection-count').textContent = `${count} selected`;
-  select('#batch-assign').disabled = !count || !select('#batch-destination-search').dataset.collectionId;
+  syncBatchControls();
   document.querySelectorAll('.attempt-select').forEach(checkbox => {
     const item = checkbox.closest('[data-attempt-id]');
     if (item) checkbox.checked = selectedAttempts.has(item.dataset.attemptId);
@@ -439,6 +438,11 @@ function syncSelectionUi() {
     const selected = selectedAttempts.has(item.dataset.attemptId);
     item.classList.toggle('selected', selected);
   });
+}
+function syncBatchControls() {
+  const count = selectedAttempts.size;
+  select('#selection-count').textContent = `${count} selected`;
+  select('#batch-assign').disabled = !count || !select('#batch-destination-search').dataset.collectionId;
 }
 async function renderAttempts() {
   const params = new URLSearchParams({limit:'500'});
@@ -676,7 +680,7 @@ function chooseBatchDestination(collection) {
   input.dataset.collectionId = String(collection.collection_id);
   input.value = collection.path;
   closeBatchDestinationResults();
-  syncSelectionUi();
+  syncBatchControls();
 }
 function renderBatchDestinationResults() {
   const input = select('#batch-destination-search');
@@ -820,7 +824,7 @@ select('#batch-destination-search').oninput = () => {
   delete select('#batch-destination-search').dataset.collectionId;
   batchDestinationFocusIndex = 0;
   renderBatchDestinationResults();
-  syncSelectionUi();
+  syncBatchControls();
 };
 select('#batch-destination-search').onkeydown = event => {
   const results = select('#batch-destination-results');
