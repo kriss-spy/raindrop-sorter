@@ -267,40 +267,11 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         ):
             raise ValueError("attempt_ids must contain unique non-empty strings")
         collection_id = int(payload["collection_id"])
-        results = []
-        errors = []
-        for attempt_id in attempt_ids:
-            trace = self.server.journal.explain_attempt(attempt_id)
-            bookmark_id = trace["attempt"]["bookmark_id"] if trace is not None else None
-            try:
-                results.append(
-                    self.server.reviewer.resolve(
-                        attempt_id,
-                        collection_id=collection_id,
-                        selection_source="custom",
-                    )
-                )
-            except Exception as error:
-                latest = (
-                    self.server.journal.explain(int(bookmark_id))
-                    if bookmark_id is not None
-                    else None
-                )
-                errors.append({
-                    "attempt_id": attempt_id,
-                    "retry_attempt_id": (
-                        latest["attempt"]["attempt_id"] if latest is not None else attempt_id
-                    ),
-                    "error": str(error),
-                    "type": type(error).__name__,
-                })
-        self._send_json(HTTPStatus.OK, {
-            "status": "ok" if not errors else "partial",
-            "resolved": len(results),
-            "failed": len(errors),
-            "results": results,
-            "errors": errors,
-        })
+        result = self.server.reviewer.resolve_batch(
+            attempt_ids,
+            collection_id=collection_id,
+        )
+        self._send_json(HTTPStatus.OK, result)
 
     def _sorter_status(self) -> None:
         self._send_json(HTTPStatus.OK, self._sorter_status_payload())
