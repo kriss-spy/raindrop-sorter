@@ -91,6 +91,80 @@ def test_text_identifier_bypasses_visual_for_review_confirmed_signal():
     assert evidence.source == "review_feedback"
 
 
+def test_distinct_voicebank_characters_collapse_to_vocaloid_with_learning():
+    identifier = TextIdentifier(
+        {},
+        {},
+        review_feedback={
+            "tag_rules": {},
+            "alias_rules": {
+                "重音テト": {
+                    "destination": "Art/VOICEBANKS/TETO",
+                    "support": 6,
+                    "observations": 6,
+                    "purity": 1.0,
+                }
+            },
+        },
+    )
+
+    evidence = identifier.identify({
+        "_id": 1744707640,
+        "type": "image",
+        "title": "初音ミク メズマライザーVer. 重音テト メズマライザーVer.",
+        "tags": [],
+    })
+
+    assert evidence.kind == "user_confirmed_rule"
+    assert evidence.destination == "Art/VOCALOID"
+    assert evidence.source == "multiple_voicebank_characters"
+    assert evidence.candidates == ("Art/MIKU", "Art/VOICEBANKS/TETO")
+
+
+def test_repeated_miku_aliases_stay_in_miku():
+    evidence = TextIdentifier({}, {}).identify({
+        "_id": 999,
+        "type": "image",
+        "title": "Hatsune Miku 初音ミク 初音ミク",
+        "tags": [],
+    })
+
+    assert evidence.destination == "Art/MIKU"
+    assert evidence.candidates == ("Art/MIKU",)
+
+
+def test_distinct_generic_voicebank_characters_collapse_to_vocaloid():
+    evidence = TextIdentifier({}, {}).identify({
+        "_id": 999,
+        "type": "image",
+        "title": "Zundamon and Tohoku Kiritan",
+        "tags": [],
+    })
+
+    assert evidence.destination == "Art/VOCALOID"
+    assert evidence.source == "multiple_voicebank_characters"
+    assert evidence.candidates == ("Art/VOICEBANKS",)
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Yuzuki Yukari 結月ゆかり",
+        "Otomachi Una 音街ウナ",
+        "Kasane Teto 重音テト",
+    ],
+)
+def test_bilingual_aliases_for_one_voicebank_character_are_not_an_ensemble(title):
+    evidence = TextIdentifier({}, {}).identify({
+        "_id": 999,
+        "type": "image",
+        "title": title,
+        "tags": [],
+    })
+
+    assert evidence.source != "multiple_voicebank_characters"
+
+
 def test_short_alias_is_weak_and_uses_unicode_boundaries():
     evidence = TextIdentifier({}, {}).identify(
         {"_id": 999, "type": "image", "title": "Leva portrait", "tags": []}
@@ -115,6 +189,40 @@ def test_visual_verifier_uses_confirmed_wd14_assignment():
     assert evidence.status == "pass"
     assert evidence.destination == "Art/GAMES/BA"
     assert "blue_archive" in evidence.labels
+
+
+def test_visual_distinct_voicebank_characters_collapse_to_vocaloid():
+    evidence = VisualVerifier({}, {}, None).verify(
+        {"_id": 999, "type": "image", "cover": "https://example.test/a.jpg"},
+        labels=["ai:wdtag-hatsune_miku", "ai:wdtag-kasane_teto"],
+        embedding=None,
+    )
+
+    assert evidence.status == "pass"
+    assert evidence.destination == "Art/VOCALOID"
+    assert evidence.candidates == ("Art/MIKU", "Art/VOICEBANKS")
+
+
+def test_visual_multiple_miku_labels_stay_in_miku():
+    evidence = VisualVerifier({}, {}, None).verify(
+        {"_id": 999, "type": "image", "cover": "https://example.test/a.jpg"},
+        labels=["ai:wdtag-hatsune_miku", "ai:wdtag-hatsune_miku"],
+        embedding=None,
+    )
+
+    assert evidence.status == "pass"
+    assert evidence.destination == "Art/MIKU"
+
+
+def test_visual_distinct_generic_voicebank_characters_collapse_to_vocaloid():
+    evidence = VisualVerifier({}, {}, None).verify(
+        {"_id": 999, "type": "image", "cover": "https://example.test/a.jpg"},
+        labels=["ai:wdtag-yuzuki_yukari", "ai:wdtag-otomachi_una"],
+        embedding=None,
+    )
+
+    assert evidence.status == "pass"
+    assert evidence.destination == "Art/VOCALOID"
 
 
 @pytest.mark.parametrize(

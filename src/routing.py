@@ -15,6 +15,11 @@ from src.destinations import canonical_destination, is_art_destination
 from src.modality import bookmark_modality
 from src.tag_rules import RuleTarget
 from src.visual_exemplars import VisualExemplarIndex, score_visual_embedding
+from src.voicebank_characters import (
+    is_voicebank_destination,
+    voicebank_character_destination,
+    voicebank_identity,
+)
 from src.wd14_tagger import normalize_tag, semantic_tag_keys
 
 
@@ -29,7 +34,12 @@ class RouteOutcome(StrEnum):
 TextStrength = Literal["strong", "contextual", "weak", "conflicting"]
 VisualStatus = Literal["pass", "inconclusive", "conflict", "unavailable", "not_applicable", "bypassed"]
 
-
+_TEXT_SOURCE_PRIORITY = {
+    "review_feedback": 4,
+    "user_tag_or_hashtag": 3,
+    "curated_text": 2,
+    "character_alias": 1,
+}
 @dataclass(frozen=True)
 class TextEvidence:
     kind: str
@@ -129,26 +139,17 @@ class TextIdentifier:
             destination = _resolve_target(target, modality)
             if destination is not None and _contains_alias(searchable, alias):
                 confirmed_matches.append((alias, destination))
-        confirmed_destinations = sorted({match[1] for match in confirmed_matches})
-        if len(confirmed_destinations) == 1:
-            return TextEvidence(
+        confirmed_evidence = [
+            TextEvidence(
                 kind="user_confirmed_rule",
-                destination=confirmed_destinations[0],
+                destination=destination,
                 strength="strong",
-                matched_value=", ".join(dict.fromkeys(match[0] for match in confirmed_matches)),
+                matched_value=value,
                 source="review_feedback",
                 explanation="Repeated dashboard reviews confirmed this routing signal.",
             )
-        if len(confirmed_destinations) > 1:
-            return TextEvidence(
-                kind="personal_interest_text",
-                destination=None,
-                strength="conflicting",
-                matched_value=", ".join(dict.fromkeys(match[0] for match in confirmed_matches)),
-                source="review_feedback",
-                explanation="Confirmed review signals lead to multiple destinations.",
-                candidates=tuple(confirmed_destinations),
-            )
+            for value, destination in confirmed_matches
+        ]
         matches: list[TextEvidence] = []
         for value in [*visible_tags, *hashtags]:
             key = normalize_tag(value)
@@ -192,24 +193,73 @@ class TextIdentifier:
             )
         ]
         for alias, targets in specific_character_matches:
+            override = voicebank_character_destination(alias)
+            if override is not None:
+                matches.append(_alias_evidence(alias, override, "character_alias"))
+                continue
             matches.extend(
                 _alias_evidence(alias, destination, "character_alias")
                 for target in targets
                 if (destination := _resolve_target(target, modality)) is not None
             )
 
+        voicebank_matches = _distinct_voicebank_matches([
+            *confirmed_evidence,
+            *matches,
+        ])
+        voicebank_destinations = tuple(sorted({
+            canonical_destination(match.destination)
+            for match in voicebank_matches
+            if match.destination
+        }))
+        if len(voicebank_matches) > 1:
+            return TextEvidence(
+                kind="user_confirmed_rule",
+                destination="Art/VOCALOID",
+                strength="strong",
+                matched_value=", ".join(
+                    dict.fromkeys(
+                        match.matched_value
+                        for match in voicebank_matches
+                        if match.matched_value
+                    )
+                ),
+                source="multiple_voicebank_characters",
+                explanation=(
+                    "Distinct voicebank characters matched; ensemble art belongs in "
+                    "Art/VOCALOID."
+                ),
+                candidates=voicebank_destinations,
+            )
+
+        confirmed_destinations = sorted({match[1] for match in confirmed_matches})
+        if len(confirmed_destinations) == 1:
+            return TextEvidence(
+                kind="user_confirmed_rule",
+                destination=confirmed_destinations[0],
+                strength="strong",
+                matched_value=", ".join(dict.fromkeys(match[0] for match in confirmed_matches)),
+                source="review_feedback",
+                explanation="Repeated dashboard reviews confirmed this routing signal.",
+            )
+        if len(confirmed_destinations) > 1:
+            return TextEvidence(
+                kind="personal_interest_text",
+                destination=None,
+                strength="conflicting",
+                matched_value=", ".join(dict.fromkeys(match[0] for match in confirmed_matches)),
+                source="review_feedback",
+                explanation="Confirmed review signals lead to multiple destinations.",
+                candidates=tuple(confirmed_destinations),
+            )
+
         if not matches:
             return TextEvidence(kind="no_match", destination=None, strength=None, explanation="No personal-interest text match was found.")
-        source_priority = {
-            "user_tag_or_hashtag": 3,
-            "curated_text": 2,
-            "character_alias": 1,
-        }
-        highest_priority = max(source_priority.get(match.source or "", 0) for match in matches)
+        highest_priority = max(_TEXT_SOURCE_PRIORITY.get(match.source or "", 0) for match in matches)
         decisive_matches = [
             match
             for match in matches
-            if source_priority.get(match.source or "", 0) == highest_priority
+            if _TEXT_SOURCE_PRIORITY.get(match.source or "", 0) == highest_priority
         ]
         destinations = tuple(sorted({
             canonical_destination(match.destination)
@@ -262,7 +312,17 @@ class VisualVerifier:
         normalized_labels = tuple(dict.fromkeys(semantic for raw in labels for semantic in semantic_tag_keys(str(raw).removeprefix("ai:wdtag-"))))
         modality = bookmark_modality(bookmark)
         identity_destinations: set[str] = set()
+        voicebank_identities: set[str] = set()
         learned_destinations: set[str] = set()
+        for raw in labels:
+            raw_value = str(raw).removeprefix("ai:wdtag-")
+            for label in semantic_tag_keys(raw_value):
+                target = TAG_ROUTES.get(label) or self.character_alias_rules.get(label)
+                destination = _resolve_target(target, modality)
+                if destination is not None and is_voicebank_destination(destination):
+                    identity = voicebank_identity(raw_value) or normalize_tag(raw_value)
+                    voicebank_identities.add(identity)
+                    break
         for label in normalized_labels:
             target = (
                 TAG_ROUTES.get(label)
@@ -282,6 +342,19 @@ class VisualVerifier:
             exemplar = score_visual_embedding(np.asarray(embedding, dtype=np.float32), self.exemplar_index, neighbors_per_folder=self.exemplar_index.neighbors_per_folder)
             exemplar_pass = bool(exemplar and exemplar.similarity >= self.exemplar_index.min_similarity and exemplar.margin >= self.exemplar_index.min_margin)
 
+        if len(voicebank_identities) > 1:
+            return _visual_result(
+                status="pass",
+                destination="Art/VOCALOID",
+                candidates=tuple(sorted(identity_destinations)),
+                labels=normalized_labels,
+                exemplar=exemplar,
+                index=self.exemplar_index,
+                explanation=(
+                    "Distinct voicebank identity labels matched; ensemble art belongs "
+                    "in Art/VOCALOID."
+                ),
+            )
         if len(identity_destinations) > 1:
             return _visual_result(status="conflict", destination=None, candidates=tuple(sorted(identity_destinations)), labels=normalized_labels, exemplar=exemplar, index=self.exemplar_index, explanation="Recognized WD14 identity labels disagree.")
         if identity_destinations:
@@ -350,6 +423,33 @@ def _resolve_target(target: RuleTarget | None, modality: str | None) -> str | No
     if len(candidates) == 1:
         return canonical_destination(candidates[0])
     return None
+
+
+def _distinct_voicebank_matches(
+    matches: list[TextEvidence],
+) -> list[TextEvidence]:
+    """Keep the strongest destination for each distinct matched character alias."""
+    by_alias: dict[str, TextEvidence] = {}
+    for match in matches:
+        if not match.destination or not is_voicebank_destination(match.destination):
+            continue
+        if (
+            canonical_destination(match.destination) == "Art/VOCALOID"
+            and match.source != "character_alias"
+        ):
+            continue
+        alias = unicodedata.normalize(
+            "NFKC",
+            str(match.matched_value or match.destination),
+        ).casefold()
+        alias = voicebank_identity(alias) or alias
+        current = by_alias.get(alias)
+        if current is None or _TEXT_SOURCE_PRIORITY.get(match.source or "", 0) > _TEXT_SOURCE_PRIORITY.get(
+            current.source or "",
+            0,
+        ):
+            by_alias[alias] = match
+    return list(by_alias.values())
 
 
 def _contains_alias(
