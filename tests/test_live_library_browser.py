@@ -56,7 +56,7 @@ def _record_attempt(
             "title": title,
             "link": f"https://x.com/example/status/{bookmark_id}",
         },
-        mode="dry-run",
+        mode="apply",
     )
     journal.record_decision(
         attempt,
@@ -128,10 +128,12 @@ def test_collection_tree_filters_journal_by_exact_destination(destination_filter
 
         page.get_by_text("Child result", exact=True).wait_for()
         assert page.get_by_text("Root result", exact=True).count() == 0
-        assert page.locator("#search").input_value() == "location:Library/Root/Child"
+        assert page.locator("#search").input_value() == (
+            "mode:apply location:Library/Root/Child"
+        )
         assert page.locator("#location-filter").text_content() == "Library/Root/Child"
         assert page.locator("#tree-filter-state").text_content() == "Library/Root/Child"
-        assert page.locator("#filter-count").text_content() == "1"
+        assert page.locator("#filter-count").text_content() == "2"
         assert destination_filter_dashboard.client.raindrop_fetches == [
             (11, 0, None, None)
         ]
@@ -139,7 +141,7 @@ def test_collection_tree_filters_journal_by_exact_destination(destination_filter
         # Selecting the active destination again clears the filter.
         page.locator('.collection-select[title="Library/Root/Child"]').click()
         page.get_by_text("Root result", exact=True).wait_for()
-        assert page.locator("#search").input_value() == ""
+        assert page.locator("#search").input_value() == "mode:apply"
         assert page.locator("#location-filter").text_content() == "Any location"
 
         browser.close()
@@ -164,7 +166,7 @@ def test_all_bookmarks_clears_location_filter_without_remote_membership_fetch(
         page.locator('.collection-select[title="All bookmarks"]').click()
         page.get_by_text("Root result", exact=True).wait_for()
 
-        assert page.locator("#search").input_value() == ""
+        assert page.locator("#search").input_value() == "mode:apply"
         assert page.locator("#location-filter").text_content() == "Any location"
         assert page.locator("#tree-filter-state").text_content() == "All"
         assert destination_filter_dashboard.client.raindrop_fetches == [
@@ -932,7 +934,7 @@ def test_detail_assignment_failure_stays_visible_with_active_review_filters(
         page = browser.new_page()
         page.set_default_timeout(5_000)
         page.goto(destination_filter_dashboard.url)
-        page.locator("#search").fill("outcome:review mode:dry-run")
+        page.locator("#search").fill("outcome:review mode:apply")
         page.get_by_text("Root result", exact=True).wait_for()
         page.evaluate(
             """
@@ -998,7 +1000,7 @@ def test_detail_assignment_failure_stays_visible_with_active_review_filters(
 
         assert page.locator("#detail-panel").get_attribute("aria-hidden") == "false"
         assert page.locator('[data-attempt-id="retry-attempt"]').count() == 1
-        assert page.locator("#search").input_value() == "outcome:review mode:dry-run"
+        assert page.locator("#search").input_value() == "outcome:review mode:apply"
         assert page.get_by_text("Root result", exact=True).count() == 2
 
         page.locator("#detail-close").click()
@@ -1062,14 +1064,14 @@ def test_query_and_filter_controls_stay_in_sync(destination_filter_dashboard):
         assert page.locator("#search").input_value() == "outcome:review mode:dry-run"
 
         query = (
-            'outcome:provisional mode:dry-run location:"Library/Root/Child" '
+            'outcome:provisional mode:apply location:"Library/Root/Child" '
             'label:halo label:blue_hair title:Child link:x.com scope:history'
         )
         page.locator("#search").fill(query)
         page.get_by_text("Child result", exact=True).wait_for()
 
         assert page.locator("#outcome").input_value() == "provisional"
-        assert page.locator("#mode").input_value() == "dry-run"
+        assert page.locator("#mode").input_value() == "apply"
         assert page.locator("#scope").input_value() == "history"
         assert page.locator("#visual-labels").input_value() == "halo, blue_hair"
         assert page.locator("#title-filter").input_value() == "Child"
@@ -1082,6 +1084,27 @@ def test_query_and_filter_controls_stay_in_sync(destination_filter_dashboard):
         assert page.locator('.collection-select[title="Library/Root/Child"]').get_attribute(
             "aria-pressed"
         ) == "true"
+
+        browser.close()
+
+
+def test_apply_is_the_default_run_mode_filter(destination_filter_dashboard):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        assert page.locator("#mode").input_value() == "apply"
+        assert page.locator("#search").input_value() == "mode:apply"
+
+        page.locator("#filter-toggle").click()
+        page.locator("#mode").select_option("")
+        assert page.locator("#search").input_value() == ""
+
+        page.locator("#reset-filters").click()
+        assert page.locator("#mode").input_value() == "apply"
+        assert page.locator("#search").input_value() == "mode:apply"
 
         browser.close()
 
