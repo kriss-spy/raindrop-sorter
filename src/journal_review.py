@@ -277,7 +277,7 @@ class JournalReviewService:
         )
         if collection is None:
             raise InvalidReviewDestination(
-                "destination must be a live collection in the Art, Image, or Video group"
+                "destination must be a live collection in the Art, Goods, Image, or Video group"
             )
         return collection
 

@@ -95,7 +95,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert 'aria-label="Assign selected Raindrops"' in page
     assert 'aria-label="Delete selected records"' in page
     assert 'role="combobox"' in page
-    assert 'placeholder="Search Art, Image, or Video destinations…"' in page
+    assert 'placeholder="Search Art, Goods, Image, or Video destinations…"' in page
     assert 'role="listbox"' in page
     assert "renderBatchDestinationResults" in page
     assert "function syncBatchControls()" in page
@@ -149,7 +149,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
         in page
     )
     assert "Latest status" in page
-    assert "Search Art, Image, or Video collections" in page
+    assert "Search Art, Goods, Image, or Video collections" in page
     assert "Move & confirm" in page
     assert 'id="detail-toggle"' in page
     assert 'id="detail-close"' in page
@@ -489,6 +489,7 @@ def test_dashboard_exposes_assignment_picker_and_resolves_attempt(tmp_path):
                 {"_id": 20, "title": "Music", "parent": None},
                 {"_id": 30, "title": "REFERENCE", "parent": None},
                 {"_id": 40, "title": "CLIPS", "parent": None},
+                {"_id": 50, "title": "CURSOR", "parent": None},
             ]
 
         def get_collection_groups(self):
@@ -497,6 +498,7 @@ def test_dashboard_exposes_assignment_picker_and_resolves_attempt(tmp_path):
                 {"title": "Music", "collections": [20]},
                 {"title": "Image", "collections": [30]},
                 {"title": "Video", "collections": [40]},
+                {"title": "Goods", "collections": [50]},
             ]
 
         def get_raindrop(self, bookmark_id):
@@ -541,6 +543,7 @@ def test_dashboard_exposes_assignment_picker_and_resolves_attempt(tmp_path):
         collections = _json(f"{base_url}/api/review/collections")
         assert collections["items"] == [
             {"collection_id": 10, "path": "Art/TOUHOU"},
+            {"collection_id": 50, "path": "Goods/CURSOR"},
             {"collection_id": 30, "path": "Image/REFERENCE"},
             {"collection_id": 40, "path": "Video/CLIPS"},
         ]

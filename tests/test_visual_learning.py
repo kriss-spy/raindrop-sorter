@@ -191,7 +191,13 @@ def test_visual_learning_keeps_pure_destinations_per_modality():
     }
 
 
-def test_visual_learning_excludes_image_group_from_suggestion_training():
+@pytest.mark.parametrize(
+    "destination",
+    ["Goods/CURSOR", "Image/REFERENCE", "Video/CLIPS"],
+)
+def test_visual_learning_excludes_manual_only_groups_from_suggestion_training(
+    destination,
+):
     bookmarks = [
         {
             "_id": index,
@@ -200,7 +206,7 @@ def test_visual_learning_excludes_image_group_from_suggestion_training():
             "type": "image",
         }
         for index, folder in enumerate(
-            ["Image/REFERENCE"] * 3 + ["Art/GAMES/BA"] * 3,
+            [destination] * 3 + ["Art/GAMES/BA"] * 3,
             start=1,
         )
     ]
@@ -222,41 +228,6 @@ def test_visual_learning_excludes_image_group_from_suggestion_training():
     assert analyzed == [4, 5, 6]
     assert result.eligible_candidates == 3
     assert result.rules == {"blue_archive": "Art/GAMES/BA"}
-
-
-def test_visual_learning_excludes_video_group_from_suggestion_training():
-    bookmarks = [
-        {
-            "_id": index,
-            "folder_path": folder,
-            "cover": f"{index}.jpg",
-            "type": "image",
-        }
-        for index, folder in enumerate(
-            ["Video/CLIPS"] * 3 + ["Art/GAMES/BA"] * 3,
-            start=1,
-        )
-    ]
-    analyzed: list[int] = []
-
-    result = learn_visual_rules(
-        bookmarks,
-        analyze=lambda bookmark: analyzed.append(bookmark["_id"])
-        or ["blue_archive"],
-        config=VisualLearningConfig(
-            max_samples=6,
-            min_tag_support=3,
-            min_tag_purity=0.9,
-            stability_patience=10,
-            min_folder_rounds=1,
-        ),
-    )
-
-    assert analyzed == [4, 5, 6]
-    assert result.eligible_candidates == 3
-    assert result.rules == {"blue_archive": "Art/GAMES/BA"}
-
-
 def test_visual_learning_counts_series_support_once_per_bookmark():
     bookmark = {
         "_id": 1,

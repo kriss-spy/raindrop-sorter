@@ -41,7 +41,10 @@ def test_compile_review_feedback_promotes_only_unanimous_supported_signals():
     assert feedback["rejected_signals"] == 2
 
 
-@pytest.mark.parametrize("destination", ["Image/REFERENCE", "Video/CLIPS"])
+@pytest.mark.parametrize(
+    "destination",
+    ["Goods/CURSOR", "Image/REFERENCE", "Video/CLIPS"],
+)
 def test_compile_review_feedback_does_not_promote_manual_only_assignments(destination):
     observations = [
         ReviewObservation("user_tag_or_hashtag", "reference", destination)
@@ -99,6 +102,12 @@ def test_load_review_feedback_filters_legacy_manual_only_destinations(tmp_path):
     feedback = {
         "schema_version": 1,
         "tag_rules": {
+            "cursor": {
+                "destination": "Goods/CURSOR",
+                "support": 3,
+                "observations": 3,
+                "purity": 1.0,
+            },
             "reference": {
                 "destination": "Image/REFERENCE",
                 "support": 3,

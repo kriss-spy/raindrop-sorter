@@ -702,7 +702,11 @@ def test_decide_folder_centroid_match():
     assert "centroid_match" in reason
 
 
-def test_decide_folder_does_not_suggest_image_centroid():
+@pytest.mark.parametrize(
+    "destination",
+    ["Goods/CURSOR", "Image/REFERENCE", "Video/CLIPS"],
+)
+def test_decide_folder_does_not_suggest_manual_only_centroid(destination):
     bookmark = {"tags": [], "title": "pose reference", "domain": "", "excerpt": ""}
 
     class MockEmbedder:
@@ -711,34 +715,17 @@ def test_decide_folder_does_not_suggest_image_centroid():
 
     folder, reason = decide_folder(
         bookmark,
-        {"Image/REFERENCE": np.array([1.0, 0.0])},
+        {destination: np.array([1.0, 0.0])},
         {},
         embedder=MockEmbedder(),
     )
 
     assert folder is None
     assert reason == "no_centroids"
-
-
-def test_decide_folder_does_not_suggest_video_centroid():
-    bookmark = {"tags": [], "title": "short video", "domain": "", "excerpt": ""}
-
-    class MockEmbedder:
-        def embed_one(self, text):
-            return np.array([1.0, 0.0])
-
-    folder, reason = decide_folder(
-        bookmark,
-        {"Video/CLIPS": np.array([1.0, 0.0])},
-        {},
-        embedder=MockEmbedder(),
-    )
-
-    assert folder is None
-    assert reason == "no_centroids"
-
-
-@pytest.mark.parametrize("destination", ["Image/REFERENCE", "Video/CLIPS"])
+@pytest.mark.parametrize(
+    "destination",
+    ["Goods/CURSOR", "Image/REFERENCE", "Video/CLIPS"],
+)
 def test_decide_folder_by_rule_does_not_suggest_manual_only_destination(destination):
     bookmark = {
         "type": "image",

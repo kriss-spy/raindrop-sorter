@@ -4,8 +4,10 @@ DESTINATION_OVERRIDES = {
     "Art/GAMES/BA/gaki": "Art/GAMES/BA",
 }
 ART_DESTINATION_PREFIX = "Art/"
-MANUAL_ASSIGNMENT_DESTINATION_GROUPS = frozenset({"art", "image", "video"})
-MANUAL_ONLY_DESTINATION_GROUPS = frozenset({"image", "video"})
+MANUAL_ASSIGNMENT_DESTINATION_GROUPS = frozenset(
+    {"art", "goods", "image", "video"}
+)
+MANUAL_ONLY_DESTINATION_GROUPS = frozenset({"goods", "image", "video"})
 
 
 def canonical_destination(folder_path: str) -> str:

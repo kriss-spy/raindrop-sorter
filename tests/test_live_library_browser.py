@@ -358,6 +358,17 @@ def test_batch_assignment_lists_supported_destination_groups(
                     "children": [],
                 }],
             },
+            {
+                "id": "group:goods",
+                "title": "Goods",
+                "collections": [{
+                    "id": 50,
+                    "title": "CURSOR",
+                    "path": "CURSOR",
+                    "count": 1,
+                    "children": [],
+                }],
+            },
         ],
     }
     with playwright.sync_playwright() as runtime:
@@ -380,6 +391,7 @@ def test_batch_assignment_lists_supported_destination_groups(
             "Art/TOUHOU",
             "Image/REFERENCE",
             "Video/CLIPS",
+            "Goods/CURSOR",
         ]
         browser.close()
 
