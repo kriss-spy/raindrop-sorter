@@ -22,6 +22,7 @@ from src.journal_review import (
     IneligibleReviewAttempt,
     InvalidReviewDestination,
     JournalReviewService,
+    ReviewApplyFailed,
     ReviewAttemptNotFound,
     StaleReviewAttempt,
 )
@@ -255,6 +256,16 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                 if self.server.live_library is not None:
                     self.server.live_library.invalidate_membership_cache()
                 self._send_json(HTTPStatus.OK, result)
+        except ReviewApplyFailed as error:
+            self._send_json(
+                HTTPStatus.BAD_GATEWAY,
+                {
+                    "error": f"Raindrop update failed: {error.error_type}",
+                    "retry_attempt_id": error.retry_attempt["attempt_id"],
+                    "retry_attempt": error.retry_attempt,
+                    "retry_trace": error.retry_trace,
+                },
+            )
         except ReviewAttemptNotFound as error:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": str(error)})
         except (StaleReviewAttempt, IneligibleReviewAttempt) as error:

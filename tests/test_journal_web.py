@@ -149,7 +149,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert 'id="detail-panel" aria-hidden="true" inert' in page
     assert 'class="attempt-grid"' in page
     assert "attemptTraceCache" in page
-    assert "detailSelectionRevision === reviewSelectionRevision" in page
+    assert "detailSelectionRevision === assignmentRevision" in page
     assert "attempt-footer" in page
     assert "year:'2-digit', month:'2-digit', day:'2-digit'" in page
     assert "startedAt.dateTime = attempt.started_at" in page
@@ -518,6 +518,71 @@ def test_dashboard_exposes_art_picker_and_resolves_attempt(tmp_path):
         assert resolved["outcome"] == "confirmed"
         assert resolved["selection_source"] == "text"
         assert client.updates[0][0:2] == (123, 10)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_dashboard_failed_resolution_returns_authoritative_retry_trace(tmp_path):
+    class FakeClient:
+        def get_collections(self):
+            return [{"_id": 10, "title": "TOUHOU", "parent": None}]
+
+        def get_collection_groups(self):
+            return [{"title": "Art", "collections": [10]}]
+
+        def get_raindrop(self, bookmark_id):
+            return {"_id": bookmark_id, "title": "Conflict", "tags": []}
+
+        def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
+            raise RuntimeError("unavailable")
+
+    path = tmp_path / "journal.sqlite"
+    journal = SQLiteRunJournal(path)
+    attempt = journal.start_attempt({"_id": 123, "title": "Conflict"}, mode="dry-run")
+    journal.record_decision(
+        attempt,
+        RouteDecision(
+            bookmark_id=123,
+            outcome=RouteOutcome.REVIEW,
+            destination=None,
+            text_evidence=(),
+            visual_evidence=(),
+            summary="Needs review.",
+        ),
+    )
+    journal.complete(attempt, phase="dry_run_completed")
+    server = create_server(
+        path, host="127.0.0.1", port=0, raindrop_client=FakeClient()
+    )
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        with pytest.raises(HTTPError) as failed:
+            _post_json(
+                f"http://127.0.0.1:{server.server_port}"
+                f"/api/attempts/{attempt.attempt_id}/resolve",
+                {"collection_id": 10, "selection_source": "custom"},
+            )
+
+        assert failed.value.code == 502
+        payload = json.load(failed.value)
+        assert payload["error"] == "Raindrop update failed: RuntimeError"
+        assert payload["retry_attempt_id"] != attempt.attempt_id
+        assert payload["retry_attempt"]["attempt_id"] == payload["retry_attempt_id"]
+        assert payload["retry_attempt"]["mode"] == "manual-review"
+        assert payload["retry_attempt"]["current_phase"] == "failed"
+        assert payload["retry_attempt"]["title"] == "Conflict"
+        assert payload["retry_attempt"]["duration_ms"] is not None
+        assert (
+            payload["retry_trace"]["attempt"]["attempt_id"]
+            == payload["retry_attempt_id"]
+        )
+        assert payload["retry_trace"]["attempt"]["bookmark_snapshot"]["title"] == (
+            "Conflict"
+        )
+        assert payload["retry_trace"]["events"][-1]["phase"] == "failed"
     finally:
         server.shutdown()
         server.server_close()

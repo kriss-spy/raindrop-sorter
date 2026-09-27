@@ -34,6 +34,22 @@ class IneligibleReviewAttempt(JournalReviewError):
     """The attempt does not require a human routing decision."""
 
 
+class ReviewApplyFailed(RuntimeError):
+    """A live move failed after its recoverable review attempt was recorded."""
+
+    def __init__(
+        self,
+        cause: Exception,
+        *,
+        retry_attempt: dict[str, Any],
+        retry_trace: dict[str, Any],
+    ):
+        super().__init__(str(cause))
+        self.error_type = type(cause).__name__
+        self.retry_attempt = retry_attempt
+        self.retry_trace = retry_trace
+
+
 class ReviewSelectionSource(StrEnum):
     TEXT = "text"
     VISUAL = "visual"
@@ -119,16 +135,21 @@ class JournalReviewService:
                     )
                 )
             except Exception as error:
-                retry_attempts = (
-                    self.journal.recent(
-                        limit=1,
-                        bookmark_ids={int(bookmark_id)},
-                        latest_per_bookmark=True,
+                if isinstance(error, ReviewApplyFailed):
+                    retry_attempt = error.retry_attempt
+                    error_type = error.error_type
+                else:
+                    retry_attempts = (
+                        self.journal.recent(
+                            limit=1,
+                            bookmark_ids={int(bookmark_id)},
+                            latest_per_bookmark=True,
+                        )
+                        if bookmark_id is not None
+                        else []
                     )
-                    if bookmark_id is not None
-                    else []
-                )
-                retry_attempt = retry_attempts[0] if retry_attempts else None
+                    retry_attempt = retry_attempts[0] if retry_attempts else None
+                    error_type = type(error).__name__
                 errors.append({
                     "attempt_id": attempt_id,
                     "retry_attempt_id": (
@@ -138,7 +159,7 @@ class JournalReviewService:
                     ),
                     "retry_attempt": retry_attempt,
                     "error": str(error),
-                    "type": type(error).__name__,
+                    "type": error_type,
                 })
         response = {
             "status": "ok" if not errors else "partial",
@@ -294,7 +315,21 @@ class JournalReviewService:
                     },
                 )
                 self.journal.fail(review_attempt, error)
-                raise
+                retry_trace = self.journal.explain_attempt(review_attempt.attempt_id)
+                retry_attempts = self.journal.recent(
+                    limit=1,
+                    bookmark_ids={bookmark_id},
+                    latest_per_bookmark=True,
+                )
+                if (  # pragma: no cover - defensive invariant
+                    retry_trace is None or not retry_attempts
+                ):
+                    raise
+                raise ReviewApplyFailed(
+                    error,
+                    retry_attempt=retry_attempts[0],
+                    retry_trace=retry_trace,
+                ) from error
             explanation = (
                 f"The user selected this {source.value} destination "
                 "in the journal dashboard."

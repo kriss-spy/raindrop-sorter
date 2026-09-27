@@ -93,8 +93,9 @@ let artCollectionsPromise = null;
 let resultLayout = localStorage.getItem('sorter-result-layout') === 'table' ? 'table' : 'cards';
 let renderedAttempts = [];
 const selectedAttempts = new Set();
-const pendingBatchAttemptIds = new Set();
-const pendingBatchBookmarkIds = new Set();
+const pendingAssignmentAttemptIds = new Set();
+const pendingAssignmentBookmarkIds = new Set();
+let pinnedRetry = null;
 let selectionAnchorAttemptId = null;
 let batchDestinationCollections = [];
 let batchDestinationFocusIndex = 0;
@@ -195,8 +196,13 @@ async function fetchJson(url) {
 }
 async function postJson(url, payload) {
   const response = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
-  if (!response.ok) throw new Error((await response.json()).error || response.statusText);
-  return response.json();
+  const result = await response.json();
+  if (!response.ok) {
+    const error = new Error(result.error || response.statusText);
+    error.payload = result;
+    throw error;
+  }
+  return result;
 }
 function artCollectionsFromTree() {
   const artGroup = collectionTreeGroups.find(
@@ -491,9 +497,24 @@ function isAssignable(attempt) {
   return select('#scope').value === 'latest'
     && (['review', 'provisional', 'conflict'].includes(attempt.outcome) || retrying);
 }
+function discardPinnedRetry() {
+  if (!pinnedRetry) return false;
+  const attemptId = pinnedRetry.attempt.attempt_id;
+  const wasSelected = selectedAttemptId === attemptId;
+  pinnedRetry = null;
+  renderedAttempts = renderedAttempts.filter(attempt => attempt.attempt_id !== attemptId);
+  selectedAttempts.delete(attemptId);
+  if (wasSelected) clearDetail();
+  renderCurrentAttempts();
+  return true;
+}
 function openAttempt(attemptId) {
+  const discardedRetry = Boolean(
+    pinnedRetry && pinnedRetry.attempt.attempt_id !== attemptId
+  ) && discardPinnedRetry();
   invalidateDetailSelection();
   renderDetail(attemptId);
+  if (discardedRetry) void renderAttempts();
 }
 function selectionCheckbox(attempt) {
   const checkbox = element('input', 'attempt-select');
@@ -674,6 +695,22 @@ function renderCurrentAttempts() {
   renderAttemptResults();
   syncSelectionUi();
 }
+function hidePendingAssignments(attempts) {
+  const attemptIds = new Set(attempts.map(attempt => attempt.attempt_id));
+  attempts.forEach(attempt => {
+    pendingAssignmentAttemptIds.add(attempt.attempt_id);
+    pendingAssignmentBookmarkIds.add(attempt.bookmark_id);
+  });
+  attemptsRenderGeneration += 1;
+  renderedAttempts = renderedAttempts.filter(attempt => !attemptIds.has(attempt.attempt_id));
+}
+function releasePendingAssignments(attempts) {
+  attemptsRenderGeneration += 1;
+  attempts.forEach(attempt => {
+    pendingAssignmentAttemptIds.delete(attempt.attempt_id);
+    pendingAssignmentBookmarkIds.delete(attempt.bookmark_id);
+  });
+}
 function syncSelectionUi() {
   const visibleIds = new Set(renderedAttempts.map(item => item.attempt_id));
   [...selectedAttempts].filter(id => !visibleIds.has(id)).forEach(id => selectedAttempts.delete(id));
@@ -722,10 +759,21 @@ async function renderAttempts() {
   params.set('utc_offset_minutes', String(-new Date().getTimezoneOffset()));
   const result = await fetchJson('/api/attempts?' + params);
   if (renderGeneration !== attemptsRenderGeneration) return;
-  const items = result.items.filter(attempt => (
-    !pendingBatchAttemptIds.has(attempt.attempt_id)
-    && !pendingBatchBookmarkIds.has(attempt.bookmark_id)
+  let items = result.items.filter(attempt => (
+    !pendingAssignmentAttemptIds.has(attempt.attempt_id)
+    && !pendingAssignmentBookmarkIds.has(attempt.bookmark_id)
   ));
+  const keepPinnedRetry = pinnedRetry
+    && pinnedRetry.query === select('#search').value
+    && pinnedRetry.attempt.attempt_id === selectedAttemptId
+    && select('#workspace').classList.contains('detail-open')
+    && !pendingAssignmentAttemptIds.has(pinnedRetry.attempt.attempt_id)
+    && !pendingAssignmentBookmarkIds.has(pinnedRetry.attempt.bookmark_id);
+  if (keepPinnedRetry && !items.some(attempt => attempt.attempt_id === selectedAttemptId)) {
+    items = [pinnedRetry.attempt, ...items];
+  } else if (pinnedRetry && !keepPinnedRetry) {
+    pinnedRetry = null;
+  }
   if (selectedAttemptId && !items.some(attempt => attempt.attempt_id === selectedAttemptId)) clearDetail();
   renderedAttempts = items;
   [...selectedAttempts].filter(id => !items.some(attempt => attempt.attempt_id === id)).forEach(id => selectedAttempts.delete(id));
@@ -827,34 +875,50 @@ async function renderResolution(trace, detailPanel) {
     renderCollections();
     applyButton.onclick = async () => {
       if (!selectedCollection) return;
-      const reviewSelectionRevision = detailSelectionRevision;
+      const submittedAttempt = renderedAttempts.find(
+        item => item.attempt_id === attempt.attempt_id
+      ) || {
+        attempt_id: attempt.attempt_id,
+        bookmark_id: attempt.bookmark_id,
+      };
       applyButton.disabled = true; search.disabled = true; errorBox.textContent = '';
       applyButton.textContent = 'Applying…';
+      if (pinnedRetry?.attempt.attempt_id === attempt.attempt_id) pinnedRetry = null;
+      hidePendingAssignments([submittedAttempt]);
+      invalidateDetailSelection();
+      const assignmentRevision = detailSelectionRevision;
+      clearDetail();
+      renderCurrentAttempts();
       try {
-        const result = await postJson(`/api/attempts/${encodeURIComponent(attempt.attempt_id)}/resolve`, {collection_id:selectedCollection.collection_id, selection_source:selectionSource});
+        await postJson(`/api/attempts/${encodeURIComponent(attempt.attempt_id)}/resolve`, {collection_id:selectedCollection.collection_id, selection_source:selectionSource});
+        releasePendingAssignments([submittedAttempt]);
         attemptTraceCache.delete(attempt.attempt_id);
         artCollectionsPromise = null;
-        await refreshDashboard();
-        if (detailSelectionRevision === reviewSelectionRevision) {
-          await renderDetail(result.attempt_id);
-        }
+        void refreshDashboard();
       } catch (error) {
-        errorBox.textContent = error.message;
-        try {
-          const latest = await fetchJson(`/api/attempts?latest=1&limit=10&q=${encodeURIComponent(attempt.bookmark_id)}`);
-          const latestAttempt = latest.items.find(item => item.bookmark_id === attempt.bookmark_id);
-          if (latestAttempt && latestAttempt.attempt_id !== attempt.attempt_id && detailSelectionRevision === reviewSelectionRevision) {
-            await refreshDashboard();
-            if (detailSelectionRevision === reviewSelectionRevision) {
-              await renderDetail(latestAttempt.attempt_id);
-            }
-            return;
+        releasePendingAssignments([submittedAttempt]);
+        const restoreSubmittedView = detailSelectionRevision === assignmentRevision;
+        if (restoreSubmittedView) {
+          const retryAttempt = error.payload?.retry_attempt || submittedAttempt;
+          const retryTrace = error.payload?.retry_trace || trace;
+          pinnedRetry = {attempt: retryAttempt, query: select('#search').value};
+          const visibleAttemptIds = new Set(renderedAttempts.map(item => item.attempt_id));
+          if (!visibleAttemptIds.has(retryAttempt.attempt_id)) {
+            renderedAttempts = [retryAttempt, ...renderedAttempts];
           }
-        } catch (_refreshError) {
-          // Keep the original error visible and let the user retry refreshing manually.
+          attemptTraceCache.set(retryAttempt.attempt_id, {
+            value: retryTrace,
+            expiresAt: Date.now() + 15_000,
+          });
+          renderCurrentAttempts();
+          const retryAttemptId = retryAttempt.attempt_id;
+          await renderDetail(retryAttemptId);
+          if (detailSelectionRevision === assignmentRevision) {
+            const restoredError = select('#detail .resolution-error');
+            if (restoredError) restoredError.textContent = error.message;
+          }
         }
-        applyButton.disabled = false; search.disabled = false;
-        applyButton.textContent = `Move & confirm → ${selectedCollection.path}`;
+        if (!restoreSubmittedView) void refreshDashboard();
       }
     };
     section.append(selection, applyButton, errorBox);
@@ -963,6 +1027,7 @@ function collectionIdForLocationPath(locationPath) {
   return match;
 }
 function selectLocationCollection(node, locationPath) {
+  discardPinnedRetry();
   const clearing = selectedLocationPath === locationPath;
   selectedLocationPath = clearing ? '' : locationPath;
   selectedLocationCollectionId = clearing ? null : Number(node.id);
@@ -1105,10 +1170,10 @@ async function assignSelected() {
   const button = select('#batch-assign');
   button.disabled = true;
   select('#batch-message').textContent = 'Assigning…';
-  submittedAttemptIds.forEach(attemptId => pendingBatchAttemptIds.add(attemptId));
-  submittedAttempts.forEach(attempt => pendingBatchBookmarkIds.add(attempt.bookmark_id));
-  attemptsRenderGeneration += 1;
-  renderedAttempts = renderedAttempts.filter(attempt => !submittedAttemptIds.has(attempt.attempt_id));
+  if (pinnedRetry && submittedAttemptIds.has(pinnedRetry.attempt.attempt_id)) {
+    pinnedRetry = null;
+  }
+  hidePendingAssignments(submittedAttempts);
   clearAttemptSelection();
   renderCurrentAttempts();
   try {
@@ -1123,9 +1188,7 @@ async function assignSelected() {
       const failure = failedAttempts.get(attempt.attempt_id);
       return failure?.retry_attempt ? [failure.retry_attempt] : [];
     });
-    attemptsRenderGeneration += 1;
-    submittedAttemptIds.forEach(attemptId => pendingBatchAttemptIds.delete(attemptId));
-    submittedAttempts.forEach(attempt => pendingBatchBookmarkIds.delete(attempt.bookmark_id));
+    releasePendingAssignments(submittedAttempts);
     const visibleAttemptIds = new Set(renderedAttempts.map(attempt => attempt.attempt_id));
     renderedAttempts = [
       ...failedCards.filter(attempt => !visibleAttemptIds.has(attempt.attempt_id)),
@@ -1143,8 +1206,7 @@ async function assignSelected() {
     renderCurrentAttempts();
     void refreshDashboard();
   } catch (error) {
-    submittedAttemptIds.forEach(attemptId => pendingBatchAttemptIds.delete(attemptId));
-    submittedAttempts.forEach(attempt => pendingBatchBookmarkIds.delete(attempt.bookmark_id));
+    releasePendingAssignments(submittedAttempts);
     const visibleAttemptIds = new Set(renderedAttempts.map(attempt => attempt.attempt_id));
     renderedAttempts = [
       ...submittedAttempts.filter(attempt => !visibleAttemptIds.has(attempt.attempt_id)),
@@ -1193,6 +1255,7 @@ select('#filters').onsubmit = event => {
 let searchTimer;
 select('#search').oninput = () => {
   clearTimeout(searchTimer);
+  discardPinnedRetry();
   const overviewChanged = syncFilterControlsFromQuery(select('#search').value);
   invalidateDetailSelection();
   if (overviewChanged) {
@@ -1203,6 +1266,7 @@ select('#search').oninput = () => {
 };
 function applyFilterControlChange({overviewChanged = false, immediate = true} = {}) {
   clearTimeout(searchTimer);
+  discardPinnedRetry();
   syncQueryFromFilterControls();
   invalidateDetailSelection();
   if (overviewChanged) {
@@ -1226,6 +1290,7 @@ select('#location-clear').onclick = () => {
   applyFilterControlChange({overviewChanged:true});
 };
 select('#reset-filters').onclick = () => {
+  discardPinnedRetry();
   freeSearchValue = '';
   selectedLocationPath = '';
   selectedLocationCollectionId = null;
@@ -1304,15 +1369,34 @@ select('#sorter-start').onclick = () => {
 select('#sorter-pause').onclick = () => sorterAction('pause');
 select('#detail-toggle').onclick = () => {
   const opening = !select('#workspace').classList.contains('detail-open');
-  if (!opening) invalidateDetailSelection();
-  setDetailOpen(opening);
+  if (opening) {
+    setDetailOpen(true);
+    return;
+  }
+  invalidateDetailSelection();
+  if (pinnedRetry?.attempt.attempt_id === selectedAttemptId) {
+    discardPinnedRetry();
+    clearDetail();
+    void renderAttempts();
+  } else {
+    setDetailOpen(false);
+  }
 };
-select('#detail-close').onclick = () => { invalidateDetailSelection(); setDetailOpen(false); };
-select('#detail-scrim').onclick = () => { invalidateDetailSelection(); setDetailOpen(false); };
+function closeAttemptDetail() {
+  invalidateDetailSelection();
+  if (pinnedRetry?.attempt.attempt_id === selectedAttemptId) {
+    discardPinnedRetry();
+    clearDetail();
+    void renderAttempts();
+  } else {
+    setDetailOpen(false);
+  }
+}
+select('#detail-close').onclick = closeAttemptDetail;
+select('#detail-scrim').onclick = closeAttemptDetail;
 document.addEventListener('keydown', event => {
   if (event.key === 'Escape' && select('#workspace').classList.contains('detail-open')) {
-    invalidateDetailSelection();
-    setDetailOpen(false);
+    closeAttemptDetail();
   }
 });
 syncQueryFromFilterControls();

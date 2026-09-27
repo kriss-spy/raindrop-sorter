@@ -535,6 +535,324 @@ def test_batch_assignment_keeps_only_failed_cards_selected_during_refresh(
         browser.close()
 
 
+def test_detail_assignment_closes_and_removes_card_before_request_finishes(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              const originalFetch = window.fetch.bind(window);
+              window.fetch = (url, options = {}) => {
+                if (String(url) === '/api/review/collections') {
+                  return Promise.resolve(new Response(JSON.stringify({
+                    items: [{collection_id: 11, path: 'Art/Child'}],
+                  }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                }
+                if (String(url).endsWith('/resolve')) {
+                  return new Promise(resolve => {
+                    window.resolveDetailAssignment = () => resolve(new Response(JSON.stringify({
+                      attempt_id: 'confirmed-attempt',
+                    }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                  });
+                }
+                if (String(url).startsWith('/api/overview') || String(url).startsWith('/api/attempts?')) {
+                  return new Promise(() => {});
+                }
+                return originalFetch(url, options);
+              };
+            }
+            """
+        )
+
+        page.get_by_text("Root result", exact=True).click()
+        page.get_by_role("button", name="Art/Child", exact=True).click()
+        page.get_by_role("button", name="Move & confirm → Art/Child", exact=True).click()
+        page.wait_for_function("() => typeof window.resolveDetailAssignment === 'function'")
+
+        assert page.locator("#detail-panel").get_attribute("aria-hidden") == "true"
+        assert page.get_by_text("Root result", exact=True).count() == 0
+        assert page.locator("[data-attempt-id]").count() == 1
+
+        page.evaluate("window.resolveDetailAssignment()")
+        browser.close()
+
+
+def test_detail_assignment_restores_card_and_detail_when_request_fails(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              const originalFetch = window.fetch.bind(window);
+              const submittedAttempt = renderedAttempts.find(
+                item => item.title === 'Root result'
+              );
+              const retryAttempt = {
+                ...submittedAttempt,
+                attempt_id: 'retry-attempt',
+                mode: 'manual-review',
+                outcome: null,
+                current_phase: 'failed',
+                error: {type: 'RuntimeError', message: 'unavailable'},
+              };
+              window.fetch = (url, options = {}) => {
+                if (String(url) === '/api/review/collections') {
+                  return Promise.resolve(new Response(JSON.stringify({
+                    items: [{collection_id: 11, path: 'Art/Child'}],
+                  }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                }
+                if (String(url).endsWith('/resolve')) {
+                  return Promise.resolve(new Response(JSON.stringify({
+                    error: 'Assignment failed',
+                    retry_attempt_id: retryAttempt.attempt_id,
+                    retry_attempt: retryAttempt,
+                    retry_trace: {
+                      attempt: {...retryAttempt, bookmark_snapshot: {title: retryAttempt.title}},
+                      evidence: [],
+                      actions: [],
+                      events: [{
+                        phase: 'manual_destination_selected',
+                        payload: {
+                          destination: 'Art/Child',
+                          selection_source: 'custom',
+                          custom_only: true,
+                        },
+                      }],
+                    },
+                  }), {status: 502, headers: {'Content-Type': 'application/json'}}));
+                }
+                if (String(url).startsWith('/api/attempts?')) return new Promise(() => {});
+                return originalFetch(url, options);
+              };
+            }
+            """
+        )
+
+        page.get_by_text("Root result", exact=True).click()
+        page.get_by_role("button", name="Art/Child", exact=True).click()
+        page.get_by_role("button", name="Move & confirm → Art/Child", exact=True).click()
+        page.locator("#detail .resolution-error").get_by_text(
+            "Assignment failed", exact=True
+        ).wait_for()
+
+        assert page.locator("#detail-panel").get_attribute("aria-hidden") == "false"
+        assert page.locator("[data-attempt-id]").count() == 2
+        assert page.locator('[data-attempt-id="retry-attempt"]').count() == 1
+        assert page.get_by_text("Root result", exact=True).count() == 2
+
+        page.evaluate(
+            "openAttempt(renderedAttempts.find(item => item.title === 'Child result').attempt_id)"
+        )
+        assert page.locator('[data-attempt-id="retry-attempt"]').count() == 0
+        page.locator("#detail .detail-title").get_by_text(
+            "Child result", exact=True
+        ).wait_for()
+
+        browser.close()
+
+
+def test_detail_assignment_failure_does_not_restore_card_after_filter_change(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              const originalFetch = window.fetch.bind(window);
+              const submittedAttempt = renderedAttempts.find(
+                item => item.title === 'Root result'
+              );
+              const retryAttempt = {
+                ...submittedAttempt,
+                attempt_id: 'retry-attempt',
+                mode: 'manual-review',
+                outcome: null,
+                current_phase: 'failed',
+              };
+              window.fetch = (url, options = {}) => {
+                if (String(url) === '/api/review/collections') {
+                  return Promise.resolve(new Response(JSON.stringify({
+                    items: [{collection_id: 11, path: 'Art/Child'}],
+                  }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                }
+                if (String(url).endsWith('/resolve')) {
+                  return new Promise(resolve => {
+                    window.rejectDetailAssignment = () => resolve(new Response(JSON.stringify({
+                      error: 'Assignment failed',
+                      retry_attempt_id: retryAttempt.attempt_id,
+                      retry_attempt: retryAttempt,
+                      retry_trace: {
+                        attempt: {...retryAttempt, bookmark_snapshot: {title: retryAttempt.title}},
+                        evidence: [], actions: [], events: [],
+                      },
+                    }), {status: 502, headers: {'Content-Type': 'application/json'}}));
+                  });
+                }
+                return originalFetch(url, options);
+              };
+            }
+            """
+        )
+
+        page.get_by_text("Root result", exact=True).click()
+        page.get_by_role("button", name="Art/Child", exact=True).click()
+        page.get_by_role("button", name="Move & confirm → Art/Child", exact=True).click()
+        page.wait_for_function("() => typeof window.rejectDetailAssignment === 'function'")
+        page.locator("#search").fill("title:Child")
+        page.get_by_text("Child result", exact=True).wait_for()
+        page.evaluate("window.rejectDetailAssignment()")
+        page.wait_for_timeout(100)
+
+        assert page.locator("#detail-panel").get_attribute("aria-hidden") == "true"
+        assert page.get_by_text("Root result", exact=True).count() == 0
+        assert page.locator('[data-attempt-id="retry-attempt"]').count() == 0
+        assert page.get_by_text("Child result", exact=True).count() == 1
+
+        browser.close()
+
+
+def test_detail_assignment_failure_stays_visible_with_active_review_filters(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.locator("#search").fill("outcome:review mode:dry-run")
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              const originalFetch = window.fetch.bind(window);
+              const submittedAttempt = renderedAttempts.find(
+                item => item.title === 'Root result'
+              );
+              const retryAttempt = {
+                ...submittedAttempt,
+                attempt_id: 'retry-attempt',
+                mode: 'manual-review',
+                outcome: null,
+                current_phase: 'failed',
+                error: {type: 'RuntimeError', message: 'unavailable'},
+              };
+              window.fetch = (url, options = {}) => {
+                if (String(url) === '/api/review/collections') {
+                  return Promise.resolve(new Response(JSON.stringify({
+                    items: [{collection_id: 11, path: 'Art/Child'}],
+                  }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                }
+                if (String(url).endsWith('/resolve')) {
+                  window.detailAssignmentFailed = true;
+                  return Promise.resolve(new Response(JSON.stringify({
+                    error: 'Assignment failed',
+                    retry_attempt_id: retryAttempt.attempt_id,
+                    retry_attempt: retryAttempt,
+                    retry_trace: {
+                      attempt: {...retryAttempt, bookmark_snapshot: {title: retryAttempt.title}},
+                      evidence: [],
+                      actions: [],
+                      events: [{
+                        phase: 'manual_destination_selected',
+                        payload: {
+                          destination: 'Art/Child',
+                          selection_source: 'custom',
+                          custom_only: true,
+                        },
+                      }],
+                    },
+                  }), {status: 502, headers: {'Content-Type': 'application/json'}}));
+                }
+                if (window.detailAssignmentFailed && String(url).startsWith('/api/attempts?')) {
+                  return Promise.resolve(new Response(JSON.stringify({items: []}), {
+                    status: 200, headers: {'Content-Type': 'application/json'},
+                  }));
+                }
+                return originalFetch(url, options);
+              };
+            }
+            """
+        )
+
+        page.get_by_text("Root result", exact=True).click()
+        page.get_by_role("button", name="Art/Child", exact=True).click()
+        page.get_by_role("button", name="Move & confirm → Art/Child", exact=True).click()
+        page.locator("#detail .resolution-error").get_by_text(
+            "Assignment failed", exact=True
+        ).wait_for()
+        page.evaluate("refreshDashboard()")
+        page.wait_for_timeout(300)
+
+        assert page.locator("#detail-panel").get_attribute("aria-hidden") == "false"
+        assert page.locator('[data-attempt-id="retry-attempt"]').count() == 1
+        assert page.locator("#search").input_value() == "outcome:review mode:dry-run"
+        assert page.get_by_text("Root result", exact=True).count() == 2
+
+        page.locator("#detail-close").click()
+        assert page.locator('[data-attempt-id="retry-attempt"]').count() == 0
+        assert page.locator("#detail-panel").get_attribute("aria-hidden") == "true"
+
+        browser.close()
+
+
+def test_query_change_immediately_dismisses_pinned_retry_detail(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              const source = renderedAttempts.find(item => item.title === 'Root result');
+              const retryAttempt = {
+                ...source,
+                attempt_id: 'retry-attempt',
+                mode: 'manual-review',
+                outcome: null,
+                current_phase: 'failed',
+              };
+              pinnedRetry = {attempt: retryAttempt, query: document.querySelector('#search').value};
+              renderedAttempts = [retryAttempt, ...renderedAttempts];
+              selectedAttemptId = retryAttempt.attempt_id;
+              setDetailOpen(true);
+              renderCurrentAttempts();
+              const originalFetch = window.fetch.bind(window);
+              window.fetch = (url, options = {}) => String(url).startsWith('/api/attempts?')
+                ? new Promise(() => {})
+                : originalFetch(url, options);
+            }
+            """
+        )
+
+        page.locator("#search").fill("title:Child")
+
+        assert page.locator('[data-attempt-id="retry-attempt"]').count() == 0
+        assert page.locator("#detail-panel").get_attribute("aria-hidden") == "true"
+
+        browser.close()
+
+
 def test_query_and_filter_controls_stay_in_sync(destination_filter_dashboard):
     with playwright.sync_playwright() as runtime:
         browser = runtime.chromium.launch(headless=True)
