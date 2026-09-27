@@ -704,7 +704,7 @@ def test_decide_folder_centroid_match():
 
 @pytest.mark.parametrize(
     "destination",
-    ["Goods/CURSOR", "Image/REFERENCE", "Video/CLIPS"],
+    ["Goods/CURSOR", "Image/REFERENCE", "Post/NEWS", "Video/CLIPS"],
 )
 def test_decide_folder_does_not_suggest_manual_only_centroid(destination):
     bookmark = {"tags": [], "title": "pose reference", "domain": "", "excerpt": ""}
@@ -722,9 +722,11 @@ def test_decide_folder_does_not_suggest_manual_only_centroid(destination):
 
     assert folder is None
     assert reason == "no_centroids"
+
+
 @pytest.mark.parametrize(
     "destination",
-    ["Goods/CURSOR", "Image/REFERENCE", "Video/CLIPS"],
+    ["Goods/CURSOR", "Image/REFERENCE", "Post/NEWS", "Video/CLIPS"],
 )
 def test_decide_folder_by_rule_does_not_suggest_manual_only_destination(destination):
     bookmark = {

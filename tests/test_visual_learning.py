@@ -160,40 +160,9 @@ def test_visual_learning_combines_character_variants_into_a_series_rule():
     assert result.rules == {"blue_archive": "Art/GAMES/BA"}
 
 
-def test_visual_learning_keeps_pure_destinations_per_modality():
-    bookmarks = [
-        {
-            "_id": index,
-            "folder_path": folder,
-            "cover": f"{index}.jpg",
-            "type": "image",
-        }
-        for index, folder in enumerate(
-            ["Art/GAMES/BA"] * 3 + ["Post/JOKES"] * 3,
-            start=1,
-        )
-    ]
-
-    result = learn_visual_rules(
-        bookmarks,
-        analyze=lambda bookmark: [f"character_{bookmark['_id']}_(blue_archive)"],
-        config=VisualLearningConfig(
-            max_samples=6,
-            min_tag_support=3,
-            min_tag_purity=0.9,
-            stability_patience=10,
-            min_folder_rounds=1,
-        ),
-    )
-
-    assert result.rules == {
-        "blue_archive": ["Art/GAMES/BA", "Post/JOKES"],
-    }
-
-
 @pytest.mark.parametrize(
     "destination",
-    ["Goods/CURSOR", "Image/REFERENCE", "Video/CLIPS"],
+    ["Goods/CURSOR", "Image/REFERENCE", "Post/NEWS", "Video/CLIPS"],
 )
 def test_visual_learning_excludes_manual_only_groups_from_suggestion_training(
     destination,

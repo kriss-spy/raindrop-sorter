@@ -32,6 +32,7 @@ class FakeReviewClient:
             {"_id": 31, "title": "POSES", "parent": {"$id": 30}},
             {"_id": 40, "title": "CLIPS", "parent": None},
             {"_id": 50, "title": "CURSOR", "parent": None},
+            {"_id": 60, "title": "NEWS", "parent": None},
         ]
 
     def get_collection_groups(self):
@@ -41,6 +42,7 @@ class FakeReviewClient:
             {"title": "Image", "collections": [30]},
             {"title": "Video", "collections": [40]},
             {"title": "Goods", "collections": [50]},
+            {"title": "Post", "collections": [60]},
         ]
 
     def get_raindrop(self, bookmark_id):
@@ -114,6 +116,7 @@ def test_review_service_lists_assignment_collections_in_supported_groups(tmp_pat
         {"collection_id": 50, "path": "Goods/CURSOR"},
         {"collection_id": 30, "path": "Image/REFERENCE"},
         {"collection_id": 31, "path": "Image/REFERENCE/POSES"},
+        {"collection_id": 60, "path": "Post/NEWS"},
         {"collection_id": 40, "path": "Video/CLIPS"},
     ]
     assert service.assignment_collections() == expected
@@ -296,6 +299,24 @@ def test_review_outcome_can_be_assigned_to_goods_group_with_custom_picker(tmp_pa
     assert client.updates[0][0:2] == (123, 50)
 
 
+def test_review_outcome_can_be_assigned_to_post_group_with_custom_picker(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    original = _seed_review(journal)
+    client = FakeReviewClient()
+    service = JournalReviewService(journal, client)
+
+    result = service.resolve(
+        original.attempt_id,
+        collection_id=60,
+        selection_source="custom",
+    )
+
+    assert result["outcome"] == "confirmed"
+    assert result["destination"] == "Post/NEWS"
+    assert result["selection_source"] == "custom"
+    assert client.updates[0][0:2] == (123, 60)
+
+
 def test_failed_review_outcome_retry_stays_custom_picker_only(tmp_path):
     class FlakyClient(FakeReviewClient):
         def __init__(self):
@@ -344,7 +365,7 @@ def test_review_service_rejects_stale_attempt_and_non_assignment_destination(tmp
 
     with pytest.raises(
         InvalidReviewDestination,
-        match="Art, Goods, Image, or Video group",
+        match="Art, Goods, Image, Post, or Video group",
     ):
         service.resolve(original.attempt_id, collection_id=20)
 

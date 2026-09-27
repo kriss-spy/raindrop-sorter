@@ -465,6 +465,17 @@ def test_batch_assignment_lists_supported_destination_groups(
                     "children": [],
                 }],
             },
+            {
+                "id": "group:post",
+                "title": "Post",
+                "collections": [{
+                    "id": 60,
+                    "title": "NEWS",
+                    "path": "NEWS",
+                    "count": 1,
+                    "children": [],
+                }],
+            },
         ],
     }
     with playwright.sync_playwright() as runtime:
@@ -488,6 +499,7 @@ def test_batch_assignment_lists_supported_destination_groups(
             "Image/REFERENCE",
             "Video/CLIPS",
             "Goods/CURSOR",
+            "Post/NEWS",
         ]
         browser.close()
 

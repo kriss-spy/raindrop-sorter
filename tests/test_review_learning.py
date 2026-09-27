@@ -43,7 +43,7 @@ def test_compile_review_feedback_promotes_only_unanimous_supported_signals():
 
 @pytest.mark.parametrize(
     "destination",
-    ["Goods/CURSOR", "Image/REFERENCE", "Video/CLIPS"],
+    ["Goods/CURSOR", "Image/REFERENCE", "Post/NEWS", "Video/CLIPS"],
 )
 def test_compile_review_feedback_does_not_promote_manual_only_assignments(destination):
     observations = [
@@ -104,6 +104,12 @@ def test_load_review_feedback_filters_legacy_manual_only_destinations(tmp_path):
         "tag_rules": {
             "cursor": {
                 "destination": "Goods/CURSOR",
+                "support": 3,
+                "observations": 3,
+                "purity": 1.0,
+            },
+            "news": {
+                "destination": "Post/NEWS",
                 "support": 3,
                 "observations": 3,
                 "purity": 1.0,
