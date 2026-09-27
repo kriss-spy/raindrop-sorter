@@ -89,6 +89,85 @@ def test_strong_text_overrides_conflicting_visual_candidates_provisionally():
     assert "strong text evidence" in decision.summary
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        _text(None, None, "no_match"),
+        _text("Art/TOUHOU", "contextual"),
+        _text("Art/TOUHOU", "weak"),
+        TextEvidence(
+            kind="personal_interest_text",
+            destination=None,
+            strength="conflicting",
+            source="multiple_weak_partial",
+            candidates=("Art/TOUHOU", "Art/VTUBERS"),
+        ),
+    ],
+)
+def test_halo_routes_to_blue_archive_when_no_strong_text_candidate(text):
+    decision = RouteEngine().route(
+        bookmark_id=123,
+        text=text,
+        visual=VisualEvidence(
+            status="pass",
+            destination="Art/TOUHOU",
+            method="wd14+visual_exemplar",
+            explanation="test",
+            labels=("1girl", "halo"),
+        ),
+    )
+
+    assert decision.outcome is RouteOutcome.PROVISIONAL
+    assert decision.destination == "Art/GAMES/BA"
+    assert "halo" in decision.summary
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        _text("Art/TOUHOU", "strong"),
+        TextEvidence(
+            kind="personal_interest_text",
+            destination=None,
+            strength="conflicting",
+            source="multiple",
+            candidates=("Art/TOUHOU", "Art/VTUBERS"),
+        ),
+    ],
+)
+def test_halo_does_not_override_strong_text_candidates(text):
+    decision = RouteEngine().route(
+        bookmark_id=123,
+        text=text,
+        visual=VisualEvidence(
+            status="inconclusive",
+            destination=None,
+            method="wd14+visual_exemplar",
+            explanation="test",
+            labels=("halo",),
+        ),
+    )
+
+    assert decision.destination != "Art/GAMES/BA"
+
+
+def test_parenthetical_halo_series_is_not_the_standalone_halo_feature():
+    visual = VisualVerifier({}, {}, None).verify(
+        {"_id": 123, "type": "image", "cover": "https://example.test/a.jpg"},
+        labels=["master_chief_(halo)"],
+        embedding=None,
+    )
+
+    assert visual.labels == ("master_chief_(halo)",)
+    decision = RouteEngine().route(
+        bookmark_id=123,
+        text=_text(None, None, "no_match"),
+        visual=visual,
+    )
+    assert decision.outcome is RouteOutcome.REVIEW
+    assert decision.destination is None
+
+
 def test_text_identifier_uses_user_tags_but_ignores_ai_tags():
     identifier = TextIdentifier({"touhou": "Art/TOUHOU", "miku": "Art/MIKU"}, {})
     evidence = identifier.identify(

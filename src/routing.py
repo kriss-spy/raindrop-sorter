@@ -347,7 +347,19 @@ class VisualVerifier:
         if not _has_image_source(bookmark):
             return VisualEvidence(status="unavailable", destination=None, method="cover", explanation="The bookmark has no cover image.")
 
-        normalized_labels = tuple(dict.fromkeys(semantic for raw in labels for semantic in semantic_tag_keys(str(raw).removeprefix("ai:wdtag-"))))
+        normalized_labels = tuple(
+            dict.fromkeys(
+                normalize_tag(str(raw).removeprefix("ai:wdtag-"))
+                for raw in labels
+            )
+        )
+        semantic_labels = tuple(
+            dict.fromkeys(
+                semantic
+                for label in normalized_labels
+                for semantic in semantic_tag_keys(label)
+            )
+        )
         modality = bookmark_modality(bookmark)
         identity_destinations: set[str] = set()
         voicebank_identities: set[str] = set()
@@ -361,7 +373,7 @@ class VisualVerifier:
                     identity = voicebank_identity(raw_value) or normalize_tag(raw_value)
                     voicebank_identities.add(identity)
                     break
-        for label in normalized_labels:
+        for label in semantic_labels:
             target = (
                 TAG_ROUTES.get(label)
                 or self.series_rules.get(label)
@@ -420,6 +432,8 @@ class RouteEngine:
         }
         if text.kind == "user_confirmed_rule":
             outcome, destination = RouteOutcome.CONFIRMED, text_destination
+        elif _uses_halo_blue_archive_prior(text, visual):
+            outcome, destination = RouteOutcome.PROVISIONAL, "Art/GAMES/BA"
         elif (
             text.strength == "conflicting"
             and visual.status == "pass"
@@ -599,6 +613,29 @@ def _strength_rank(strength: TextStrength | None) -> int:
     return {None: 0, "weak": 1, "contextual": 2, "strong": 3, "conflicting": 4}[strength]
 
 
+def _has_halo_label(visual: VisualEvidence) -> bool:
+    return any(
+        normalize_tag(str(label).removeprefix("ai:wdtag-")) == "halo"
+        for label in visual.labels
+    )
+
+
+def _has_strong_text_candidate(text: TextEvidence) -> bool:
+    if text.strength == "strong":
+        return True
+    return (
+        text.strength == "conflicting"
+        and text.source not in {"multiple_weak", "multiple_weak_partial"}
+    )
+
+
+def _uses_halo_blue_archive_prior(
+    text: TextEvidence,
+    visual: VisualEvidence,
+) -> bool:
+    return _has_halo_label(visual) and not _has_strong_text_candidate(text)
+
+
 def _visual_result(*, status: VisualStatus, destination: str | None, labels: tuple[str, ...], exemplar: Any | None, index: VisualExemplarIndex | None, explanation: str, candidates: tuple[str, ...] = ()) -> VisualEvidence:
     return VisualEvidence(
         status=status, destination=destination, method="wd14+visual_exemplar",
@@ -625,6 +662,11 @@ def _decision_summary(
             return f"Confirmed {destination} by user rule; visual verification was bypassed."
         return f"Confirmed {destination}: text and visual evidence agree."
     if outcome is RouteOutcome.PROVISIONAL:
+        if destination == "Art/GAMES/BA" and _uses_halo_blue_archive_prior(text, visual):
+            return (
+                "Moved provisionally to Art/GAMES/BA because the halo visual tag is a "
+                "Blue Archive prior and no strong text candidate matched."
+            )
         if (
             text.strength == "conflicting"
             and visual.status == "pass"
