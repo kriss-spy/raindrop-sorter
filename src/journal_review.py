@@ -119,18 +119,24 @@ class JournalReviewService:
                     )
                 )
             except Exception as error:
-                latest = (
-                    self.journal.explain(int(bookmark_id))
+                retry_attempts = (
+                    self.journal.recent(
+                        limit=1,
+                        bookmark_ids={int(bookmark_id)},
+                        latest_per_bookmark=True,
+                    )
                     if bookmark_id is not None
-                    else None
+                    else []
                 )
+                retry_attempt = retry_attempts[0] if retry_attempts else None
                 errors.append({
                     "attempt_id": attempt_id,
                     "retry_attempt_id": (
-                        latest["attempt"]["attempt_id"]
-                        if latest is not None
+                        retry_attempt["attempt_id"]
+                        if retry_attempt is not None
                         else attempt_id
                     ),
+                    "retry_attempt": retry_attempt,
                     "error": str(error),
                     "type": type(error).__name__,
                 })

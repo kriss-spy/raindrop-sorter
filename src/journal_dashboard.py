@@ -93,6 +93,8 @@ let artCollectionsPromise = null;
 let resultLayout = localStorage.getItem('sorter-result-layout') === 'table' ? 'table' : 'cards';
 let renderedAttempts = [];
 const selectedAttempts = new Set();
+const pendingBatchAttemptIds = new Set();
+const pendingBatchBookmarkIds = new Set();
 let selectionAnchorAttemptId = null;
 let batchDestinationCollections = [];
 let batchDestinationFocusIndex = 0;
@@ -104,6 +106,7 @@ let freeSearchValue = '';
 let selectedLocationPath = '';
 let selectedLocationCollectionId = null;
 let overviewRenderGeneration = 0;
+let attemptsRenderGeneration = 0;
 let expandedCollectionIds = new Set();
 try {
   expandedCollectionIds = new Set(JSON.parse(localStorage.getItem(expandedCollectionsStorageKey) || '[]').map(String));
@@ -666,6 +669,11 @@ function renderAttemptResults() {
   select('#card-view').classList.toggle('active', resultLayout === 'cards');
   select('#table-view').classList.toggle('active', resultLayout === 'table');
 }
+function renderCurrentAttempts() {
+  select('#count').textContent = `${renderedAttempts.length} shown`;
+  renderAttemptResults();
+  syncSelectionUi();
+}
 function syncSelectionUi() {
   const visibleIds = new Set(renderedAttempts.map(item => item.attempt_id));
   [...selectedAttempts].filter(id => !visibleIds.has(id)).forEach(id => selectedAttempts.delete(id));
@@ -691,11 +699,10 @@ function syncBatchControls() {
   select('#batch-assign').disabled = !count || !select('#batch-destination-search').dataset.collectionId;
 }
 async function renderAttempts() {
+  const renderGeneration = ++attemptsRenderGeneration;
   if (selectedLocationPath && selectedLocationCollectionId === null) {
     renderedAttempts = [];
-    select('#count').textContent = '0 shown';
-    renderAttemptResults();
-    syncSelectionUi();
+    renderCurrentAttempts();
     return;
   }
   const params = new URLSearchParams({limit:'500'});
@@ -714,13 +721,16 @@ async function renderAttempts() {
   if (select('#date-filter').value) params.set('processed_on', select('#date-filter').value);
   params.set('utc_offset_minutes', String(-new Date().getTimezoneOffset()));
   const result = await fetchJson('/api/attempts?' + params);
-  if (selectedAttemptId && !result.items.some(attempt => attempt.attempt_id === selectedAttemptId)) clearDetail();
-  renderedAttempts = result.items;
-  [...selectedAttempts].filter(id => !result.items.some(attempt => attempt.attempt_id === id)).forEach(id => selectedAttempts.delete(id));
+  if (renderGeneration !== attemptsRenderGeneration) return;
+  const items = result.items.filter(attempt => (
+    !pendingBatchAttemptIds.has(attempt.attempt_id)
+    && !pendingBatchBookmarkIds.has(attempt.bookmark_id)
+  ));
+  if (selectedAttemptId && !items.some(attempt => attempt.attempt_id === selectedAttemptId)) clearDetail();
+  renderedAttempts = items;
+  [...selectedAttempts].filter(id => !items.some(attempt => attempt.attempt_id === id)).forEach(id => selectedAttempts.delete(id));
   select('#list-title').textContent = latestOnly ? 'Latest Raindrop status' : 'Attempt history';
-  select('#count').textContent = `${result.count} shown`;
-  renderAttemptResults();
-  syncSelectionUi();
+  renderCurrentAttempts();
 }
 function clearDetail() {
   selectedAttemptId = null;
@@ -1089,25 +1099,63 @@ async function loadBatchDestinations() {
 async function assignSelected() {
   const collectionId = Number(select('#batch-destination-search').dataset.collectionId);
   if (!collectionId || !selectedAttempts.size) return;
+  const submittedAttemptIds = new Set(selectedAttempts);
+  const submittedAttempts = renderedAttempts.filter(attempt => submittedAttemptIds.has(attempt.attempt_id));
+  const previousSelectionAnchorAttemptId = selectionAnchorAttemptId;
   const button = select('#batch-assign');
   button.disabled = true;
   select('#batch-message').textContent = 'Assigning…';
+  submittedAttemptIds.forEach(attemptId => pendingBatchAttemptIds.add(attemptId));
+  submittedAttempts.forEach(attempt => pendingBatchBookmarkIds.add(attempt.bookmark_id));
+  attemptsRenderGeneration += 1;
+  renderedAttempts = renderedAttempts.filter(attempt => !submittedAttemptIds.has(attempt.attempt_id));
+  clearAttemptSelection();
+  renderCurrentAttempts();
   try {
     const result = await postJson('/api/attempts/resolve-batch', {
-      attempt_ids:[...selectedAttempts], collection_id:collectionId,
+      attempt_ids:[...submittedAttemptIds], collection_id:collectionId,
     });
-    clearAttemptSelection();
+    const failedAttempts = new Map(result.errors.map(item => [item.attempt_id, item]));
+    const successfulAttemptIds = new Set(
+      [...submittedAttemptIds].filter(attemptId => !failedAttempts.has(attemptId))
+    );
+    const failedCards = submittedAttempts.flatMap(attempt => {
+      const failure = failedAttempts.get(attempt.attempt_id);
+      return failure?.retry_attempt ? [failure.retry_attempt] : [];
+    });
+    attemptsRenderGeneration += 1;
+    submittedAttemptIds.forEach(attemptId => pendingBatchAttemptIds.delete(attemptId));
+    submittedAttempts.forEach(attempt => pendingBatchBookmarkIds.delete(attempt.bookmark_id));
+    const visibleAttemptIds = new Set(renderedAttempts.map(attempt => attempt.attempt_id));
+    renderedAttempts = [
+      ...failedCards.filter(attempt => !visibleAttemptIds.has(attempt.attempt_id)),
+      ...renderedAttempts,
+    ];
     result.errors.forEach(item => selectedAttempts.add(item.retry_attempt_id || item.attempt_id));
-    selectionAnchorAttemptId = selectedAttempts.values().next().value || null;
+    if (!selectionAnchorAttemptId) {
+      selectionAnchorAttemptId = selectedAttempts.values().next().value || null;
+    }
+    if (selectedAttemptId && successfulAttemptIds.has(selectedAttemptId)) clearDetail();
     clearDataCaches();
     select('#batch-message').textContent = result.failed
       ? `${result.resolved} assigned · ${result.failed} failed`
       : `${result.resolved} assigned`;
-    await refreshDashboard();
+    renderCurrentAttempts();
+    void refreshDashboard();
   } catch (error) {
+    submittedAttemptIds.forEach(attemptId => pendingBatchAttemptIds.delete(attemptId));
+    submittedAttempts.forEach(attempt => pendingBatchBookmarkIds.delete(attempt.bookmark_id));
+    const visibleAttemptIds = new Set(renderedAttempts.map(attempt => attempt.attempt_id));
+    renderedAttempts = [
+      ...submittedAttempts.filter(attempt => !visibleAttemptIds.has(attempt.attempt_id)),
+      ...renderedAttempts,
+    ];
+    submittedAttemptIds.forEach(attemptId => selectedAttempts.add(attemptId));
+    if (!selectionAnchorAttemptId) {
+      selectionAnchorAttemptId = previousSelectionAnchorAttemptId;
+    }
+    renderCurrentAttempts();
     select('#batch-message').textContent = error.message;
-  } finally {
-    syncSelectionUi();
   }
 }
 function renderSorterStatus(status) {

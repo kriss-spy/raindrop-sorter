@@ -265,6 +265,276 @@ def test_stale_location_overview_response_does_not_replace_current_counts(
         browser.close()
 
 
+def test_batch_assignment_clears_successful_cards_before_background_refresh(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        page.locator(".attempt-select").nth(0).check()
+        page.locator(".attempt-select").nth(1).check()
+        page.evaluate(
+            """
+            () => {
+              const destination = document.querySelector('#batch-destination-search');
+              destination.dataset.collectionId = '11';
+              destination.value = 'Library/Root/Child';
+              syncSelectionUi();
+
+              const originalFetch = window.fetch.bind(window);
+              window.fetch = (url, options = {}) => {
+                if (String(url) === '/api/attempts/resolve-batch') {
+                  return new Promise(resolve => {
+                    window.resolveBatchAssignment = () => resolve(new Response(JSON.stringify({
+                      status: 'ok', resolved: 2, failed: 0, results: [], errors: [],
+                    }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                  });
+                }
+                if (String(url).startsWith('/api/overview') || String(url).startsWith('/api/attempts?')) {
+                  return new Promise(() => {});
+                }
+                return originalFetch(url, options);
+              };
+            }
+            """
+        )
+
+        page.locator("#batch-assign").click()
+        page.wait_for_function("() => typeof window.resolveBatchAssignment === 'function'")
+
+        assert page.locator("#batch-bar").is_hidden()
+        assert page.locator("[data-attempt-id]").count() == 0
+
+        page.evaluate("window.resolveBatchAssignment()")
+        page.wait_for_function(
+            "() => document.querySelector('#batch-message').textContent === '2 assigned'"
+        )
+
+        assert page.locator("#batch-bar").is_hidden()
+        assert page.locator("[data-attempt-id]").count() == 0
+
+        browser.close()
+
+
+def test_batch_assignment_ignores_refresh_started_before_optimistic_removal(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        page.locator(".attempt-select").nth(0).check()
+        page.locator(".attempt-select").nth(1).check()
+        page.evaluate(
+            """
+            () => {
+              const destination = document.querySelector('#batch-destination-search');
+              destination.dataset.collectionId = '11';
+              destination.value = 'Library/Root/Child';
+              syncSelectionUi();
+              const staleItems = renderedAttempts.map(item => ({...item}));
+              const originalFetch = window.fetch.bind(window);
+              window.fetch = (url, options = {}) => {
+                if (String(url) === '/api/attempts/resolve-batch') {
+                  return new Promise(resolve => {
+                    window.resolveBatchAssignment = () => resolve(new Response(JSON.stringify({
+                      status: 'ok', resolved: 2, failed: 0, results: [], errors: [],
+                    }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                  });
+                }
+                if (String(url).startsWith('/api/attempts?')) {
+                  return new Promise(resolve => {
+                    if (!window.resolveStaleAttempts) {
+                      window.resolveStaleAttempts = () => resolve(new Response(JSON.stringify({
+                        items: staleItems, count: staleItems.length,
+                      }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                    }
+                  });
+                }
+                return originalFetch(url, options);
+              };
+              void renderAttempts();
+            }
+            """
+        )
+        page.wait_for_function("() => typeof window.resolveStaleAttempts === 'function'")
+
+        page.locator("#batch-assign").click()
+        page.wait_for_function("() => typeof window.resolveBatchAssignment === 'function'")
+        assert page.locator("[data-attempt-id]").count() == 0
+
+        page.evaluate("window.resolveStaleAttempts()")
+        page.wait_for_timeout(100)
+        assert page.locator("[data-attempt-id]").count() == 0
+
+        page.evaluate("window.resolveBatchAssignment()")
+        page.wait_for_function(
+            "() => document.querySelector('#batch-message').textContent === '2 assigned'"
+        )
+        browser.close()
+
+
+def test_batch_assignment_ignores_refresh_started_while_request_is_pending(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        page.locator(".attempt-select").nth(0).check()
+        page.locator(".attempt-select").nth(1).check()
+        page.evaluate(
+            """
+            () => {
+              const destination = document.querySelector('#batch-destination-search');
+              destination.dataset.collectionId = '11';
+              destination.value = 'Library/Root/Child';
+              syncSelectionUi();
+              const staleItems = renderedAttempts.map(item => ({...item}));
+              const originalFetch = window.fetch.bind(window);
+              window.fetch = (url, options = {}) => {
+                if (String(url) === '/api/attempts/resolve-batch') {
+                  return new Promise(resolve => {
+                    window.resolveBatchAssignment = () => resolve(new Response(JSON.stringify({
+                      status: 'ok', resolved: 2, failed: 0, results: [], errors: [],
+                    }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                  });
+                }
+                if (String(url).startsWith('/api/attempts?')) {
+                  return new Promise(resolve => {
+                    if (!window.resolveStaleAttempts) {
+                      window.resolveStaleAttempts = () => resolve(new Response(JSON.stringify({
+                        items: staleItems, count: staleItems.length,
+                      }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                    }
+                  });
+                }
+                return originalFetch(url, options);
+              };
+            }
+            """
+        )
+
+        page.locator("#batch-assign").click()
+        page.wait_for_function("() => typeof window.resolveBatchAssignment === 'function'")
+        page.evaluate("void renderAttempts()")
+        page.wait_for_function("() => typeof window.resolveStaleAttempts === 'function'")
+
+        page.evaluate("window.resolveBatchAssignment()")
+        page.wait_for_function(
+            "() => document.querySelector('#batch-message').textContent === '2 assigned'"
+        )
+        page.evaluate("window.resolveStaleAttempts()")
+        page.wait_for_timeout(100)
+
+        assert page.locator("[data-attempt-id]").count() == 0
+        browser.close()
+
+
+def test_batch_assignment_restores_cards_and_selection_when_request_fails(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        page.locator(".attempt-select").nth(0).check()
+        page.locator(".attempt-select").nth(1).check()
+        page.evaluate(
+            """
+            () => {
+              const destination = document.querySelector('#batch-destination-search');
+              destination.dataset.collectionId = '11';
+              destination.value = 'Library/Root/Child';
+              syncSelectionUi();
+              window.fetch = url => {
+                if (String(url) === '/api/attempts/resolve-batch') {
+                  return Promise.resolve(new Response(JSON.stringify({error: 'Assignment failed'}), {
+                    status: 502, headers: {'Content-Type': 'application/json'},
+                  }));
+                }
+                return new Promise(() => {});
+              };
+            }
+            """
+        )
+
+        page.locator("#batch-assign").click()
+        page.wait_for_function(
+            "() => document.querySelector('#batch-message').textContent === 'Assignment failed'"
+        )
+
+        assert page.locator("[data-attempt-id]").count() == 2
+        assert page.locator(".attempt-select:checked").count() == 2
+        assert page.locator("#batch-bar").is_visible()
+
+        browser.close()
+
+
+def test_batch_assignment_keeps_only_failed_cards_selected_during_refresh(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        page.locator(".attempt-select").nth(0).check()
+        page.locator(".attempt-select").nth(1).check()
+        page.evaluate(
+            """
+            () => {
+              const destination = document.querySelector('#batch-destination-search');
+              destination.dataset.collectionId = '11';
+              destination.value = 'Library/Root/Child';
+              syncSelectionUi();
+              const attemptIds = [...document.querySelectorAll('[data-attempt-id]')]
+                .map(item => item.dataset.attemptId);
+              const failedAttempt = renderedAttempts.find(
+                item => item.attempt_id === attemptIds[0]
+              );
+              window.fetch = url => {
+                if (String(url) === '/api/attempts/resolve-batch') {
+                  return Promise.resolve(new Response(JSON.stringify({
+                    status: 'partial', resolved: 1, failed: 1, results: [],
+                    errors: [{
+                      attempt_id: attemptIds[0], retry_attempt_id: 'retry-attempt',
+                      retry_attempt: {
+                        ...failedAttempt, attempt_id: 'retry-attempt',
+                        mode: 'manual-review', outcome: null, current_phase: 'failed',
+                      },
+                      error: 'Unavailable', type: 'RuntimeError',
+                    }],
+                  }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                }
+                return new Promise(() => {});
+              };
+            }
+            """
+        )
+
+        page.locator("#batch-assign").click()
+        page.wait_for_function(
+            "() => document.querySelector('#batch-message').textContent === '1 assigned · 1 failed'"
+        )
+
+        assert page.locator("[data-attempt-id]").count() == 1
+        assert page.locator('[data-attempt-id="retry-attempt"] .attempt-select').is_checked()
+        assert page.locator("#selection-count").text_content() == "1 selected"
+
+        browser.close()
+
+
 def test_query_and_filter_controls_stay_in_sync(destination_filter_dashboard):
     with playwright.sync_playwright() as runtime:
         browser = runtime.chromium.launch(headless=True)

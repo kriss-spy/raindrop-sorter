@@ -655,6 +655,12 @@ def test_dashboard_batch_resolution_reports_partial_failure(tmp_path):
         assert result["failed"] == 1
         assert result["errors"][0]["attempt_id"] == attempt_ids[1]
         assert result["errors"][0]["retry_attempt_id"] != attempt_ids[1]
+        assert result["errors"][0]["retry_attempt"]["attempt_id"] == result["errors"][0][
+            "retry_attempt_id"
+        ]
+        assert result["errors"][0]["retry_attempt"]["mode"] == "manual-review"
+        assert result["errors"][0]["retry_attempt"]["current_phase"] == "failed"
+        assert result["errors"][0]["retry_attempt"]["outcome"] is None
     finally:
         server.shutdown()
         server.server_close()
