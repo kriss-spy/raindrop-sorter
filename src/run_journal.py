@@ -563,6 +563,7 @@ class SQLiteRunJournal:
                 excerpt=snapshot.get("excerpt"),
                 collection_id=(snapshot.get("collection") or {}).get("$id"),
                 summary=decision.get("summary"),
+                visual_labels=sorted(visual_labels),
                 duration_ms=_duration_ms(decoded["started_at"], decoded["ended_at"]),
             )
             if bookmark_ids is not None and decoded["bookmark_id"] not in bookmark_ids:

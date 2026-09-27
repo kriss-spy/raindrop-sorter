@@ -1329,6 +1329,112 @@ def test_apply_is_the_default_run_mode_filter(destination_filter_dashboard):
         browser.close()
 
 
+def test_ai_order_groups_records_with_similar_visual_labels(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              renderedAttempts = [
+                {attempt_id:'a', bookmark_id:1, title:'Halo blue', mode:'apply',
+                 outcome:'review', current_phase:'applied',
+                 started_at:'2026-09-27T03:00:00+00:00',
+                 visual_labels:['1girl', 'halo', 'blue_hair']},
+                {attempt_id:'b', bookmark_id:2, title:'Red dress', mode:'apply',
+                 outcome:'review', current_phase:'applied',
+                 started_at:'2026-09-27T02:00:00+00:00',
+                 visual_labels:['1girl', 'red_hair', 'dress']},
+                {attempt_id:'c', bookmark_id:3, title:'Second halo', mode:'apply',
+                 outcome:'review', current_phase:'applied',
+                 started_at:'2026-09-27T01:00:00+00:00',
+                 visual_labels:['1girl', 'halo', 'blue_hair', 'school_uniform']},
+              ];
+              renderCurrentAttempts();
+              window.firstAiOrderCover = document.querySelector('[data-attempt-id="a"] img');
+            }
+            """
+        )
+
+        page.get_by_role("button", name="Group by visual similarity").click()
+
+        assert page.locator(".attempt-title").all_text_contents() == [
+            "Second halo",
+            "Halo blue",
+            "Red dress",
+        ]
+        assert page.get_by_role(
+            "button", name="Group by visual similarity"
+        ).get_attribute("aria-pressed") == "true"
+        assert page.evaluate(
+            "window.firstAiOrderCover === document.querySelector('[data-attempt-id=\"a\"] img')"
+        ) is True
+
+        browser.close()
+
+
+def test_manual_order_repositions_records_with_keyboard_and_is_filter_scoped(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              renderedAttempts = [
+                {attempt_id:'a', bookmark_id:1, title:'First', mode:'apply',
+                 outcome:'review', current_phase:'applied',
+                 started_at:'2026-09-27T03:00:00+00:00', visual_labels:['halo']},
+                {attempt_id:'b', bookmark_id:2, title:'Second', mode:'apply',
+                 outcome:'review', current_phase:'applied',
+                 started_at:'2026-09-27T02:00:00+00:00', visual_labels:['blue_hair']},
+                {attempt_id:'c', bookmark_id:3, title:'Third', mode:'apply',
+                 outcome:'review', current_phase:'applied',
+                 started_at:'2026-09-27T01:00:00+00:00', visual_labels:['red_hair']},
+              ];
+              renderCurrentAttempts();
+            }
+            """
+        )
+
+        page.get_by_role("button", name="Manual").click()
+        page.get_by_role("button", name="Reorder First").press("ArrowDown")
+
+        assert page.locator(".attempt-title").all_text_contents() == [
+            "Second", "First", "Third",
+        ]
+        page.get_by_role("button", name="Reorder First").drag_to(
+            page.locator('[data-attempt-id="c"]')
+        )
+        assert page.locator(".attempt-title").all_text_contents() == [
+            "Second", "Third", "First",
+        ]
+        saved = page.evaluate(
+            "JSON.parse(sessionStorage.getItem(attemptOrderStorageKey()))"
+        )
+        assert saved == {"mode": "manual", "attempt_ids": ["b", "c", "a"]}
+        assert page.evaluate(
+            """
+            () => {
+              freeSearchValue = 'another filter';
+              syncQueryFromFilterControls();
+              return sessionStorage.getItem(attemptOrderStorageKey());
+            }
+            """
+        ) is None
+
+        browser.close()
+
+
 def test_filter_change_renders_first_page_then_appends_in_order(
     destination_filter_dashboard,
 ):

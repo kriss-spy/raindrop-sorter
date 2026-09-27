@@ -19,7 +19,7 @@ button,input,select{font:inherit}
 .control:focus{border-color:var(--cyan)}
 button.control{cursor:pointer;color:var(--cyan)}
 .panel{overflow:hidden}
-.panel-head{border-bottom:1px solid var(--line);display:flex;justify-content:space-between;color:var(--muted)}
+.panel-head{border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--muted)}
 .attempt{display:flex;flex-direction:column;gap:5px;color:inherit;width:100%;text-align:left;cursor:pointer}
 .attempt-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
 .attempt-title{font:650 15px/1.3 system-ui;white-space:normal;overflow-wrap:anywhere}
@@ -56,11 +56,11 @@ html,body{height:100%;overflow:hidden}
 .filter-toggle{position:relative}.filter-count{position:absolute;top:-6px;right:-6px;display:grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--cyan);color:#071013;font-size:10px;font-weight:800}.filter-count:empty{display:none}.filter-panel{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:11px;padding:12px;background:color-mix(in srgb,var(--panel) 96%,transparent);border:1px solid var(--line);border-radius:11px;box-shadow:0 14px 36px #05080b66}.filter-panel[hidden]{display:none}.filter-field{display:grid;align-content:start;gap:5px;min-width:0}.filter-field>label,.filter-field-label{color:var(--muted);font-size:11px}.filter-field .control{width:100%;min-width:0}.filter-field-wide{grid-column:span 2}.location-filter{display:flex;align-items:center;min-height:37px;gap:8px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:#0e151c}.location-filter output{min-width:0;flex:1;color:var(--cyan);overflow-wrap:anywhere}.filter-clear{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:0 3px}.filter-clear:hover{color:var(--red)}.filter-actions{display:flex;align-items:flex-end;justify-content:flex-end}.reset-filters{width:auto;min-width:110px}
 .view-switch{display:flex}.view-switch .icon-button{border-radius:0}.view-switch .icon-button:first-child{border-radius:9px 0 0 9px}.view-switch .icon-button:last-child{border-radius:0 9px 9px 0;margin-left:-1px}
 .action-bar,.sorter-panel{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#101820}.action-bar[hidden],.sorter-panel[hidden]{display:none}.action-bar .control{min-width:260px}.action-message{color:var(--muted);margin-left:auto}.sorter-panel{justify-content:flex-end}.sorter-status{margin-right:auto}.sorter-status strong{color:var(--lime)}.sorter-panel .explain{margin:0}.batch-picker{position:relative;flex:0 1 520px}.batch-picker .control{width:100%}.batch-destination-results{position:absolute;z-index:10;top:calc(100% + 5px);left:0;right:0;max-height:min(380px,60vh);overflow:auto;padding:5px;background:#0e151c;border:1px solid var(--line);border-radius:9px;box-shadow:0 18px 42px #05080bcc}.batch-destination-results[hidden]{display:none}.batch-destination-option{display:block;width:100%;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;cursor:pointer}.batch-destination-option:hover,.batch-destination-option.active{background:#183039;color:var(--cyan)}.batch-destination-empty{padding:10px;color:var(--muted)}
-.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:8px;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto}.panel-head{padding:9px 12px}
+.workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:8px;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto}.panel-head{padding:9px 12px}.result-panel-head{justify-content:flex-start;gap:12px}.result-panel-head #count{margin-left:auto;white-space:nowrap}.order-rail{display:flex;align-items:center}.order-button{border:1px solid var(--line);background:#0d141a;color:var(--muted);padding:5px 9px;cursor:pointer}.order-button:first-child{border-radius:7px 0 0 7px}.order-button:last-child{border-radius:0 7px 7px 0}.order-button+.order-button{margin-left:-1px}.order-button:hover,.order-button:focus-visible{position:relative;border-color:var(--cyan);color:var(--text)}.order-button.active{position:relative;border-color:var(--cyan);color:var(--cyan);background:#102126}.order-button.ai.active{border-color:var(--violet);color:var(--violet);background:#191627}
 .library-tree-panel{min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr)}.collection-tree{overflow:auto;padding:7px}.collection-group{margin-bottom:12px}.collection-group-title{padding:5px 8px;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em}.collection-list{display:grid;gap:2px}.collection-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:2px;padding-left:calc(var(--depth,0) * 14px)}.collection-toggle,.collection-select{border:0;background:transparent;color:var(--text);border-radius:6px;cursor:pointer}.collection-toggle{width:24px;height:28px;color:var(--muted)}.collection-toggle:disabled{cursor:default;color:transparent}.collection-select{padding:6px;text-align:left;overflow-wrap:anywhere}.collection-select:hover,.collection-select.active{background:#17232b;color:var(--cyan)}.collection-count{padding-right:6px;color:var(--muted);font-size:11px}.library-message{padding:12px;color:var(--muted)}
 .attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));grid-auto-rows:min-content;align-content:start;align-items:stretch;gap:10px;max-height:none}.attempt{position:relative;padding:0;border:1px solid var(--line);border-radius:11px;background:#0d141a;overflow:hidden}.attempt:hover,.attempt.active,.attempt.selected{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.attempt.selected{border-color:var(--cyan);box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--cyan) 42%,transparent)}.attempt.selected.active{box-shadow:inset 3px 0 var(--cyan),inset 0 0 0 2px color-mix(in srgb,var(--cyan) 42%,transparent)}.attempt-body{display:flex;flex-direction:column;gap:5px;padding:9px 10px 10px;min-width:0}.attempt-cover{display:block;width:100%;height:100%;object-fit:cover;background:linear-gradient(135deg,#111d25,#0a1015)}.attempt-cover-wrap{position:relative;background:linear-gradient(135deg,#111d25,#080d11)}.card-cover-wrap{aspect-ratio:16/9}.attempt-cover{position:absolute;inset:0;z-index:1}.attempt-cover-wrap.missing img{display:none}.attempt-select{position:absolute;z-index:3;top:8px;left:8px;width:18px;height:18px;accent-color:var(--cyan)}.attempt-tools{display:flex;align-items:center;gap:7px}.icon-link{display:inline-grid;place-items:center;color:var(--cyan);width:25px;height:25px;border:1px solid var(--line);border-radius:7px;text-decoration:none}.attempt-head .attempt-tools{margin-left:auto}.attempt-head .badge{margin-left:0}
 .attempt-table-wrap{padding:0;overflow:auto}.attempt-table{width:100%;border-collapse:collapse;table-layout:fixed}.attempt-table th,.attempt-table td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.attempt-table th{position:sticky;top:0;z-index:2;background:#111820;color:var(--muted);font-size:10px;text-transform:uppercase}.attempt-table tbody tr{cursor:pointer}.attempt-table tbody tr:hover,.attempt-table tbody tr.active,.attempt-table tbody tr.selected{background:#17232b}.attempt-table tbody tr.selected{box-shadow:inset 3px 0 var(--cyan)}.attempt-table .col-check{width:42px}.attempt-table .col-cover{width:76px}.attempt-table .col-outcome{width:110px}.attempt-table .col-run{width:145px}.attempt-table .col-time{width:135px}.attempt-table .col-open{width:48px}.table-cover{width:58px;height:42px;object-fit:cover;border-radius:6px;background:#080d11}.table-title{font:650 14px system-ui;overflow-wrap:anywhere}.table-destination{color:var(--cyan);overflow-wrap:anywhere}
-.attempt-table .attempt-select{position:static}.table-cover-wrap{width:58px;height:42px;border-radius:6px;overflow:hidden}.attempt-cover,.table-cover{pointer-events:none}.icon-button:disabled{cursor:not-allowed;opacity:.35}
+.attempt-table .attempt-select{position:static}.table-cover-wrap{width:58px;height:42px;border-radius:6px;overflow:hidden}.attempt-cover,.table-cover{pointer-events:none}.icon-button:disabled{cursor:not-allowed;opacity:.35}.order-handle{position:absolute;z-index:3;top:8px;right:8px;display:none;place-items:center;width:26px;height:26px;padding:0;border:1px solid var(--line);border-radius:7px;background:#091117d9;color:var(--cyan);cursor:grab;touch-action:none}.manual-order .order-handle{display:grid}.order-handle:active{cursor:grabbing}.order-handle svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}.attempt-table .order-handle{position:static;margin-left:6px;vertical-align:middle}.attempt.dragging,.attempt-table tr.dragging{opacity:.42}.attempt.drop-target,.attempt-table tr.drop-target{outline:2px solid var(--cyan);outline-offset:-2px}
 .detail-panel{position:absolute;z-index:5;inset:0 0 0 auto;width:min(720px,52vw);display:grid;grid-template-rows:auto minmax(0,1fr);background:#10171f;box-shadow:-18px 0 44px #05080bad;transform:translateX(calc(100% + 24px));transition:transform .2s ease;pointer-events:none}.workspace.detail-open .detail-panel{transform:translateX(0);pointer-events:auto}.detail-panel-head{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--muted)}.detail-panel-head .icon-button{width:30px;height:30px}.detail-toggle[hidden]{display:none}#detail{padding:18px;max-height:none;overflow:auto;min-height:0}.detail-title{font-size:21px}.detail-links{display:flex;gap:8px;margin-top:7px}.detail-links .icon-link{width:32px;height:32px}.bookmark-preview{max-height:330px;margin:14px 0}.empty{min-height:0}.drawer-scrim{position:absolute;z-index:4;inset:0;background:#05080b99;opacity:0;pointer-events:none;transition:opacity .2s;border:0}.workspace.detail-open .drawer-scrim{opacity:1;pointer-events:auto}
 @media(max-width:1100px){.filter-panel{grid-template-columns:repeat(3,minmax(140px,1fr))}.detail-panel{width:min(680px,92vw)}.workspace{grid-template-columns:240px minmax(0,1fr)}}
 @media(max-width:700px){.shell{padding:8px 10px}.live{display:none}.toolbar{grid-template-columns:minmax(0,1fr) 36px 76px repeat(3,36px);grid-template-areas:"search filters view refresh control detail"}.filter-panel{grid-template-columns:repeat(2,minmax(0,1fr));max-height:42vh;overflow:auto}.filter-field-wide{grid-column:span 2}.workspace{grid-template-columns:190px minmax(0,1fr)}.attempt-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}.action-bar,.sorter-panel{flex-wrap:wrap}.action-bar .control{min-width:0;flex:1}.attempt-table{min-width:760px}.detail-panel{width:100%}}
@@ -71,7 +71,7 @@ html,body{height:100%;overflow:hidden}
 <section class="filter-panel" id="filter-panel" aria-label="Journal filters" hidden><div class="filter-field"><label for="outcome">Outcome</label><select class="control" id="outcome"><option value="">All outcomes</option></select></div><div class="filter-field"><label for="phase">Lifecycle phase</label><select class="control" id="phase"><option value="">All lifecycle phases</option></select></div><div class="filter-field"><label for="mode">Run mode</label><select class="control" id="mode"><option value="">All run modes</option><option value="dry-run">dry-run</option><option value="apply" selected>apply</option><option value="manual-review">manual-review</option><option value="manual-delete">manual-delete</option><option value="legacy-tag-migration">legacy-tag-migration</option></select></div><div class="filter-field"><label for="scope">Attempt scope</label><select class="control" id="scope"><option value="latest">Latest status</option><option value="history">Attempt history</option></select></div><div class="filter-field filter-field-wide"><label for="visual-labels">Visual labels · comma separated, all must match</label><input class="control" id="visual-labels" placeholder="halo, blue_hair" autocomplete="off"></div><div class="filter-field"><label for="title-filter">Title contains</label><input class="control" id="title-filter" placeholder="Hatsune Miku" autocomplete="off"></div><div class="filter-field"><label for="link-filter">Source URL contains</label><input class="control" id="link-filter" placeholder="x.com/" autocomplete="off"></div><div class="filter-field"><span class="filter-field-label">Current Raindrop location · choose from tree</span><div class="location-filter"><output id="location-filter">Any location</output><button class="filter-clear" id="location-clear" type="button" aria-label="Clear location filter" title="Clear location filter">×</button></div></div><div class="filter-field"><label for="date-filter">Processed on</label><input class="control" id="date-filter" type="date"></div><div class="filter-actions"><button class="control reset-filters" id="reset-filters" type="button">Reset filters</button></div></section>
 <section class="action-bar" id="batch-bar" hidden><strong id="selection-count">0 selected</strong><div class="batch-picker"><input class="control" id="batch-destination-search" role="combobox" aria-label="Batch destination" aria-autocomplete="list" aria-controls="batch-destination-results" aria-expanded="false" autocomplete="off" placeholder="Search Art, Goods, Image, Post, or Video destinations…"><div class="batch-destination-results" id="batch-destination-results" role="listbox" hidden></div></div><button class="icon-button" id="batch-assign" type="button" aria-label="Assign selected Raindrops" title="Assign selected Raindrops" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><path d="M5 5v14"/></svg></button><button class="icon-button" id="batch-delete" type="button" aria-label="Delete selected records" title="Mark selected records DELETED" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></button><button class="icon-button" id="selection-clear" type="button" aria-label="Clear selection" title="Clear selection"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><span class="action-message" id="batch-message"></span></section>
 <section class="sorter-panel" id="sorter-panel" hidden><div class="sorter-status"><strong id="sorter-state">Loading…</strong><div class="explain" id="sorter-summary">Reading local sorter status</div></div><button class="icon-button" id="process-all" type="button" aria-label="Process all Unsorted Raindrops" title="Process all Unsorted Raindrops"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/><path d="m15 15 3 3 4-5"/></svg></button><button class="icon-button" id="sorter-stop" type="button" aria-label="Stop processing Unsorted Raindrops" title="Stop processing after the current Raindrop"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button><button class="icon-button" id="sorter-start" type="button" aria-label="Start automatic sorter" title="Start automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg></button><button class="icon-button" id="sorter-pause" type="button" aria-label="Pause automatic sorter" title="Pause automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg></button></section>
-<section class="workspace" id="workspace"><aside class="panel library-tree-panel" aria-label="Current Raindrop location filter"><header class="panel-head"><span>Location</span><span id="tree-filter-state">All</span></header><div class="collection-tree" id="collection-tree"><div class="skeleton"></div></div></aside><div class="panel attempt-panel"><div class="panel-head"><span id="list-title">Latest Raindrop status</span><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
+<section class="workspace" id="workspace"><aside class="panel library-tree-panel" aria-label="Current Raindrop location filter"><header class="panel-head"><span>Location</span><span id="tree-filter-state">All</span></header><div class="collection-tree" id="collection-tree"><div class="skeleton"></div></div></aside><div class="panel attempt-panel"><div class="panel-head result-panel-head"><span id="list-title">Latest Raindrop status</span><div class="order-rail" role="group" aria-label="Record order"><button class="order-button active" id="latest-order" type="button" aria-pressed="true">Latest</button><button class="order-button" id="manual-order" type="button" aria-pressed="false">Manual</button><button class="order-button ai" id="ai-order" type="button" aria-label="Group by visual similarity" aria-pressed="false">AI similar</button></div><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
 </main><script>
 const select = selector => document.querySelector(selector);
 const element = (tag, className, text) => {
@@ -86,12 +86,16 @@ const attemptTraceCache = new Map();
 const previewUrlCache = new Map();
 const attemptElementCache = new Map();
 const MAX_CONCURRENT_PREVIEW_FETCHES = 2;
+const MAX_RENDERED_ATTEMPTS = 2000;
 const previewFetchQueue = [];
 let activePreviewFetches = 0;
 let previewCacheGeneration = 0;
 let assignmentCollectionsPromise = null;
 let resultLayout = localStorage.getItem('sorter-result-layout') === 'table' ? 'table' : 'cards';
 let renderedAttempts = [];
+let attemptOrderMode = 'latest';
+let draggedAttemptId = null;
+const attemptOrderStoragePrefix = 'sorter-attempt-order-v1:';
 const selectedAttempts = new Set();
 const pendingAssignmentAttemptIds = new Set();
 const pendingAssignmentBookmarkIds = new Set();
@@ -626,6 +630,47 @@ function activateAttempt(container, attempt) {
       handleAttemptActivation(event, attempt);
     }
   };
+  container.ondragover = event => {
+    if (attemptOrderMode !== 'manual' || !draggedAttemptId) return;
+    event.preventDefault();
+    container.classList.add('drop-target');
+  };
+  container.ondragleave = () => container.classList.remove('drop-target');
+  container.ondrop = event => {
+    if (attemptOrderMode !== 'manual' || !draggedAttemptId) return;
+    event.preventDefault();
+    container.classList.remove('drop-target');
+    moveAttemptBefore(draggedAttemptId, attempt.attempt_id);
+  };
+}
+function manualOrderHandle(attempt) {
+  const handle = element('button', 'order-handle');
+  handle.type = 'button';
+  handle.draggable = true;
+  handle.setAttribute('aria-label', `Reorder ${attempt.title || 'Raindrop ' + attempt.bookmark_id}`);
+  handle.title = 'Drag to reorder, or use the up and down arrow keys';
+  handle.append(svgIcon('<path d="M8 7h8M8 12h8M8 17h8"/>'));
+  handle.onclick = event => event.stopPropagation();
+  handle.onkeydown = event => {
+    if (!['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    moveAttemptBy(attempt.attempt_id, event.key === 'ArrowUp' ? -1 : 1);
+  };
+  handle.ondragstart = event => {
+    draggedAttemptId = attempt.attempt_id;
+    event.stopPropagation();
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', attempt.attempt_id);
+    handle.closest('[data-attempt-id]')?.classList.add('dragging');
+  };
+  handle.ondragend = () => {
+    draggedAttemptId = null;
+    document.querySelectorAll('.dragging,.drop-target').forEach(item => (
+      item.classList.remove('dragging', 'drop-target')
+    ));
+  };
+  return handle;
 }
 function renderCard(attempt) {
   const card = element('article', 'attempt'
@@ -635,6 +680,7 @@ function renderCard(attempt) {
   const cover = element('div', 'attempt-cover-wrap card-cover-wrap');
   cover.append(previewImage(attempt.bookmark_id, attempt.title, 'attempt-cover', attempt.cover));
   if (isDeletable(attempt)) card.append(selectionCheckbox(attempt));
+  card.append(manualOrderHandle(attempt));
   const body = element('div', 'attempt-body');
   const header = element('div', 'attempt-head');
   const tools = element('div', 'attempt-tools');
@@ -656,6 +702,7 @@ function renderTableRow(attempt) {
   activateAttempt(row, attempt);
   const checkCell = element('td');
   if (isDeletable(attempt)) checkCell.append(selectionCheckbox(attempt));
+  checkCell.append(manualOrderHandle(attempt));
   const coverCell = element('td');
   const coverWrap = element('div', 'attempt-cover-wrap table-cover-wrap');
   coverWrap.append(previewImage(attempt.bookmark_id, attempt.title, 'table-cover', attempt.cover));
@@ -726,7 +773,8 @@ function renderTable(attempts) {
 }
 function renderAttemptResults() {
   const attemptList = select('#attempts');
-  attemptList.className = resultLayout === 'cards' ? 'attempt-grid' : 'attempt-table-wrap';
+  attemptList.className = (resultLayout === 'cards' ? 'attempt-grid' : 'attempt-table-wrap')
+    + (attemptOrderMode === 'manual' ? ' manual-order' : '');
   let children;
   if (!renderedAttempts.length) {
     children = [element('div', 'empty', 'No attempts match these filters.')];
@@ -739,6 +787,158 @@ function renderAttemptResults() {
   pruneAttemptElementCache(renderedAttempts);
   select('#card-view').classList.toggle('active', resultLayout === 'cards');
   select('#table-view').classList.toggle('active', resultLayout === 'table');
+}
+function visualSimilarityOrder(attempts) {
+  const indexed = attempts.map((attempt, index) => ({
+    attempt,
+    index,
+    labels:new Set((attempt.visual_labels || []).map(label => String(label).toLocaleLowerCase())),
+  }));
+  if (indexed.length < 2) return [...attempts];
+  const frequencies = new Map();
+  indexed.forEach(item => item.labels.forEach(label => (
+    frequencies.set(label, (frequencies.get(label) || 0) + 1)
+  )));
+  const weights = new Map([...frequencies].map(([label, frequency]) => [
+    label,
+    1 + Math.log((indexed.length + 1) / (frequency + 1)),
+  ]));
+  const labelScore = item => [...item.labels].reduce(
+    (total, label) => total + (weights.get(label) || 0), 0
+  );
+  const similarity = (left, right) => {
+    const union = new Set([...left.labels, ...right.labels]);
+    if (!union.size) return 0;
+    const unionWeight = [...union].reduce((total, label) => total + (weights.get(label) || 0), 0);
+    const intersectionWeight = [...left.labels]
+      .filter(label => right.labels.has(label))
+      .reduce((total, label) => total + (weights.get(label) || 0), 0);
+    return unionWeight ? intersectionWeight / unionWeight : 0;
+  };
+  const remaining = [...indexed];
+  const takeBestSeed = () => {
+    remaining.sort((left, right) => labelScore(right) - labelScore(left) || left.index - right.index);
+    return remaining.shift();
+  };
+  const ordered = [];
+  let current = takeBestSeed();
+  while (current) {
+    ordered.push(current.attempt);
+    if (!remaining.length) break;
+    let bestIndex = 0;
+    let bestSimilarity = -1;
+    let bestScore = -1;
+    remaining.forEach((candidate, index) => {
+      const candidateSimilarity = similarity(current, candidate);
+      const candidateScore = labelScore(candidate);
+      if (
+        candidateSimilarity > bestSimilarity
+        || (candidateSimilarity === bestSimilarity && candidateScore > bestScore)
+      ) {
+        bestIndex = index;
+        bestSimilarity = candidateSimilarity;
+        bestScore = candidateScore;
+      }
+    });
+    current = remaining.splice(bestIndex, 1)[0];
+  }
+  return ordered;
+}
+function attemptOrderStorageKey() {
+  return attemptOrderStoragePrefix + JSON.stringify({
+    text:freeSearchValue.trim(),
+    outcome:select('#outcome').value,
+    phase:select('#phase').value,
+    mode:select('#mode').value,
+    scope:select('#scope').value,
+    location:selectedLocationPath,
+    labels:visualLabelValues().map(label => label.toLocaleLowerCase()).sort(),
+    title:select('#title-filter').value.trim(),
+    link:select('#link-filter').value.trim(),
+    date:select('#date-filter').value,
+  });
+}
+function persistAttemptOrder() {
+  try {
+    if (attemptOrderMode === 'latest') {
+      sessionStorage.removeItem(attemptOrderStorageKey());
+      return;
+    }
+    sessionStorage.setItem(attemptOrderStorageKey(), JSON.stringify({
+      mode:attemptOrderMode,
+      attempt_ids:renderedAttempts.map(attempt => attempt.attempt_id),
+    }));
+  } catch (_error) {
+    // Ordering still works for this page even if private browsing blocks storage.
+  }
+}
+function storedAttemptOrder() {
+  try {
+    const state = JSON.parse(sessionStorage.getItem(attemptOrderStorageKey()) || 'null');
+    if (!state || !['manual', 'ai'].includes(state.mode) || !Array.isArray(state.attempt_ids)) return null;
+    return state;
+  } catch (_error) {
+    return null;
+  }
+}
+function applyAttemptOrder(attempts) {
+  const state = storedAttemptOrder();
+  attemptOrderMode = state?.mode || 'latest';
+  if (!state) return attempts;
+  if (state.mode === 'ai') return visualSimilarityOrder(attempts);
+  const positions = new Map(state.attempt_ids.map((attemptId, index) => [attemptId, index]));
+  return [...attempts].sort((left, right) => {
+    const leftPosition = positions.get(left.attempt_id);
+    const rightPosition = positions.get(right.attempt_id);
+    if (leftPosition === undefined && rightPosition === undefined) return 0;
+    if (leftPosition === undefined) return 1;
+    if (rightPosition === undefined) return -1;
+    return leftPosition - rightPosition;
+  });
+}
+function moveAttemptBy(attemptId, offset) {
+  const currentIndex = renderedAttempts.findIndex(attempt => attempt.attempt_id === attemptId);
+  const targetIndex = Math.max(0, Math.min(renderedAttempts.length - 1, currentIndex + offset));
+  if (currentIndex < 0 || targetIndex === currentIndex) return;
+  const [attempt] = renderedAttempts.splice(currentIndex, 1);
+  renderedAttempts.splice(targetIndex, 0, attempt);
+  persistAttemptOrder();
+  renderCurrentAttempts();
+  queueMicrotask(() => document.querySelector(
+    `[data-attempt-id="${CSS.escape(attemptId)}"] .order-handle`
+  )?.focus());
+}
+function moveAttemptBefore(attemptId, targetAttemptId) {
+  const currentIndex = renderedAttempts.findIndex(attempt => attempt.attempt_id === attemptId);
+  let targetIndex = renderedAttempts.findIndex(attempt => attempt.attempt_id === targetAttemptId);
+  if (currentIndex < 0 || targetIndex < 0 || currentIndex === targetIndex) return;
+  const [attempt] = renderedAttempts.splice(currentIndex, 1);
+  renderedAttempts.splice(targetIndex, 0, attempt);
+  persistAttemptOrder();
+  renderCurrentAttempts();
+}
+function syncAttemptOrderControls() {
+  [['#latest-order', 'latest'], ['#manual-order', 'manual'], ['#ai-order', 'ai']]
+    .forEach(([selector, mode]) => {
+      const button = select(selector);
+      const active = attemptOrderMode === mode;
+      button.classList.toggle('active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+}
+function setAttemptOrderMode(mode) {
+  attemptOrderMode = mode;
+  if (mode === 'latest') {
+    renderedAttempts.sort((left, right) => (
+      String(right.started_at || '').localeCompare(String(left.started_at || ''))
+      || String(right.attempt_id).localeCompare(String(left.attempt_id))
+    ));
+  } else if (mode === 'ai') {
+    renderedAttempts = visualSimilarityOrder(renderedAttempts);
+  }
+  persistAttemptOrder();
+  renderCurrentAttempts();
+  syncAttemptOrderControls();
 }
 function renderCurrentAttempts() {
   select('#count').textContent = `${renderedAttempts.length} shown`;
@@ -837,10 +1037,10 @@ async function renderAttempts({progressive = false, clearBeforeLoad = true} = {}
   let snapshotStartedAt = null;
   let snapshotAttemptId = null;
   let loadedCount = 0;
-  let pageLimit = progressive ? 24 : 500;
+  let pageLimit = progressive ? 24 : MAX_RENDERED_ATTEMPTS;
   const deferUntilComplete = progressive && !clearBeforeLoad;
-  while (loadedCount < 500) {
-    params.set('limit', String(Math.min(pageLimit, 500 - loadedCount)));
+  while (loadedCount < MAX_RENDERED_ATTEMPTS) {
+    params.set('limit', String(Math.min(pageLimit, MAX_RENDERED_ATTEMPTS - loadedCount)));
     if (beforeStartedAt && beforeAttemptId) {
       params.set('before_started_at', beforeStartedAt);
       params.set('before_attempt_id', beforeAttemptId);
@@ -876,12 +1076,13 @@ async function renderAttempts({progressive = false, clearBeforeLoad = true} = {}
       pinnedRetry = null;
     }
     loadedCount += result.items.length;
-    const hasMore = progressive && result.has_more && loadedCount < 500;
+    const hasMore = progressive && result.has_more && loadedCount < MAX_RENDERED_ATTEMPTS;
     if (!deferUntilComplete || !hasMore) {
       if (!hasMore && selectedAttemptId && !visibleItems.some(attempt => attempt.attempt_id === selectedAttemptId)) {
         clearDetail();
       }
-      renderedAttempts = visibleItems;
+      renderedAttempts = applyAttemptOrder(visibleItems);
+      syncAttemptOrderControls();
       [...selectedAttempts]
         .filter(id => !visibleItems.some(attempt => attempt.attempt_id === id))
         .forEach(id => selectedAttempts.delete(id));
@@ -1567,6 +1768,9 @@ select('#card-view').onclick = () => {
 select('#table-view').onclick = () => {
   resultLayout = 'table'; localStorage.setItem('sorter-result-layout', resultLayout); renderAttemptResults(); syncSelectionUi();
 };
+select('#latest-order').onclick = () => setAttemptOrderMode('latest');
+select('#manual-order').onclick = () => setAttemptOrderMode('manual');
+select('#ai-order').onclick = () => setAttemptOrderMode('ai');
 select('#batch-destination-search').onfocus = async event => {
   batchDestinationWantsOpen = true;
   await loadBatchDestinations();

@@ -132,6 +132,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "label:" in page
     assert "bookmark-preview" in page
     assert "MAX_CONCURRENT_PREVIEW_FETCHES = 2" in page
+    assert "MAX_RENDERED_ATTEMPTS = 2000" in page
     assert "fetchPreviewBlob(bookmarkId)" in page
     assert "image.dataset.bookmarkId" in page
     assert "image.dataset.coverUrl" in page

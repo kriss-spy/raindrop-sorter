@@ -187,6 +187,7 @@ def test_dashboard_query_filters_structured_attempt_fields(tmp_path):
     )
 
     assert [item["bookmark_id"] for item in matching] == [123]
+    assert matching[0]["visual_labels"] == ["1girl", "blue_hair", "halo"]
     assert journal.recent(limit=10, labels=("halo", "red_hair")) == []
     assert journal.recent(limit=10, bookmark_ids={999}) == []
     assert journal.recent(
