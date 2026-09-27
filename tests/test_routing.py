@@ -28,7 +28,9 @@ def _visual(status, destination=None):
         (_text("Art/TOUHOU", "strong"), _visual("inconclusive"), RouteOutcome.PROVISIONAL, "Art/TOUHOU"),
         (_text("Art/TOUHOU", "contextual"), _visual("unavailable"), RouteOutcome.PROVISIONAL, "Art/TOUHOU"),
         (_text("Art/TOUHOU", "weak"), _visual("inconclusive"), RouteOutcome.REVIEW, None),
-        (_text("Art/TOUHOU", "strong"), _visual("pass", "Art/GAMES/BA"), RouteOutcome.CONFLICT, None),
+        (_text("Art/TOUHOU", "weak"), _visual("pass", "Art/TOUHOU"), RouteOutcome.PROVISIONAL, "Art/TOUHOU"),
+        (_text("Art/TOUHOU", "weak"), _visual("pass", "Art/GAMES/BA"), RouteOutcome.REVIEW, None),
+        (_text("Art/TOUHOU", "strong"), _visual("pass", "Art/GAMES/BA"), RouteOutcome.PROVISIONAL, "Art/TOUHOU"),
         (_text(None, None, "no_match"), _visual("pass", "Art/GAMES/BA"), RouteOutcome.PROVISIONAL, "Art/GAMES/BA"),
         (_text(None, None, "no_match"), _visual("inconclusive"), RouteOutcome.REVIEW, None),
     ],
@@ -48,6 +50,43 @@ def test_user_confirmed_bookmark_bypasses_visual_requirement():
     assert decision.outcome is RouteOutcome.CONFIRMED
     assert decision.destination == "Art/GAMES/BA"
     assert "bypassed" in decision.summary
+
+
+def test_visual_match_disambiguates_text_candidates_as_provisional():
+    text = TextEvidence(
+        kind="personal_interest_text",
+        destination=None,
+        strength="conflicting",
+        candidates=("Art/TOUHOU", "Art/VTUBERS"),
+    )
+
+    decision = RouteEngine().route(
+        bookmark_id=123,
+        text=text,
+        visual=_visual("pass", "Art/TOUHOU"),
+    )
+
+    assert decision.outcome is RouteOutcome.PROVISIONAL
+    assert decision.destination == "Art/TOUHOU"
+    assert "competing text candidates" in decision.summary
+
+
+def test_strong_text_overrides_conflicting_visual_candidates_provisionally():
+    decision = RouteEngine().route(
+        bookmark_id=123,
+        text=_text("Art/TOUHOU", "strong"),
+        visual=VisualEvidence(
+            status="conflict",
+            destination=None,
+            method="test",
+            explanation="test",
+            candidates=("Art/TOUHOU", "Art/VTUBERS"),
+        ),
+    )
+
+    assert decision.outcome is RouteOutcome.PROVISIONAL
+    assert decision.destination == "Art/TOUHOU"
+    assert "strong text evidence" in decision.summary
 
 
 def test_text_identifier_uses_user_tags_but_ignores_ai_tags():
@@ -152,6 +191,9 @@ def test_distinct_generic_voicebank_characters_collapse_to_vocaloid():
         "Yuzuki Yukari 結月ゆかり",
         "Otomachi Una 音街ウナ",
         "Kasane Teto 重音テト",
+        "Kasane / Teto",
+        "Teto / Kasane",
+        "Koharu / Rikka",
     ],
 )
 def test_bilingual_aliases_for_one_voicebank_character_are_not_an_ensemble(title):
@@ -265,6 +307,124 @@ def test_text_identifier_uses_touhou_vault_aliases(title):
     assert evidence.destination == "Art/TOUHOU"
 
 
+def test_text_identifier_uses_safe_partial_character_names():
+    evidence = TextIdentifier({}, {}).identify(
+        {
+            "_id": 1611241180,
+            "type": "image",
+            "title": "Since regular Sanae is evil, what about good Sanae?",
+            "tags": [],
+        }
+    )
+
+    assert evidence.destination == "Art/TOUHOU"
+    assert evidence.strength == "weak"
+    assert evidence.matched_value == "sanae"
+
+
+def test_agreeing_visual_evidence_corroborates_weak_partial_name():
+    decision = RouteEngine().route(
+        bookmark_id=999,
+        text=TextEvidence(
+            kind="personal_interest_text",
+            destination="Art/TOUHOU",
+            strength="weak",
+            source="character_alias_partial",
+        ),
+        visual=_visual("pass", "Art/TOUHOU"),
+    )
+
+    assert decision.outcome is RouteOutcome.PROVISIONAL
+    assert "corroborated a weak partial-name match" in decision.summary
+
+
+@pytest.mark.parametrize("title", ["Evil Neuro is cute", "#heartheartart sketch"])
+def test_text_identifier_requires_specific_evil_neuro_signal(title):
+    evidence = TextIdentifier({}, {}).identify(
+        {"_id": 999, "type": "image", "title": title, "tags": []}
+    )
+
+    assert evidence.destination == "Art/NEUROVERSE/EVIL"
+    assert evidence.source == "curated_text"
+
+
+def test_text_identifier_does_not_treat_generic_evil_as_character_name():
+    evidence = TextIdentifier({}, {}).identify(
+        {"_id": 999, "type": "image", "title": "Sanae is evil", "tags": []}
+    )
+
+    assert evidence.destination == "Art/TOUHOU"
+    assert "EVIL" not in evidence.candidates
+
+
+def test_partial_character_matching_does_not_derive_ordinary_words():
+    evidence = TextIdentifier({}, {}).identify(
+        {
+            "_id": 999,
+            "type": "image",
+            "title": "white flower love march",
+            "tags": [],
+        }
+    )
+
+    assert evidence.kind == "no_match"
+
+
+def test_unmatched_weak_partial_stays_in_review_instead_of_becoming_conflict():
+    text = TextIdentifier({}, {}).identify(
+        {
+            "_id": 999,
+            "type": "image",
+            "title": "Ford announces a solemn rite at the opera",
+            "tags": [],
+        }
+    )
+
+    assert text.strength == "conflicting"
+    assert text.source == "multiple_weak_partial"
+    decision = RouteEngine().route(
+        bookmark_id=999,
+        text=text,
+        visual=_visual("pass", "Art/GAMES/BA"),
+    )
+    assert decision.outcome is RouteOutcome.REVIEW
+    assert decision.destination is None
+    assert "did not agree" in decision.summary
+
+
+def test_unmatched_weak_exact_alias_is_not_described_as_partial():
+    text = TextIdentifier({}, {}).identify(
+        {"_id": 999, "type": "image", "title": "霞", "tags": []}
+    )
+
+    assert text.source == "character_alias"
+    decision = RouteEngine().route(
+        bookmark_id=999,
+        text=text,
+        visual=_visual("pass", "Art/TOUHOU"),
+    )
+    assert decision.outcome is RouteOutcome.REVIEW
+    assert "weak text evidence" in decision.summary
+    assert "partial-name" not in decision.summary
+
+
+def test_unmatched_multiple_weak_exact_aliases_stay_in_review():
+    text = TextIdentifier({}, {}).identify(
+        {"_id": 999, "type": "image", "title": "Miku", "tags": []}
+    )
+
+    assert text.strength == "conflicting"
+    assert text.source == "multiple_weak"
+    decision = RouteEngine().route(
+        bookmark_id=999,
+        text=text,
+        visual=_visual("pass", "Art/VTUBERS"),
+    )
+    assert decision.outcome is RouteOutcome.REVIEW
+    assert "weak text evidence" in decision.summary
+    assert "partial-name" not in decision.summary
+
+
 @pytest.mark.parametrize(
     ("title", "destination"),
     [
@@ -310,6 +470,63 @@ def test_explicit_work_name_beats_ambiguous_collaboration_character():
     assert evidence.strength == "strong"
     assert evidence.source == "curated_text"
     assert evidence.candidates == ("Art/VOCALOID",)
+
+
+def test_text_identifier_recognizes_honkai_star_rail_phrase():
+    evidence = TextIdentifier({}, {}).identify(
+        {
+            "_id": 1600936639,
+            "type": "image",
+            "title": "To celebrate Honkai: Star Rail Ver.4.0,",
+            "excerpt": "Hatsune Miku × Pom-Pom by KEI",
+            "tags": [],
+        }
+    )
+
+    assert evidence.destination == "Art/GAMES/STARRAIL"
+    assert evidence.source == "curated_text"
+    assert evidence.strength == "strong"
+
+
+@pytest.mark.parametrize("title", ["学園アイドルマスター", "学マス fanart", "gkmas"])
+def test_text_identifier_recognizes_gakuen_idolmaster(title):
+    evidence = TextIdentifier({}, {}).identify(
+        {"_id": 999, "type": "image", "title": title, "tags": []}
+    )
+
+    assert evidence.destination == "Art/IDOL@MASTER"
+    assert evidence.source == "curated_text"
+
+
+def test_text_identifier_uses_partial_gakumas_character_name():
+    evidence = TextIdentifier({}, {}).identify(
+        {"_id": 999, "type": "image", "title": "Temari fanart", "tags": []}
+    )
+
+    assert evidence.destination == "Art/IDOL@MASTER"
+    assert evidence.source == "character_alias_partial"
+    assert evidence.strength == "weak"
+
+
+def test_visual_candidate_disambiguates_ambiguous_partial_character_name():
+    text = TextIdentifier({}, {}).identify(
+        {"_id": 999, "type": "image", "title": "Saki fanart", "tags": []}
+    )
+
+    assert text.strength == "conflicting"
+    assert set(text.candidates) == {
+        "Art/GAMES/BA",
+        "Art/IDOL@MASTER",
+        "Art/PJSK",
+    }
+
+    decision = RouteEngine().route(
+        bookmark_id=999,
+        text=text,
+        visual=_visual("pass", "Art/IDOL@MASTER"),
+    )
+    assert decision.outcome is RouteOutcome.PROVISIONAL
+    assert decision.destination == "Art/IDOL@MASTER"
 
 
 def test_visual_identity_label_beats_generic_learned_tag_and_exemplar(monkeypatch):

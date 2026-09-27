@@ -20,6 +20,9 @@ from src.destinations import is_art_destination
 ANIME_ALIASES_PATH = (
     Path(__file__).parents[1] / "src" / "anime_character_aliases.json"
 )
+GAKUMAS_ALIASES_PATH = (
+    Path(__file__).parents[1] / "src" / "gakumas_character_aliases.json"
+)
 
 
 VOICEBANKS = Path("extracurricular/music/voice synthesizer/voicebanks")
@@ -57,6 +60,9 @@ EXTRA_ALIASES_BY_SOURCE = {
     TOUHOU / "Tenkyu Chimata.md": {"Tenkyuu Chimata"},
     TOUHOU / "Yorigami Jyoon.md": {"Yorigami Jo'on"},
 }
+EXCLUDED_ALIASES_BY_SOURCE = {
+    VTUBERS / "vedalverse" / "Evil Neuro.md": {"Evil"},
+}
 TOUHOU_SUPPLEMENTS = {"Toramaru Shou", "寅丸星"}
 ANIME_DESTINATIONS = {
     "ぼっち・ざ・ろっく！": "Art/ANIME/BocchiTheRock",
@@ -80,6 +86,7 @@ MANAGED_DESTINATIONS = {
     "Art/VTUBERS",
     "Art/GAMES/UMAMUSUME",
     "Art/GAMES/STARRAIL",
+    "Art/IDOL@MASTER",
     "Art/ANIME",
     *ANIME_DESTINATIONS.values(),
 }
@@ -135,8 +142,14 @@ def _aliases(path: Path, vault: Path) -> set[str]:
     values.update(_values(metadata.get("title")))
     values.update(_values(metadata.get("name")))
     values.update(_values(metadata.get("aliases") or metadata.get("alias")))
-    values.update(EXTRA_ALIASES_BY_SOURCE.get(path.relative_to(vault), ()))
-    return {value.strip() for value in values if value.strip()}
+    relative = path.relative_to(vault)
+    values.update(EXTRA_ALIASES_BY_SOURCE.get(relative, ()))
+    excluded = EXCLUDED_ALIASES_BY_SOURCE.get(relative, set())
+    return {
+        value.strip()
+        for value in values
+        if value.strip() and value.strip() not in excluded
+    }
 
 
 def _notes(directory: Path) -> list[Path]:
@@ -211,6 +224,11 @@ def _import_starrail(registry: dict[str, set[str]], vault: Path) -> None:
             _add(registry, "Art/GAMES/STARRAIL", path, vault)
 
 
+def _import_gakumas(registry: dict[str, set[str]]) -> None:
+    aliases: list[str] = json.loads(GAKUMAS_ALIASES_PATH.read_text(encoding="utf-8"))
+    registry["Art/IDOL@MASTER"].update(aliases)
+
+
 def build_registry(vault: Path, existing: dict[str, list[str]]) -> dict[str, list[str]]:
     registry: dict[str, set[str]] = defaultdict(set)
     for destination, aliases in existing.items():
@@ -224,6 +242,7 @@ def build_registry(vault: Path, existing: dict[str, list[str]]) -> dict[str, lis
     _import_anime(registry, vault)
     _import_umamusume(registry, vault)
     _import_starrail(registry, vault)
+    _import_gakumas(registry)
 
     return {
         destination: sorted(aliases, key=lambda alias: (alias.casefold(), alias))

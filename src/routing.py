@@ -10,7 +10,8 @@ from typing import Any, Literal
 
 import numpy as np
 
-from src.calibrations import BOOKMARK_ROUTES, CHARACTER_ALIAS_ROUTES, TAG_ROUTES, TEXT_ROUTES
+from src.calibrations import BOOKMARK_ROUTES, TAG_ROUTES, TEXT_ROUTES
+from src.character_aliases import CHARACTER_ALIAS_ROUTES, CHARACTER_PARTIAL_ALIAS_ROUTES
 from src.destinations import canonical_destination, is_art_destination
 from src.modality import bookmark_modality
 from src.tag_rules import RuleTarget
@@ -39,7 +40,9 @@ _TEXT_SOURCE_PRIORITY = {
     "user_tag_or_hashtag": 3,
     "curated_text": 2,
     "character_alias": 1,
+    "character_alias_partial": 1,
 }
+
 @dataclass(frozen=True)
 class TextEvidence:
     kind: str
@@ -203,6 +206,31 @@ class TextIdentifier:
                 if (destination := _resolve_target(target, modality)) is not None
             )
 
+        for alias, targets in CHARACTER_PARTIAL_ALIAS_ROUTES.items():
+            partial_spans = _alias_spans(searchable, alias)
+            uncovered = any(
+                not any(
+                    longer_start <= start
+                    and end <= longer_end
+                    and alias != longer_alias
+                    for longer_alias, _longer_targets, longer_spans in character_matches
+                    for longer_start, longer_end in longer_spans
+                )
+                for start, end in partial_spans
+            )
+            if not uncovered:
+                continue
+            matches.extend(
+                _alias_evidence(
+                    alias,
+                    destination,
+                    "character_alias_partial",
+                    strength="weak",
+                )
+                for target in targets
+                if (destination := _resolve_target(target, modality)) is not None
+            )
+
         voicebank_matches = _distinct_voicebank_matches([
             *confirmed_evidence,
             *matches,
@@ -267,6 +295,16 @@ class TextIdentifier:
             if match.destination
         }))
         if len(destinations) > 1:
+            all_weak = all(match.strength == "weak" for match in decisive_matches)
+            all_weak_partial = all(
+                match.source == "character_alias_partial"
+                for match in decisive_matches
+            )
+            conflict_source = "multiple"
+            if all_weak:
+                conflict_source = (
+                    "multiple_weak_partial" if all_weak_partial else "multiple_weak"
+                )
             details = "; ".join(
                 f"{match.matched_value!r} → {canonical_destination(match.destination)}"
                 for match in decisive_matches
@@ -281,7 +319,7 @@ class TextIdentifier:
                         if match.matched_value
                     )
                 ) or None,
-                source="multiple",
+                source=conflict_source,
                 explanation=f"Text matches lead to multiple destinations: {details}.",
                 candidates=destinations,
             )
@@ -372,17 +410,46 @@ class VisualVerifier:
 
 
 class RouteEngine:
-    """Pure implementation of the decision table in ARCHITECTURE.md."""
+    """Fuse text-first and visual evidence into a routing decision."""
 
     def route(self, *, bookmark_id: int, text: TextEvidence, visual: VisualEvidence) -> RouteDecision:
         text_destination = canonical_destination(text.destination) if text.destination else None
         visual_destination = canonical_destination(visual.destination) if visual.destination else None
+        text_candidates = {
+            canonical_destination(candidate) for candidate in text.candidates
+        }
         if text.kind == "user_confirmed_rule":
             outcome, destination = RouteOutcome.CONFIRMED, text_destination
+        elif (
+            text.strength == "conflicting"
+            and visual.status == "pass"
+            and visual_destination in text_candidates
+        ):
+            outcome, destination = RouteOutcome.PROVISIONAL, visual_destination
+        elif (
+            text.strength == "conflicting"
+            and text.source in {"multiple_weak", "multiple_weak_partial"}
+            and visual.status == "pass"
+        ):
+            outcome, destination = RouteOutcome.REVIEW, None
+        elif text_destination and text.strength == "strong" and visual.status == "conflict":
+            outcome, destination = RouteOutcome.PROVISIONAL, text_destination
         elif text.strength == "conflicting" or visual.status == "conflict":
             outcome, destination = RouteOutcome.CONFLICT, None
         elif text_destination and visual.status == "pass":
-            outcome, destination = ((RouteOutcome.CONFIRMED, text_destination) if text_destination == visual_destination else (RouteOutcome.CONFLICT, None))
+            if text_destination == visual_destination:
+                outcome = (
+                    RouteOutcome.PROVISIONAL
+                    if text.strength == "weak"
+                    else RouteOutcome.CONFIRMED
+                )
+                destination = text_destination
+            elif text.strength == "strong":
+                outcome, destination = RouteOutcome.PROVISIONAL, text_destination
+            elif text.strength == "weak":
+                outcome, destination = RouteOutcome.REVIEW, None
+            else:
+                outcome, destination = RouteOutcome.CONFLICT, None
         elif text_destination and text.strength in {"strong", "contextual"}:
             outcome, destination = RouteOutcome.PROVISIONAL, text_destination
         elif text_destination:
@@ -513,11 +580,17 @@ def _script_family(character: str) -> str | None:
     return None
 
 
-def _alias_evidence(alias: str, target: str, source: str) -> TextEvidence:
+def _alias_evidence(
+    alias: str,
+    target: str,
+    source: str,
+    *,
+    strength: TextStrength | None = None,
+) -> TextEvidence:
     weak = (alias.isascii() and len(alias) <= 4) or (not alias.isascii() and len(alias) == 1)
     return TextEvidence(
         kind="personal_interest_text", destination=canonical_destination(target),
-        strength="weak" if weak else "strong", matched_value=alias, source=source,
+        strength=strength or ("weak" if weak else "strong"), matched_value=alias, source=source,
         explanation=f"Matched alias {alias!r} with Unicode-aware boundaries.",
     )
 
@@ -552,7 +625,45 @@ def _decision_summary(
             return f"Confirmed {destination} by user rule; visual verification was bypassed."
         return f"Confirmed {destination}: text and visual evidence agree."
     if outcome is RouteOutcome.PROVISIONAL:
+        if (
+            text.strength == "conflicting"
+            and visual.status == "pass"
+            and destination in text.candidates
+        ):
+            return (
+                f"Moved provisionally to {destination} because visual evidence matched "
+                "one of the competing text candidates."
+            )
+        if (
+            text.strength == "weak"
+            and text.source == "character_alias_partial"
+            and visual.status == "pass"
+            and text.destination == destination == visual.destination
+        ):
+            return (
+                f"Moved provisionally to {destination} because visual evidence "
+                "corroborated a weak partial-name match."
+            )
+        if text.destination and text.strength == "strong" and (
+            visual.status == "conflict"
+            or (visual.status == "pass" and visual.destination != text.destination)
+        ):
+            return (
+                f"Moved provisionally to {destination} because strong text evidence "
+                "takes priority over conflicting visual evidence."
+            )
         return f"Moved provisionally to {destination}; independent confirmation is incomplete."
     if outcome is RouteOutcome.CONFLICT:
         return "Kept in Unsorted because text and visual evidence conflict."
+    if outcome is RouteOutcome.REVIEW and visual.status == "pass":
+        if text.source in {"character_alias_partial", "multiple_weak_partial"}:
+            return (
+                "Kept in Unsorted because weak partial-name evidence did not agree "
+                "with the passing visual candidate."
+            )
+        if text.strength == "weak" or text.source == "multiple_weak":
+            return (
+                "Kept in Unsorted because weak text evidence did not agree with the "
+                "passing visual candidate."
+            )
     return "Kept in Unsorted because no destination met the routing policy."

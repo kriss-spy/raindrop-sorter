@@ -42,6 +42,11 @@ def test_build_registry_imports_bounded_art_aliases(tmp_path: Path) -> None:
     _note(tmp_path, "extracurricular/ACG/Touhou/characters/Aki Sizuha.md")
     _note(tmp_path, "extracurricular/ACG/Touhou/characters/Lilywhite.md")
     _note(tmp_path, "extracurricular/vtubers/vedalverse/Neuro-sama.md")
+    _note(
+        tmp_path,
+        "extracurricular/vtubers/vedalverse/Evil Neuro.md",
+        "aliases:\n  - Evil\n",
+    )
     _note(tmp_path, "extracurricular/ACG/anime/K-ON/characters/平沢唯.md")
     _note(
         tmp_path,
@@ -75,6 +80,8 @@ def test_build_registry_imports_bounded_art_aliases(tmp_path: Path) -> None:
     assert "Aki Shizuha" in registry["Art/TOUHOU"]
     assert "Lily White" in registry["Art/TOUHOU"]
     assert "Neuro-sama" in registry["Art/VTUBERS"]
+    assert "Evil Neuro" in registry["Art/VTUBERS"]
+    assert "Evil" not in registry["Art/VTUBERS"]
     assert "平沢唯" in registry["Art/ANIME/K-ON"]
     assert {"Ritsu Tainaka", "Tsumugi Kotobuki"} <= set(
         registry["Art/ANIME/K-ON"]
@@ -94,6 +101,14 @@ def test_build_registry_imports_bounded_art_aliases(tmp_path: Path) -> None:
     assert {"Firefly", "流萤", "ホタル"} <= set(
         registry["Art/GAMES/STARRAIL"]
     )
+    assert {
+        "Saki Hanami",
+        "花海咲季",
+        "Temari Tsukimura",
+        "月村手毬",
+        "Tsubame Amaya",
+        "雨夜燕",
+    } <= set(registry["Art/IDOL@MASTER"])
     assert registry["Art/GAMES/GENSHIN"] == ["Paimon"]
     assert all(destination.startswith("Art/") for destination in registry)
 

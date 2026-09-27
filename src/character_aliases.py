@@ -10,12 +10,12 @@ from src.destinations import is_art_destination
 
 
 ALIASES_PATH = Path(__file__).with_name("character_aliases.json")
+PARTIAL_ALIASES_PATH = Path(__file__).with_name("character_partial_aliases.json")
 
 
-def load_character_alias_routes() -> dict[str, tuple[str, ...]]:
-    """Return normalized alias -> possible destination folders."""
+def _load_alias_routes(path: Path) -> dict[str, tuple[str, ...]]:
     by_folder: dict[str, list[str]] = json.loads(
-        ALIASES_PATH.read_text(encoding="utf-8")
+        path.read_text(encoding="utf-8")
     )
     folders_by_alias: dict[str, set[str]] = {}
     for folder, aliases in by_folder.items():
@@ -30,4 +30,15 @@ def load_character_alias_routes() -> dict[str, tuple[str, ...]]:
     }
 
 
+def load_character_alias_routes() -> dict[str, tuple[str, ...]]:
+    """Return normalized full alias -> possible destination folders."""
+    return _load_alias_routes(ALIASES_PATH)
+
+
+def load_character_partial_alias_routes() -> dict[str, tuple[str, ...]]:
+    """Return explicitly audited partial name -> possible destination folders."""
+    return _load_alias_routes(PARTIAL_ALIASES_PATH)
+
+
 CHARACTER_ALIAS_ROUTES = load_character_alias_routes()
+CHARACTER_PARTIAL_ALIAS_ROUTES = load_character_partial_alias_routes()
