@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from src.review_learning import (
     ReviewObservation,
     compile_review_feedback,
@@ -39,15 +41,16 @@ def test_compile_review_feedback_promotes_only_unanimous_supported_signals():
     assert feedback["rejected_signals"] == 2
 
 
-def test_compile_review_feedback_does_not_promote_image_assignments():
+@pytest.mark.parametrize("destination", ["Image/REFERENCE", "Video/CLIPS"])
+def test_compile_review_feedback_does_not_promote_manual_only_assignments(destination):
     observations = [
-        ReviewObservation("user_tag_or_hashtag", "reference", "Image/REFERENCE")
+        ReviewObservation("user_tag_or_hashtag", "reference", destination)
         for _ in range(3)
     ]
 
     feedback = compile_review_feedback(
         observations,
-        existing_folders={"Image/REFERENCE"},
+        existing_folders={destination},
         min_support=3,
         min_purity=1.0,
     )
@@ -92,12 +95,18 @@ def test_load_review_feedback_defaults_to_empty_rules(tmp_path):
     }
 
 
-def test_load_review_feedback_filters_legacy_image_destinations(tmp_path):
+def test_load_review_feedback_filters_legacy_manual_only_destinations(tmp_path):
     feedback = {
         "schema_version": 1,
         "tag_rules": {
             "reference": {
                 "destination": "Image/REFERENCE",
+                "support": 3,
+                "observations": 3,
+                "purity": 1.0,
+            },
+            "clip": {
+                "destination": "Video/CLIPS",
                 "support": 3,
                 "observations": 3,
                 "purity": 1.0,

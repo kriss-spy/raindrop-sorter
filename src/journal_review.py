@@ -8,6 +8,7 @@ from enum import StrEnum
 from typing import Any
 
 from src.cover_cache import SQLiteCoverCache
+from src.destinations import is_manual_assignment_destination
 from src.reindex import build_folder_map
 from src.routing import RouteDecision, RouteOutcome, TextEvidence, VisualEvidence
 from src.run_journal import SQLiteRunJournal
@@ -62,9 +63,6 @@ class ReviewSelectionSource(StrEnum):
             self.VISUAL: "visual_evidence",
             self.CUSTOM: None,
         }[self]
-
-
-ASSIGNMENT_GROUPS = frozenset({"art", "image"})
 
 
 class JournalRecordService:
@@ -173,7 +171,7 @@ class JournalReviewService:
                 (
                     {"collection_id": collection_id, "path": path}
                     for path, collection_id in folder_map.items()
-                    if path.casefold().partition("/")[0] in ASSIGNMENT_GROUPS
+                    if is_manual_assignment_destination(path)
                 ),
                 key=lambda item: item["path"].casefold(),
             )
@@ -279,7 +277,7 @@ class JournalReviewService:
         )
         if collection is None:
             raise InvalidReviewDestination(
-                "destination must be a live collection in the Art or Image group"
+                "destination must be a live collection in the Art, Image, or Video group"
             )
         return collection
 

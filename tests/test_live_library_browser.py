@@ -320,7 +320,7 @@ def test_batch_assignment_clears_successful_cards_before_background_refresh(
         browser.close()
 
 
-def test_batch_assignment_lists_art_and_image_destinations(
+def test_batch_assignment_lists_supported_destination_groups(
     destination_filter_dashboard,
 ):
     tree = {
@@ -347,6 +347,17 @@ def test_batch_assignment_lists_art_and_image_destinations(
                     "children": [],
                 }],
             },
+            {
+                "id": "group:video",
+                "title": "Video",
+                "collections": [{
+                    "id": 40,
+                    "title": "CLIPS",
+                    "path": "CLIPS",
+                    "count": 1,
+                    "children": [],
+                }],
+            },
         ],
     }
     with playwright.sync_playwright() as runtime:
@@ -368,6 +379,7 @@ def test_batch_assignment_lists_art_and_image_destinations(
         assert page.get_by_role("option").all_text_contents() == [
             "Art/TOUHOU",
             "Image/REFERENCE",
+            "Video/CLIPS",
         ]
         browser.close()
 

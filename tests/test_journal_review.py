@@ -29,6 +29,7 @@ class FakeReviewClient:
             {"_id": 20, "title": "VOCALOID", "parent": None},
             {"_id": 30, "title": "REFERENCE", "parent": None},
             {"_id": 31, "title": "POSES", "parent": {"$id": 30}},
+            {"_id": 40, "title": "CLIPS", "parent": None},
         ]
 
     def get_collection_groups(self):
@@ -36,6 +37,7 @@ class FakeReviewClient:
             {"title": "Art", "collections": [10, 12]},
             {"title": "Music", "collections": [20]},
             {"title": "Image", "collections": [30]},
+            {"title": "Video", "collections": [40]},
         ]
 
     def get_raindrop(self, bookmark_id):
@@ -97,7 +99,7 @@ def _seed_review(journal):
     return attempt
 
 
-def test_review_service_lists_assignment_collections_in_art_and_image_groups(tmp_path):
+def test_review_service_lists_assignment_collections_in_supported_groups(tmp_path):
     service = JournalReviewService(
         SQLiteRunJournal(tmp_path / "journal.sqlite"), FakeReviewClient()
     )
@@ -108,6 +110,7 @@ def test_review_service_lists_assignment_collections_in_art_and_image_groups(tmp
         {"collection_id": 11, "path": "Art/TOUHOU/Portraits"},
         {"collection_id": 30, "path": "Image/REFERENCE"},
         {"collection_id": 31, "path": "Image/REFERENCE/POSES"},
+        {"collection_id": 40, "path": "Video/CLIPS"},
     ]
     assert service.assignment_collections() == expected
     assert service.assignment_collections() == expected
@@ -207,6 +210,24 @@ def test_review_outcome_can_be_assigned_to_image_group_with_custom_picker(tmp_pa
     assert client.updates[0][0:2] == (123, 31)
 
 
+def test_review_outcome_can_be_assigned_to_video_group_with_custom_picker(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    original = _seed_review(journal)
+    client = FakeReviewClient()
+    service = JournalReviewService(journal, client)
+
+    result = service.resolve(
+        original.attempt_id,
+        collection_id=40,
+        selection_source="custom",
+    )
+
+    assert result["outcome"] == "confirmed"
+    assert result["destination"] == "Video/CLIPS"
+    assert result["selection_source"] == "custom"
+    assert client.updates[0][0:2] == (123, 40)
+
+
 def test_failed_review_outcome_retry_stays_custom_picker_only(tmp_path):
     class FlakyClient(FakeReviewClient):
         def __init__(self):
@@ -253,7 +274,7 @@ def test_review_service_rejects_stale_attempt_and_non_assignment_destination(tmp
     original = _seed_conflict(journal)
     service = JournalReviewService(journal, FakeReviewClient())
 
-    with pytest.raises(InvalidReviewDestination, match="Art or Image group"):
+    with pytest.raises(InvalidReviewDestination, match="Art, Image, or Video group"):
         service.resolve(original.attempt_id, collection_id=20)
 
     newer = journal.start_attempt({"_id": 123}, mode="dry-run")

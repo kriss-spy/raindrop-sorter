@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from src.destinations import is_image_destination
+from src.destinations import is_manual_only_destination
 from src.tag_rules import RuleTarget
 from src.wd14_tagger import semantic_tag_keys
 
@@ -104,7 +104,7 @@ def learn_visual_rules(
         if (
             _has_image_content(bookmark)
             and folder
-            and not is_image_destination(folder)
+            and not is_manual_only_destination(folder)
         ):
             bookmarks_by_folder[folder].append(bookmark)
     selected_folder_names = sorted(

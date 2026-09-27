@@ -577,7 +577,7 @@ def test_decide_folder_routes_audio_to_music_series_collection():
     assert reason == "series_rule:Music/VOCALOID"
 
 
-def test_decide_folder_routes_video_to_video_series_collection():
+def test_decide_folder_does_not_suggest_video_series_collection():
     bookmark = {
         "type": "video",
         "link": "https://www.youtube.com/watch?v=example",
@@ -600,8 +600,8 @@ def test_decide_folder_routes_video_to_video_series_collection():
         },
     )
 
-    assert folder == "Video/VOCALOID"
-    assert reason == "series_rule:Video/VOCALOID"
+    assert folder is None
+    assert reason == "no_centroids"
 
 
 def test_decide_folder_does_not_route_ambiguous_series_without_modality():

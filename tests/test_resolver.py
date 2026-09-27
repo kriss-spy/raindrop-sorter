@@ -720,7 +720,26 @@ def test_decide_folder_does_not_suggest_image_centroid():
     assert reason == "no_centroids"
 
 
-def test_decide_folder_by_rule_does_not_suggest_image_destination():
+def test_decide_folder_does_not_suggest_video_centroid():
+    bookmark = {"tags": [], "title": "short video", "domain": "", "excerpt": ""}
+
+    class MockEmbedder:
+        def embed_one(self, text):
+            return np.array([1.0, 0.0])
+
+    folder, reason = decide_folder(
+        bookmark,
+        {"Video/CLIPS": np.array([1.0, 0.0])},
+        {},
+        embedder=MockEmbedder(),
+    )
+
+    assert folder is None
+    assert reason == "no_centroids"
+
+
+@pytest.mark.parametrize("destination", ["Image/REFERENCE", "Video/CLIPS"])
+def test_decide_folder_by_rule_does_not_suggest_manual_only_destination(destination):
     bookmark = {
         "type": "image",
         "tags": ["reference"],
@@ -731,7 +750,7 @@ def test_decide_folder_by_rule_does_not_suggest_image_destination():
 
     folder, reason = decide_folder_by_rule(
         bookmark,
-        {"reference": "Image/REFERENCE"},
+        {"reference": destination},
     )
 
     assert folder is None

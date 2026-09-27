@@ -12,7 +12,7 @@ from src.calibrations import (
     calibrated_content_folder,
     calibrated_text_folder,
 )
-from src.destinations import canonical_destination, is_image_destination
+from src.destinations import canonical_destination, is_manual_only_destination
 from src.embeddings import Embedder, build_text_input
 from src.modality import bookmark_modality
 from src.state_machine import tag_sorted, tag_reviewed
@@ -130,7 +130,7 @@ def _resolve_rule_target(
     candidates = [
         candidate
         for candidate in candidates
-        if not is_image_destination(candidate)
+        if not is_manual_only_destination(candidate)
     ]
     if len(candidates) == 1:
         return candidates[0]
@@ -210,7 +210,7 @@ def decide_folder(
     suggestion_centroids = {
         folder: centroid
         for folder, centroid in centroids.items()
-        if not is_image_destination(folder)
+        if not is_manual_only_destination(folder)
     }
     best_folder, gap = find_best_centroid(embedding, suggestion_centroids)
     if best_folder is None:
@@ -234,14 +234,14 @@ def decide_folder_by_rule(
 ) -> tuple[str | None, str]:
     """Apply exact and series rules without loading an embedding model."""
     calibration = calibrated_bookmark_folder(bookmark)
-    if calibration is not None and not is_image_destination(calibration[0]):
+    if calibration is not None and not is_manual_only_destination(calibration[0]):
         return calibration
 
     normalized = _normalized_tags(bookmark.get("tags", []))
     rule_inputs = list(dict.fromkeys([*normalized, *_normalized_hashtags(bookmark)]))
 
     calibration = calibrated_content_folder(bookmark)
-    if calibration is not None and not is_image_destination(calibration[0]):
+    if calibration is not None and not is_manual_only_destination(calibration[0]):
         return calibration
 
     normalized_tag_rules = {
@@ -269,7 +269,7 @@ def decide_folder_by_rule(
         return crossover_folder, "crossover_fallback"
 
     calibration = calibrated_text_folder(bookmark)
-    if calibration is not None and not is_image_destination(calibration[0]):
+    if calibration is not None and not is_manual_only_destination(calibration[0]):
         return calibration
 
     visual_embedding = bookmark.get("_visual_embedding")
@@ -291,7 +291,7 @@ def decide_folder_by_rule(
         )
         if (
             visual_match is not None
-            and not is_image_destination(visual_match.folder_path)
+            and not is_manual_only_destination(visual_match.folder_path)
         ):
             return (
                 visual_match.folder_path,
