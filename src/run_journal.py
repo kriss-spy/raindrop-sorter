@@ -504,8 +504,51 @@ class SQLiteRunJournal:
                 break
         return results
 
-    def overview(self) -> dict[str, Any]:
+    def overview(self, *, bookmark_ids: set[int] | None = None) -> dict[str, Any]:
         """Return compact aggregate data for operator dashboards."""
+        if bookmark_ids is not None:
+            with self._connect() as connection:
+                rows = connection.execute(
+                    """
+                    SELECT bookmark_id, started_at, current_phase, outcome
+                    FROM attempts ORDER BY started_at DESC, attempt_id DESC
+                    """
+                ).fetchall()
+            attempts = [row for row in rows if int(row["bookmark_id"]) in bookmark_ids]
+            latest_by_bookmark: dict[int, sqlite3.Row] = {}
+            for row in attempts:
+                latest_by_bookmark.setdefault(int(row["bookmark_id"]), row)
+            latest = list(latest_by_bookmark.values())
+
+            def counts(items: list[sqlite3.Row], key: str) -> dict[str, int]:
+                result: dict[str, int] = {}
+                for item in items:
+                    value = str(item[key])
+                    result[value] = result.get(value, 0) + 1
+                return dict(sorted(result.items()))
+
+            def outcome_counts(items: list[sqlite3.Row]) -> dict[str, int]:
+                result: dict[str, int] = {}
+                for item in items:
+                    outcome = (
+                        "failed"
+                        if item["current_phase"] == "failed"
+                        else str(item["outcome"] or "pending")
+                    )
+                    result[outcome] = result.get(outcome, 0) + 1
+                return dict(sorted(result.items()))
+
+            return {
+                "total_attempts": len(attempts),
+                "total_bookmarks": len(latest),
+                "latest_at": max(
+                    (str(row["started_at"]) for row in attempts), default=None
+                ),
+                "phases": counts(latest, "current_phase"),
+                "outcomes": outcome_counts(latest),
+                "attempt_phases": counts(attempts, "current_phase"),
+                "attempt_outcomes": outcome_counts(attempts),
+            }
         with self._connect() as connection:
             total, total_bookmarks, latest_at = connection.execute(
                 "SELECT COUNT(*), COUNT(DISTINCT bookmark_id), MAX(started_at) FROM attempts"

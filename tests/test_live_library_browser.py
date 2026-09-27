@@ -40,7 +40,15 @@ class FakeBrowserLibraryClient:
         return [], False
 
 
-def _record_attempt(journal, bookmark_id, title, destination, *, labels=()):
+def _record_attempt(
+    journal,
+    bookmark_id,
+    title,
+    destination,
+    *,
+    labels=(),
+    outcome=RouteOutcome.REVIEW,
+):
     attempt = journal.start_attempt(
         {
             "_id": bookmark_id,
@@ -53,7 +61,7 @@ def _record_attempt(journal, bookmark_id, title, destination, *, labels=()):
         attempt,
         RouteDecision(
             bookmark_id=bookmark_id,
-            outcome=RouteOutcome.REVIEW,
+            outcome=outcome,
             destination=destination,
             text_evidence=(),
             visual_evidence=(
@@ -84,6 +92,7 @@ def destination_filter_dashboard(tmp_path):
         "Child result",
         "Library/Root",
         labels=("halo", "blue_hair"),
+        outcome=RouteOutcome.PROVISIONAL,
     )
     client = FakeBrowserLibraryClient()
     server = create_server(
@@ -135,6 +144,127 @@ def test_collection_tree_filters_journal_by_exact_destination(destination_filter
         browser.close()
 
 
+def test_location_filter_scopes_outcome_selector_counts(destination_filter_dashboard):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        root_row = page.locator(".collection-row").filter(
+            has=page.locator('.collection-select[title="Library/Root"]')
+        )
+        root_row.locator(".collection-toggle").click()
+        page.locator('.collection-select[title="Library/Root/Child"]').click()
+        page.locator("#filter-toggle").click()
+        page.wait_for_function(
+            """
+            () => document.querySelector('#outcome option[value=""]')?.textContent
+              === 'All outcomes · 1'
+            """
+        )
+
+        assert page.locator('#outcome option[value="provisional"]').text_content() == (
+            "provisional · 1"
+        )
+        assert page.locator('#outcome option[value="review"]').text_content() == "review · 0"
+
+        browser.close()
+
+
+def test_unresolved_location_filter_shows_zero_outcome_counts(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        page.locator("#search").fill('location:"Library/Missing"')
+        page.locator("#filter-toggle").click()
+        page.wait_for_function(
+            """
+            () => document.querySelector('#outcome option[value=""]')?.textContent
+              === 'All outcomes · 0'
+            """
+        )
+
+        assert page.locator('#outcome option[value="provisional"]').text_content() == (
+            "provisional · 0"
+        )
+        assert page.locator('#outcome option[value="review"]').text_content() == "review · 0"
+        assert page.locator("#count").text_content() == "0 shown"
+
+        browser.close()
+
+
+def test_stale_location_overview_response_does_not_replace_current_counts(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        root_row = page.locator(".collection-row").filter(
+            has=page.locator('.collection-select[title="Library/Root"]')
+        )
+        root_row.locator(".collection-toggle").click()
+        page.locator('.collection-select[title="Library/Root/Child"]').wait_for()
+        page.evaluate(
+            """
+            () => {
+              const originalFetch = window.fetch.bind(window);
+              window.pendingOverviewRequests = [];
+              window.fetch = (url, options) => {
+                if (String(url).startsWith('/api/overview')) {
+                  return new Promise(resolve => {
+                    window.pendingOverviewRequests.push({url: String(url), resolve});
+                  });
+                }
+                return originalFetch(url, options);
+              };
+              window.resolveOverviewRequest = (index, outcome, total) => {
+                const outcomes = {[outcome]: total};
+                window.pendingOverviewRequests[index].resolve(new Response(JSON.stringify({
+                  total_bookmarks: total,
+                  total_attempts: total,
+                  outcomes,
+                  attempt_outcomes: outcomes,
+                  phases: {dry_run_completed: total},
+                  attempt_phases: {dry_run_completed: total},
+                  latest_at: '2026-09-27T00:00:00+00:00',
+                }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+              };
+            }
+            """
+        )
+
+        page.locator('.collection-select[title="Library/Root"]').click()
+        page.wait_for_function("() => window.pendingOverviewRequests.length === 1")
+        page.locator('.collection-select[title="Library/Root/Child"]').click()
+        page.wait_for_function("() => window.pendingOverviewRequests.length === 2")
+
+        page.evaluate("window.resolveOverviewRequest(1, 'provisional', 1)")
+        page.wait_for_function(
+            """
+            () => document.querySelector('#outcome option[value="provisional"]')?.textContent
+              === 'provisional · 1'
+            """
+        )
+        page.evaluate("window.resolveOverviewRequest(0, 'review', 1)")
+        page.wait_for_timeout(100)
+
+        assert page.locator('#outcome option[value="provisional"]').text_content() == (
+            "provisional · 1"
+        )
+        assert page.locator('#outcome option[value="review"]').text_content() == "review · 0"
+
+        browser.close()
+
+
 def test_query_and_filter_controls_stay_in_sync(destination_filter_dashboard):
     with playwright.sync_playwright() as runtime:
         browser = runtime.chromium.launch(headless=True)
@@ -148,13 +278,13 @@ def test_query_and_filter_controls_stay_in_sync(destination_filter_dashboard):
         assert page.locator("#search").input_value() == "outcome:review mode:dry-run"
 
         query = (
-            'outcome:review mode:dry-run location:"Library/Root/Child" '
+            'outcome:provisional mode:dry-run location:"Library/Root/Child" '
             'label:halo label:blue_hair title:Child link:x.com scope:history'
         )
         page.locator("#search").fill(query)
         page.get_by_text("Child result", exact=True).wait_for()
 
-        assert page.locator("#outcome").input_value() == "review"
+        assert page.locator("#outcome").input_value() == "provisional"
         assert page.locator("#mode").input_value() == "dry-run"
         assert page.locator("#scope").input_value() == "history"
         assert page.locator("#visual-labels").input_value() == "halo, blue_hair"

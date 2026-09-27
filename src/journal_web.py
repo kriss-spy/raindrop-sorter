@@ -113,7 +113,7 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             if request.path == "/":
                 self._send(HTTPStatus.OK, DASHBOARD_HTML, "text/html; charset=utf-8")
             elif request.path == "/api/overview":
-                self._send_json(HTTPStatus.OK, self.server.journal.overview())
+                self._overview(parse_qs(request.query))
             elif request.path == "/api/health":
                 self._health()
             elif request.path == "/api/ready":
@@ -367,6 +367,35 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         if origin is not None and origin != f"http://{self.headers.get('Host')}":
             raise ValueError("cross-origin review actions are not allowed")
 
+    def _current_location_bookmark_ids(
+        self, query: dict[str, list[str]]
+    ) -> tuple[bool, set[int] | None]:
+        if "collection_id" not in query:
+            return False, None
+        live_library = self._live_library_or_unavailable()
+        if live_library is None:
+            return True, None
+        try:
+            return True, live_library.current_bookmark_ids(
+                int(query["collection_id"][0])
+            )
+        except (TypeError, ValueError):
+            raise
+        except Exception as error:
+            self._send_library_upstream_error(
+                "load current collection membership", error
+            )
+            return True, None
+
+    def _overview(self, query: dict[str, list[str]]) -> None:
+        location_filtered, bookmark_ids = self._current_location_bookmark_ids(query)
+        if location_filtered and bookmark_ids is None:
+            return
+        self._send_json(
+            HTTPStatus.OK,
+            self.server.journal.overview(bookmark_ids=bookmark_ids),
+        )
+
     def _attempts(self, query: dict[str, list[str]]) -> None:
         limit = int(query.get("limit", ["50"])[0])
         if limit > 500:
@@ -374,22 +403,9 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         latest = query.get("latest", ["0"])[0].casefold()
         if latest not in {"0", "1", "false", "true"}:
             raise ValueError("latest must be 0, 1, false, or true")
-        bookmark_ids = None
-        if "collection_id" in query:
-            live_library = self._live_library_or_unavailable()
-            if live_library is None:
-                return
-            try:
-                bookmark_ids = live_library.current_bookmark_ids(
-                    int(query["collection_id"][0])
-                )
-            except (TypeError, ValueError):
-                raise
-            except Exception as error:
-                self._send_library_upstream_error(
-                    "load current collection membership", error
-                )
-                return
+        location_filtered, bookmark_ids = self._current_location_bookmark_ids(query)
+        if location_filtered and bookmark_ids is None:
+            return
         items = self.server.journal.recent(
             limit=limit,
             outcome=query.get("outcome", [None])[0] or None,

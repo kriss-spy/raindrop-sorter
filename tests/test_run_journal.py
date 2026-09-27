@@ -196,6 +196,33 @@ def test_dashboard_query_filters_structured_attempt_fields(tmp_path):
     ) == []
 
 
+def test_overview_can_be_scoped_to_live_location_bookmarks(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    for bookmark_id, outcome in ((1, RouteOutcome.REVIEW), (2, RouteOutcome.PROVISIONAL)):
+        attempt = journal.start_attempt({"_id": bookmark_id}, mode="dry-run")
+        journal.record_decision(
+            attempt,
+            RouteDecision(
+                bookmark_id=bookmark_id,
+                outcome=outcome,
+                destination=None,
+                text_evidence=(),
+                visual_evidence=(),
+                summary="Scoped count fixture.",
+            ),
+        )
+        journal.complete(attempt, phase="dry_run_completed")
+
+    overview = journal.overview(bookmark_ids={2})
+
+    assert overview["total_attempts"] == 1
+    assert overview["total_bookmarks"] == 1
+    assert overview["outcomes"] == {"provisional": 1}
+    assert overview["attempt_outcomes"] == {"provisional": 1}
+    assert overview["phases"] == {"dry_run_completed": 1}
+    assert overview["attempt_phases"] == {"dry_run_completed": 1}
+
+
 def test_processed_date_uses_completion_time_with_started_fallback(tmp_path):
     journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
     completed = journal.start_attempt({"_id": 1}, mode="dry-run")

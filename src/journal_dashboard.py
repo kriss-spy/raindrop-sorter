@@ -103,6 +103,7 @@ let journalSearchValue = '';
 let freeSearchValue = '';
 let selectedLocationPath = '';
 let selectedLocationCollectionId = null;
+let overviewRenderGeneration = 0;
 let expandedCollectionIds = new Set();
 try {
   expandedCollectionIds = new Set(JSON.parse(localStorage.getItem(expandedCollectionsStorageKey) || '[]').map(String));
@@ -419,6 +420,7 @@ function syncQueryFromFilterControls() {
 function syncFilterControlsFromQuery(query) {
   const parsed = parseFilterQuery(query);
   const previousScope = select('#scope').value;
+  const previousLocationPath = selectedLocationPath;
   freeSearchValue = parsed.text;
   select('#outcome').value = parsed.outcome;
   select('#phase').value = parsed.phase;
@@ -433,7 +435,7 @@ function syncFilterControlsFromQuery(query) {
   journalSearchValue = query;
   updateFilterUi();
   renderCollectionTree();
-  return previousScope !== parsed.scope;
+  return previousScope !== parsed.scope || previousLocationPath !== parsed.location;
 }
 function updateOutcomeOptions(outcomes, total) {
   const outcomeSelect = select('#outcome');
@@ -447,7 +449,28 @@ function updateOutcomeOptions(outcomes, total) {
   outcomeSelect.value = selectedOutcome;
 }
 async function renderOverview() {
-  const overviewData = await fetchJson('/api/overview');
+  const renderGeneration = ++overviewRenderGeneration;
+  let overviewData;
+  if (selectedLocationPath && selectedLocationCollectionId === null) {
+    overviewData = {
+      total_bookmarks: 0,
+      total_attempts: 0,
+      outcomes: {},
+      attempt_outcomes: {},
+      phases: {},
+      attempt_phases: {},
+      latest_at: null,
+    };
+  } else {
+    const params = new URLSearchParams();
+    if (selectedLocationCollectionId !== null) {
+      params.set('collection_id', String(selectedLocationCollectionId));
+    }
+    overviewData = await fetchJson(
+      '/api/overview' + (params.size ? '?' + params : '')
+    );
+  }
+  if (renderGeneration !== overviewRenderGeneration) return;
   const latestOnly = select('#scope').value === 'latest';
   const outcomes = latestOnly ? overviewData.outcomes : overviewData.attempt_outcomes;
   const phases = latestOnly ? overviewData.phases : overviewData.attempt_phases;
@@ -937,7 +960,7 @@ function selectLocationCollection(node, locationPath) {
   invalidateDetailSelection();
   clearAttemptSelection();
   clearDetail();
-  void renderAttempts();
+  void refreshDashboard();
 }
 function renderCollectionTree() {
   const tree = select('#collection-tree');
@@ -982,7 +1005,7 @@ async function loadCollectionTree() {
     collectionTreeGroups = result.groups || [];
     selectedLocationCollectionId = collectionIdForLocationPath(selectedLocationPath);
     renderCollectionTree();
-    if (selectedLocationPath) void renderAttempts();
+    if (selectedLocationPath) void refreshDashboard();
   } catch (error) {
     select('#collection-tree').replaceChildren(element('div', 'library-message', error.message));
   }
@@ -1122,37 +1145,37 @@ select('#filters').onsubmit = event => {
 let searchTimer;
 select('#search').oninput = () => {
   clearTimeout(searchTimer);
-  const scopeChanged = syncFilterControlsFromQuery(select('#search').value);
+  const overviewChanged = syncFilterControlsFromQuery(select('#search').value);
   invalidateDetailSelection();
-  if (scopeChanged) {
+  if (overviewChanged) {
     clearAttemptSelection();
     clearDetail();
   }
-  searchTimer = setTimeout(scopeChanged ? refreshDashboard : renderAttempts, 250);
+  searchTimer = setTimeout(overviewChanged ? refreshDashboard : renderAttempts, 250);
 };
-function applyFilterControlChange({scopeChanged = false, immediate = true} = {}) {
+function applyFilterControlChange({overviewChanged = false, immediate = true} = {}) {
   clearTimeout(searchTimer);
   syncQueryFromFilterControls();
   invalidateDetailSelection();
-  if (scopeChanged) {
+  if (overviewChanged) {
     clearAttemptSelection();
     clearDetail();
   }
-  const action = scopeChanged ? refreshDashboard : renderAttempts;
+  const action = overviewChanged ? refreshDashboard : renderAttempts;
   if (immediate) void action();
   else searchTimer = setTimeout(action, 250);
 }
 select('#outcome').onchange = () => applyFilterControlChange();
 select('#phase').onchange = () => applyFilterControlChange();
 select('#mode').onchange = () => applyFilterControlChange();
-select('#scope').onchange = () => applyFilterControlChange({scopeChanged:true});
+select('#scope').onchange = () => applyFilterControlChange({overviewChanged:true});
 ['#visual-labels', '#title-filter', '#link-filter', '#date-filter'].forEach(selector => {
   select(selector).oninput = () => applyFilterControlChange({immediate:false});
 });
 select('#location-clear').onclick = () => {
   selectedLocationPath = '';
   selectedLocationCollectionId = null;
-  applyFilterControlChange();
+  applyFilterControlChange({overviewChanged:true});
 };
 select('#reset-filters').onclick = () => {
   freeSearchValue = '';
