@@ -702,6 +702,42 @@ def test_decide_folder_centroid_match():
     assert "centroid_match" in reason
 
 
+def test_decide_folder_does_not_suggest_image_centroid():
+    bookmark = {"tags": [], "title": "pose reference", "domain": "", "excerpt": ""}
+
+    class MockEmbedder:
+        def embed_one(self, text):
+            return np.array([1.0, 0.0])
+
+    folder, reason = decide_folder(
+        bookmark,
+        {"Image/REFERENCE": np.array([1.0, 0.0])},
+        {},
+        embedder=MockEmbedder(),
+    )
+
+    assert folder is None
+    assert reason == "no_centroids"
+
+
+def test_decide_folder_by_rule_does_not_suggest_image_destination():
+    bookmark = {
+        "type": "image",
+        "tags": ["reference"],
+        "title": "",
+        "domain": "",
+        "excerpt": "",
+    }
+
+    folder, reason = decide_folder_by_rule(
+        bookmark,
+        {"reference": "Image/REFERENCE"},
+    )
+
+    assert folder is None
+    assert reason == "no_rule"
+
+
 def test_decide_folder_low_confidence():
     bm = {"tags": [], "title": "ambiguous", "domain": "", "excerpt": ""}
     centroids = {

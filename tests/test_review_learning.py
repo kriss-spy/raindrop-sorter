@@ -39,6 +39,25 @@ def test_compile_review_feedback_promotes_only_unanimous_supported_signals():
     assert feedback["rejected_signals"] == 2
 
 
+def test_compile_review_feedback_does_not_promote_image_assignments():
+    observations = [
+        ReviewObservation("user_tag_or_hashtag", "reference", "Image/REFERENCE")
+        for _ in range(3)
+    ]
+
+    feedback = compile_review_feedback(
+        observations,
+        existing_folders={"Image/REFERENCE"},
+        min_support=3,
+        min_purity=1.0,
+    )
+
+    assert feedback["observations"] == 0
+    assert feedback["promoted_signals"] == 0
+    assert feedback["tag_rules"] == {}
+    assert feedback["alias_rules"] == {}
+
+
 def test_review_feedback_round_trips(tmp_path):
     feedback = {
         "schema_version": 1,
@@ -71,3 +90,37 @@ def test_load_review_feedback_defaults_to_empty_rules(tmp_path):
         "tag_rules": {},
         "alias_rules": {},
     }
+
+
+def test_load_review_feedback_filters_legacy_image_destinations(tmp_path):
+    feedback = {
+        "schema_version": 1,
+        "tag_rules": {
+            "reference": {
+                "destination": "Image/REFERENCE",
+                "support": 3,
+                "observations": 3,
+                "purity": 1.0,
+            },
+            "blue_archive": {
+                "destination": "Art/GAMES/BA",
+                "support": 3,
+                "observations": 3,
+                "purity": 1.0,
+            },
+        },
+        "alias_rules": {
+            "pose": {
+                "destination": "Image/REFERENCE/POSES",
+                "support": 4,
+                "observations": 4,
+                "purity": 1.0,
+            }
+        },
+    }
+    (tmp_path / "review_feedback.json").write_text(json.dumps(feedback))
+
+    loaded = load_review_feedback(str(tmp_path))
+
+    assert set(loaded["tag_rules"]) == {"blue_archive"}
+    assert loaded["alias_rules"] == {}

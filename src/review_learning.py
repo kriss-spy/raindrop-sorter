@@ -11,7 +11,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Any, Iterable
 
-from src.destinations import canonical_destination
+from src.destinations import canonical_destination, is_art_destination
 from src.wd14_tagger import normalize_tag
 
 
@@ -61,7 +61,7 @@ def compile_review_feedback(
         if normalized is None:
             continue
         destination = canonical_destination(observation.selected_destination)
-        if destination not in existing_folders:
+        if not is_art_destination(destination) or destination not in existing_folders:
             continue
         votes[normalized][destination] += 1
         observation_count += 1
@@ -161,6 +161,14 @@ def load_review_feedback(base_path: str) -> dict[str, Any]:
         payload.get("alias_rules"), dict
     ):
         raise ValueError("review feedback must contain tag_rules and alias_rules")
+    for rule_kind in ("tag_rules", "alias_rules"):
+        payload[rule_kind] = {
+            signal: rule
+            for signal, rule in payload[rule_kind].items()
+            if isinstance(rule, dict)
+            and isinstance(rule.get("destination"), str)
+            and is_art_destination(canonical_destination(rule["destination"]))
+        }
     return payload
 
 

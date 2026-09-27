@@ -27,7 +27,7 @@ class StaleReviewAttempt(JournalReviewError):
 
 
 class InvalidReviewDestination(JournalReviewError):
-    """The selected destination is not a live collection in the Art group."""
+    """The selected destination is not a live assignment collection."""
 
 
 class IneligibleReviewAttempt(JournalReviewError):
@@ -62,6 +62,9 @@ class ReviewSelectionSource(StrEnum):
             self.VISUAL: "visual_evidence",
             self.CUSTOM: None,
         }[self]
+
+
+ASSIGNMENT_GROUPS = frozenset({"art", "image"})
 
 
 class JournalRecordService:
@@ -160,7 +163,7 @@ class JournalReviewService:
         self.cover_cache = cover_cache
         self.on_reviews_changed = on_reviews_changed
 
-    def art_collections(self) -> list[dict[str, Any]]:
+    def assignment_collections(self) -> list[dict[str, Any]]:
         with self._lock:
             folder_map = build_folder_map(
                 self.client.get_collections(),
@@ -170,8 +173,7 @@ class JournalReviewService:
                 (
                     {"collection_id": collection_id, "path": path}
                     for path, collection_id in folder_map.items()
-                    if path.casefold() == "art"
-                    or path.casefold().startswith("art/")
+                    if path.casefold().partition("/")[0] in ASSIGNMENT_GROUPS
                 ),
                 key=lambda item: item["path"].casefold(),
             )
@@ -183,7 +185,7 @@ class JournalReviewService:
         collection_id: int,
         selection_source: str = "custom",
     ) -> dict[str, Any]:
-        collection = self._art_destination(collection_id)
+        collection = self._assignment_destination(collection_id)
         result = self._resolve_validated(
             attempt_id,
             collection=collection,
@@ -199,7 +201,7 @@ class JournalReviewService:
         collection_id: int,
     ) -> dict[str, Any]:
         """Resolve a batch after validating its shared destination once."""
-        collection = self._art_destination(collection_id)
+        collection = self._assignment_destination(collection_id)
         results = []
         errors = []
         for attempt_id in attempt_ids:
@@ -266,18 +268,18 @@ class JournalReviewService:
                 "message": str(error),
             }
 
-    def _art_destination(self, collection_id: int) -> dict[str, Any]:
+    def _assignment_destination(self, collection_id: int) -> dict[str, Any]:
         collection = next(
             (
                 item
-                for item in self.art_collections()
+                for item in self.assignment_collections()
                 if item["collection_id"] == collection_id
             ),
             None,
         )
         if collection is None:
             raise InvalidReviewDestination(
-                "destination must be a live collection in the Art group"
+                "destination must be a live collection in the Art or Image group"
             )
         return collection
 
@@ -346,7 +348,7 @@ class JournalReviewService:
                 custom_only = original.get("outcome") == RouteOutcome.REVIEW.value
             if custom_only and source is not ReviewSelectionSource.CUSTOM:
                 raise InvalidReviewDestination(
-                    "review outcomes must use the custom Art collection picker"
+                    "review outcomes must use the custom assignment collection picker"
                 )
             if source.evidence_key is not None:
                 evidence_destinations = set(review_choices.get(source.value, []))

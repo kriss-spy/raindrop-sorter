@@ -222,11 +222,16 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             )
             return
         try:
-            items = self.server.reviewer.art_collections()
+            items = self.server.reviewer.assignment_collections()
         except Exception as error:
             self._send_json(
                 HTTPStatus.BAD_GATEWAY,
-                {"error": f"could not load Art collections: {type(error).__name__}"},
+                {
+                    "error": (
+                        "could not load assignment collections: "
+                        f"{type(error).__name__}"
+                    )
+                },
             )
             return
         self._send_json(HTTPStatus.OK, {"items": items})

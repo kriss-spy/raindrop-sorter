@@ -5,6 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from src.destinations import is_image_destination
 from src.tag_rules import RuleTarget
 from src.wd14_tagger import semantic_tag_keys
 
@@ -99,8 +100,13 @@ def learn_visual_rules(
     config = config or VisualLearningConfig()
     bookmarks_by_folder: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for bookmark in bookmarks:
-        if _has_image_content(bookmark) and bookmark.get("folder_path"):
-            bookmarks_by_folder[str(bookmark["folder_path"])].append(bookmark)
+        folder = str(bookmark.get("folder_path", ""))
+        if (
+            _has_image_content(bookmark)
+            and folder
+            and not is_image_destination(folder)
+        ):
+            bookmarks_by_folder[folder].append(bookmark)
     selected_folder_names = sorted(
         bookmarks_by_folder,
         key=lambda folder: (-len(bookmarks_by_folder[folder]), folder),

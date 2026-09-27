@@ -1,5 +1,6 @@
 """Browser-level behavior for the collection-backed destination filter."""
 
+import json
 import threading
 from types import SimpleNamespace
 
@@ -316,6 +317,58 @@ def test_batch_assignment_clears_successful_cards_before_background_refresh(
         assert page.locator("#batch-bar").is_hidden()
         assert page.locator("[data-attempt-id]").count() == 0
 
+        browser.close()
+
+
+def test_batch_assignment_lists_art_and_image_destinations(
+    destination_filter_dashboard,
+):
+    tree = {
+        "groups": [
+            {
+                "id": "group:art",
+                "title": "Art",
+                "collections": [{
+                    "id": 10,
+                    "title": "TOUHOU",
+                    "path": "TOUHOU",
+                    "count": 1,
+                    "children": [],
+                }],
+            },
+            {
+                "id": "group:image",
+                "title": "Image",
+                "collections": [{
+                    "id": 30,
+                    "title": "REFERENCE",
+                    "path": "REFERENCE",
+                    "count": 1,
+                    "children": [],
+                }],
+            },
+        ],
+    }
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.route(
+            "**/api/library/tree",
+            lambda route: route.fulfill(
+                body=json.dumps(tree),
+                content_type="application/json",
+            ),
+        )
+        page.goto(destination_filter_dashboard.url)
+        page.locator('.collection-select[title="Image/REFERENCE"]').wait_for()
+        page.locator(".attempt-select").first.check()
+        page.locator("#batch-destination-search").focus()
+
+        assert page.get_by_role("option").all_text_contents() == [
+            "Art/TOUHOU",
+            "Image/REFERENCE",
+        ]
         browser.close()
 
 
@@ -1193,7 +1246,7 @@ def test_detail_drawer_discards_stale_async_render_and_resets_scroll(
             () => {
               const originalFetch = window.fetch;
               collectionTreeGroups = [];
-              artCollectionsPromise = null;
+              assignmentCollectionsPromise = null;
               let delayed = false;
               window.fetch = (input, init) => {
                 if (!delayed && String(input).includes('/api/review/collections')) {
