@@ -153,13 +153,20 @@ def test_dashboard_query_filters_structured_attempt_fields(tmp_path):
         bookmark_id=123,
         outcome=RouteOutcome.PROVISIONAL,
         destination="Art/GAMES/BA",
-        text_evidence=(),
-        visual_evidence=(VisualEvidence(
-            status="pass",
+        text_evidence=(TextEvidence(
+            kind="character_alias",
             destination="Art/GAMES/BA",
+            strength="contextual",
+            matched_value="shiroko",
+            explanation="Text identifies a Blue Archive character.",
+        ),),
+        visual_evidence=(VisualEvidence(
+            status="inconclusive",
+            destination=None,
             method="wd14+visual_exemplar",
-            explanation="Halo prior.",
+            explanation="Nearest visual work is GFL2 but remains below threshold.",
             labels=("1girl", "halo", "blue_hair"),
+            winner="Art/GAMES/GFL2",
         ),),
         summary="Moved provisionally to Blue Archive.",
     )
@@ -188,6 +195,8 @@ def test_dashboard_query_filters_structured_attempt_fields(tmp_path):
 
     assert [item["bookmark_id"] for item in matching] == [123]
     assert matching[0]["visual_labels"] == ["1girl", "blue_hair", "halo"]
+    assert matching[0]["ai_group"] == "Art/GAMES/BA"
+    assert matching[0]["ai_group_source"] == "text"
     assert journal.recent(limit=10, labels=("halo", "red_hair")) == []
     assert journal.recent(limit=10, bookmark_ids={999}) == []
     assert journal.recent(

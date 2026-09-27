@@ -1329,7 +1329,7 @@ def test_apply_is_the_default_run_mode_filter(destination_filter_dashboard):
         browser.close()
 
 
-def test_ai_order_groups_records_with_similar_visual_labels(
+def test_ai_order_groups_records_by_work_instead_of_shared_pose(
     destination_filter_dashboard,
 ):
     with playwright.sync_playwright() as runtime:
@@ -1342,18 +1342,21 @@ def test_ai_order_groups_records_with_similar_visual_labels(
             """
             () => {
               renderedAttempts = [
-                {attempt_id:'a', bookmark_id:1, title:'Halo blue', mode:'apply',
+                {attempt_id:'a', bookmark_id:1, title:'Blue Archive sitting', mode:'apply',
                  outcome:'review', current_phase:'applied',
                  started_at:'2026-09-27T03:00:00+00:00',
-                 visual_labels:['1girl', 'halo', 'blue_hair']},
-                {attempt_id:'b', bookmark_id:2, title:'Red dress', mode:'apply',
+                 ai_group:'Art/GAMES/BA', ai_group_source:'visual',
+                 visual_labels:['1girl', 'sitting']},
+                {attempt_id:'b', bookmark_id:2, title:'GFL2 sitting', mode:'apply',
                  outcome:'review', current_phase:'applied',
                  started_at:'2026-09-27T02:00:00+00:00',
-                 visual_labels:['1girl', 'red_hair', 'dress']},
-                {attempt_id:'c', bookmark_id:3, title:'Second halo', mode:'apply',
+                 ai_group:'Art/GAMES/GFL2', ai_group_source:'visual',
+                 visual_labels:['1girl', 'sitting']},
+                {attempt_id:'c', bookmark_id:3, title:'Blue Archive standing', mode:'apply',
                  outcome:'review', current_phase:'applied',
                  started_at:'2026-09-27T01:00:00+00:00',
-                 visual_labels:['1girl', 'halo', 'blue_hair', 'school_uniform']},
+                 ai_group:'Art/GAMES/BA', ai_group_source:'text',
+                 visual_labels:['1girl', 'standing']},
               ];
               renderCurrentAttempts();
               window.firstAiOrderCover = document.querySelector('[data-attempt-id="a"] img');
@@ -1361,15 +1364,21 @@ def test_ai_order_groups_records_with_similar_visual_labels(
             """
         )
 
-        page.get_by_role("button", name="Group by visual similarity").click()
+        page.get_by_role("button", name="Group by likely work").click()
 
         assert page.locator(".attempt-title").all_text_contents() == [
-            "Second halo",
-            "Halo blue",
-            "Red dress",
+            "Blue Archive sitting",
+            "Blue Archive standing",
+            "GFL2 sitting",
         ]
+        assert page.locator(".attempt-ai-group").all_text_contents() == [
+            "≈ Art/GAMES/BA · visual",
+            "≈ Art/GAMES/BA · text",
+            "≈ Art/GAMES/GFL2 · visual",
+        ]
+        assert page.locator(".attempt-ai-group").first.is_visible()
         assert page.get_by_role(
-            "button", name="Group by visual similarity"
+            "button", name="Group by likely work"
         ).get_attribute("aria-pressed") == "true"
         assert page.evaluate(
             "window.firstAiOrderCover === document.querySelector('[data-attempt-id=\"a\"] img')"

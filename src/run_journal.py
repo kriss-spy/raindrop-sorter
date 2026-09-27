@@ -43,6 +43,45 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _evidence_destinations(
+    evidence_items: list[dict[str, Any]],
+    *,
+    include_visual_winner: bool = False,
+) -> list[str]:
+    destinations: list[str] = []
+    for evidence in evidence_items:
+        values = [evidence.get("destination"), *(evidence.get("candidates") or [])]
+        if include_visual_winner:
+            values.append(evidence.get("winner"))
+        for value in values:
+            destination = str(value or "").strip()
+            if destination and destination not in destinations:
+                destinations.append(destination)
+    return destinations
+
+
+def _review_ai_group(decision: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Choose a review bucket from text first, then the visual work winner."""
+    text_destinations = _evidence_destinations(decision.get("text_evidence", []))
+    visual_destinations = _evidence_destinations(
+        decision.get("visual_evidence", []),
+        include_visual_winner=True,
+    )
+    if text_destinations:
+        if len(text_destinations) > 1:
+            visual_set = set(visual_destinations)
+            corroborated = next(
+                (item for item in text_destinations if item in visual_set),
+                None,
+            )
+            if corroborated:
+                return corroborated, "text+visual"
+        return text_destinations[0], "text"
+    if visual_destinations:
+        return visual_destinations[0], "visual"
+    return None, None
+
+
 @dataclass(frozen=True)
 class AttemptHandle:
     attempt_id: str
@@ -557,6 +596,7 @@ class SQLiteRunJournal:
                 for evidence in decision.get("visual_evidence", [])
                 for label in evidence.get("labels", [])
             }
+            ai_group, ai_group_source = _review_ai_group(decision)
             decoded.update(
                 title=snapshot.get("title") or f"Bookmark {decoded['bookmark_id']}",
                 link=snapshot.get("link"),
@@ -564,6 +604,8 @@ class SQLiteRunJournal:
                 collection_id=(snapshot.get("collection") or {}).get("$id"),
                 summary=decision.get("summary"),
                 visual_labels=sorted(visual_labels),
+                ai_group=ai_group,
+                ai_group_source=ai_group_source,
                 duration_ms=_duration_ms(decoded["started_at"], decoded["ended_at"]),
             )
             if bookmark_ids is not None and decoded["bookmark_id"] not in bookmark_ids:

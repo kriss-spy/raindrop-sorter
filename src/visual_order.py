@@ -1,9 +1,7 @@
-"""Order journal records so AI-generated visual labels form local clusters."""
+"""Order review records into likely work or character-destination groups."""
 
 from __future__ import annotations
 
-import math
-from collections import Counter
 from collections.abc import Mapping, Sequence
 from typing import Any, TypeVar
 
@@ -11,65 +9,23 @@ from typing import Any, TypeVar
 Record = TypeVar("Record", bound=Mapping[str, Any])
 
 
-def order_by_visual_similarity(
+def order_by_review_group(
     records: Sequence[Record],
     *,
-    labels_key: str = "visual_labels",
+    group_key: str = "ai_group",
 ) -> list[Record]:
-    """Return a deterministic nearest-neighbour order using weighted Jaccard.
+    """Return a stable order with records for the same likely work adjacent.
 
-    Rare labels carry more weight than ubiquitous composition labels, which
-    keeps visually distinctive records adjacent without requiring image loads.
+    The journal derives ``ai_group`` from text candidates first and the visual
+    classifier's likely work second. Generic pose and composition labels are
+    deliberately irrelevant here because they do not imply one assignment.
     """
-    if len(records) < 2:
-        return list(records)
-
-    indexed = [
-        (
-            index,
-            record,
-            {
-                str(label).strip().casefold()
-                for label in record.get(labels_key, ()) or ()
-                if str(label).strip()
-            },
-        )
-        for index, record in enumerate(records)
-    ]
-    frequencies = Counter(label for _index, _record, labels in indexed for label in labels)
-    weights = {
-        label: 1 + math.log((len(indexed) + 1) / (frequency + 1))
-        for label, frequency in frequencies.items()
-    }
-
-    def label_score(item: tuple[int, Record, set[str]]) -> float:
-        return sum(weights[label] for label in item[2])
-
-    def similarity(
-        left: tuple[int, Record, set[str]],
-        right: tuple[int, Record, set[str]],
-    ) -> float:
-        union = left[2] | right[2]
-        if not union:
-            return 0.0
-        union_weight = sum(weights[label] for label in union)
-        intersection_weight = sum(weights[label] for label in left[2] & right[2])
-        return intersection_weight / union_weight if union_weight else 0.0
-
-    remaining = list(indexed)
-    remaining.sort(key=lambda item: (-label_score(item), item[0]))
-    current = remaining.pop(0)
-    ordered: list[Record] = []
-    while True:
-        ordered.append(current[1])
-        if not remaining:
-            return ordered
-        best_index = max(
-            range(len(remaining)),
-            key=lambda index: (
-                similarity(current, remaining[index]),
-                label_score(remaining[index]),
-                -remaining[index][0],
-            ),
-        )
-        current = remaining.pop(best_index)
+    groups: dict[str, list[Record]] = {}
+    ungrouped: list[Record] = []
+    for record in records:
+        group = str(record.get(group_key) or "").strip()
+        if not group:
+            ungrouped.append(record)
+            continue
+        groups.setdefault(group.casefold(), []).append(record)
+    return [record for group in groups.values() for record in group] + ungrouped

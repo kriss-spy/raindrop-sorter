@@ -12,6 +12,7 @@ def _record_review(
     bookmark_id: int,
     title: str,
     labels: tuple[str, ...],
+    visual_group: str,
 ) -> None:
     bookmark = {
         "_id": bookmark_id,
@@ -33,6 +34,7 @@ def _record_review(
                 method="wd14+visual_exemplar",
                 explanation="Review visual labels.",
                 labels=labels,
+                winner=visual_group,
             ),),
             summary="Needs review.",
         ),
@@ -48,14 +50,29 @@ def test_ai_sort_report_samples_review_apply_records_and_loads_images_smartly(
     cover_path = tmp_path / "cover-cache.sqlite"
     journal = SQLiteRunJournal(journal_path)
     covers = SQLiteCoverCache(cover_path)
-    _record_review(journal, covers, 1, "Halo one", ("1girl", "halo", "blue_hair"))
-    _record_review(journal, covers, 2, "Red dress", ("1girl", "red_hair", "dress"))
+    _record_review(
+        journal,
+        covers,
+        1,
+        "Blue Archive sitting",
+        ("1girl", "sitting"),
+        "Art/GAMES/BA",
+    )
+    _record_review(
+        journal,
+        covers,
+        2,
+        "GFL2 sitting",
+        ("1girl", "sitting"),
+        "Art/GAMES/GFL2",
+    )
     _record_review(
         journal,
         covers,
         3,
-        "Halo two",
-        ("1girl", "halo", "blue_hair", "school_uniform"),
+        "Blue Archive standing",
+        ("1girl", "standing"),
+        "Art/GAMES/BA",
     )
 
     records = load_review_sample(
@@ -67,10 +84,14 @@ def test_ai_sort_report_samples_review_apply_records_and_loads_images_smartly(
     page = render_report(records, seed=7, candidate_count=3)
 
     assert {record["bookmark_id"] for record in records} == {1, 2, 3}
-    assert [record["title"] for record in records[:2]] == ["Halo two", "Halo one"]
+    positions = {record["title"]: index for index, record in enumerate(records)}
+    assert abs(
+        positions["Blue Archive sitting"] - positions["Blue Archive standing"]
+    ) == 1
     assert 'data-src="https://cdn.test/' in page
     assert ' src="https://cdn.test/' not in page
     assert "IntersectionObserver" in page
     assert "MAX_CONCURRENT_IMAGES=4" in page
     assert "outcome:review mode:apply" in page
+    assert "Likely-work review" in page
     assert "Random seed 7" in page
