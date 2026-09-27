@@ -8,7 +8,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from src.cover_cache import SQLiteCoverCache
-from src.journal_web import create_server
+from src.journal_web import JournalRequestHandler, create_server
 from src.routing import RouteDecision, RouteOutcome, TextEvidence
 from src.run_journal import SQLiteRunJournal
 
@@ -262,6 +262,20 @@ def test_dashboard_reports_bad_limits_and_missing_attempts(dashboard):
     with pytest.raises(HTTPError) as missing:
         urlopen(f"{base_url}/api/attempts/missing")
     assert missing.value.code == 404
+
+
+def test_assignment_batch_accepts_more_than_one_hundred_attempts():
+    attempt_ids = [f"attempt-{index}" for index in range(205)]
+
+    assert JournalRequestHandler._batch_attempt_ids(
+        {"attempt_ids": attempt_ids}
+    ) == attempt_ids
+
+    with pytest.raises(ValueError, match="at most 100"):
+        JournalRequestHandler._batch_attempt_ids(
+            {"attempt_ids": attempt_ids},
+            max_size=100,
+        )
 
 
 def test_dashboard_refuses_to_create_a_missing_journal(tmp_path):

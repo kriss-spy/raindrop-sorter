@@ -351,6 +351,67 @@ def test_batch_assignment_clears_successful_cards_before_background_refresh(
         browser.close()
 
 
+def test_batch_assignment_submits_more_than_one_hundred_records_transparently(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              renderedAttempts = Array.from({length:205}, (_, index) => ({
+                attempt_id:`bulk-${index}`,
+                bookmark_id:10_000 + index,
+                title:`Bulk ${index}`,
+                mode:'apply',
+                outcome:'review',
+                current_phase:'applied',
+                started_at:'2026-09-27T00:00:00+00:00',
+              }));
+              selectedAttempts.clear();
+              renderedAttempts.forEach(item => selectedAttempts.add(item.attempt_id));
+              const destination = document.querySelector('#batch-destination-search');
+              destination.dataset.collectionId = '11';
+              destination.value = 'Art/Child';
+              syncSelectionUi();
+              window.assignmentPayloads = [];
+              const originalFetch = window.fetch.bind(window);
+              window.fetch = (url, options = {}) => {
+                if (String(url) === '/api/attempts/resolve-batch') {
+                  const payload = JSON.parse(options.body);
+                  window.assignmentPayloads.push(payload.attempt_ids);
+                  return Promise.resolve(new Response(JSON.stringify({
+                    status:'ok', resolved:payload.attempt_ids.length,
+                    failed:0, results:[], errors:[],
+                  }), {status:200, headers:{'Content-Type':'application/json'}}));
+                }
+                if (String(url).startsWith('/api/overview') || String(url).startsWith('/api/attempts?')) {
+                  return new Promise(() => {});
+                }
+                return originalFetch(url, options);
+              };
+            }
+            """
+        )
+
+        page.evaluate("assignSelected()")
+        page.wait_for_function(
+            "() => document.querySelector('#batch-message').textContent === '205 assigned'"
+        )
+
+        payloads = page.evaluate("window.assignmentPayloads")
+        assert [len(payload) for payload in payloads] == [205]
+        assert [attempt_id for payload in payloads for attempt_id in payload] == [
+            f"bulk-{index}" for index in range(205)
+        ]
+
+        browser.close()
+
+
 def test_batch_correction_of_confirmed_record_requires_confirmation(
     destination_filter_dashboard,
 ):

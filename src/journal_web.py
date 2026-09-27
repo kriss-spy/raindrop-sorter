@@ -322,12 +322,16 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         self._send_json(HTTPStatus.OK, result)
 
     @staticmethod
-    def _batch_attempt_ids(payload: dict[str, Any]) -> list[str]:
+    def _batch_attempt_ids(
+        payload: dict[str, Any],
+        *,
+        max_size: int | None = None,
+    ) -> list[str]:
         attempt_ids = payload.get("attempt_ids")
         if not isinstance(attempt_ids, list) or not attempt_ids:
             raise ValueError("attempt_ids must be a non-empty list")
-        if len(attempt_ids) > 100:
-            raise ValueError("a batch can contain at most 100 attempts")
+        if max_size is not None and len(attempt_ids) > max_size:
+            raise ValueError(f"a batch can contain at most {max_size} attempts")
         if len(set(attempt_ids)) != len(attempt_ids) or not all(
             isinstance(attempt_id, str) and attempt_id for attempt_id in attempt_ids
         ):
@@ -341,7 +345,7 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                 {"error": "record deletion requires a loopback dashboard"},
             )
             return
-        attempt_ids = self._batch_attempt_ids(payload)
+        attempt_ids = self._batch_attempt_ids(payload, max_size=100)
         result = self.server.record_manager.mark_deleted_batch(attempt_ids)
         self._send_json(HTTPStatus.OK, result)
 
