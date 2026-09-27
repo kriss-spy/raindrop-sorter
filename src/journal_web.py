@@ -254,7 +254,10 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                     selection_source=str(payload.get("selection_source", "custom")),
                 )
                 if self.server.live_library is not None:
-                    self.server.live_library.invalidate_membership_cache()
+                    self.server.live_library.record_move(
+                        bookmark_id=int(result["bookmark_id"]),
+                        destination_collection_id=int(result["collection_id"]),
+                    )
                 self._send_json(HTTPStatus.OK, result)
         except ReviewApplyFailed as error:
             self._send_json(
@@ -300,7 +303,11 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             collection_id=collection_id,
         )
         if self.server.live_library is not None:
-            self.server.live_library.invalidate_membership_cache()
+            for resolved in result["results"]:
+                self.server.live_library.record_move(
+                    bookmark_id=int(resolved["bookmark_id"]),
+                    destination_collection_id=int(resolved["collection_id"]),
+                )
         self._send_json(HTTPStatus.OK, result)
 
     def _sorter_status(self) -> None:
@@ -409,8 +416,27 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
 
     def _attempts(self, query: dict[str, list[str]]) -> None:
         limit = int(query.get("limit", ["50"])[0])
-        if limit > 500:
-            raise ValueError("limit must not exceed 500")
+        if not 1 <= limit <= 500:
+            raise ValueError("limit must be between 1 and 500")
+        before_started_at = query.get("before_started_at", [None])[0]
+        before_attempt_id = query.get("before_attempt_id", [None])[0]
+        if (before_started_at is None) != (before_attempt_id is None):
+            raise ValueError(
+                "before_started_at and before_attempt_id must be provided together"
+            )
+        snapshot_started_at = query.get("snapshot_started_at", [None])[0]
+        snapshot_attempt_id = query.get("snapshot_attempt_id", [None])[0]
+        if (snapshot_started_at is None) != (snapshot_attempt_id is None):
+            raise ValueError(
+                "snapshot_started_at and snapshot_attempt_id must be provided together"
+            )
+        if before_started_at is not None and snapshot_started_at is None:
+            raise ValueError("a paging cursor requires its snapshot cursor")
+        snapshot = (
+            (snapshot_started_at, snapshot_attempt_id)
+            if snapshot_started_at is not None and snapshot_attempt_id is not None
+            else self.server.journal.newest_cursor()
+        )
         latest = query.get("latest", ["0"])[0].casefold()
         if latest not in {"0", "1", "false", "true"}:
             raise ValueError("latest must be 0, 1, false, or true")
@@ -418,7 +444,11 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         if location_filtered and bookmark_ids is None:
             return
         items = self.server.journal.recent(
-            limit=limit,
+            limit=limit + 1,
+            before=(before_started_at, before_attempt_id)
+            if before_started_at is not None and before_attempt_id is not None
+            else None,
+            snapshot=snapshot,
             outcome=query.get("outcome", [None])[0] or None,
             phase=query.get("phase", [None])[0] or None,
             query=query.get("q", [None])[0] or None,
@@ -431,9 +461,24 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             latest_per_bookmark=latest in {"1", "true"},
             status_mode=query.get("mode", [None])[0] or None,
         )
+        has_more = len(items) > limit
+        items = items[:limit]
+        next_before_started_at = items[-1]["started_at"] if has_more and items else None
+        next_before_attempt_id = items[-1]["attempt_id"] if has_more and items else None
         if self.server.cover_cache is not None:
             items = self.server.cover_cache.attach(items)
-        self._send_json(HTTPStatus.OK, {"items": items, "count": len(items)})
+        self._send_json(
+            HTTPStatus.OK,
+            {
+                "items": items,
+                "count": len(items),
+                "has_more": has_more,
+                "next_before_started_at": next_before_started_at,
+                "next_before_attempt_id": next_before_attempt_id,
+                "snapshot_started_at": snapshot[0] if snapshot is not None else None,
+                "snapshot_attempt_id": snapshot[1] if snapshot is not None else None,
+            },
+        )
 
     def _preview(self, path: str) -> None:
         bookmark_id = int(path.removeprefix("/api/bookmarks/").removesuffix("/preview"))

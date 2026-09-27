@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -18,6 +19,8 @@ SYSTEM_COLLECTIONS = (
     SystemCollection(-1, "Unsorted"),
     SystemCollection(-99, "Trash"),
 )
+MEMBERSHIP_CACHE_SECONDS = 300
+MAX_STALE_MEMBERSHIP_SECONDS = 15 * 60
 
 
 class LibrarySource(Protocol):
@@ -47,6 +50,11 @@ class LiveLibraryBrowser:
     def __init__(self, source: LibrarySource):
         self.source = source
         self._membership_cache: dict[int, tuple[float, frozenset[int]]] = {}
+        self._membership_lock = threading.RLock()
+        self._collection_membership_locks: dict[int, threading.Lock] = {}
+        self._refreshing_memberships: set[int] = set()
+        self._membership_revision = 0
+        self._membership_moves: dict[int, tuple[int, int]] = {}
 
     def collection_tree(self) -> dict[str, Any]:
         collections = self.source.get_collections()
@@ -171,32 +179,106 @@ class LiveLibraryBrowser:
 
     def current_bookmark_ids(self, collection_id: int) -> set[int]:
         """Return every bookmark currently present in one Raindrop collection."""
-        cached = self._membership_cache.get(collection_id)
-        now = time.monotonic()
-        if cached is not None and now - cached[0] < 60:
-            return set(cached[1])
-        bookmark_ids: set[int] = set()
-        page = 0
-        while True:
-            items, has_more = self.source.get_raindrops(
-                collection_id,
-                page=page,
-                perpage=50,
-                search=None,
-                sort=None,
+        with self._membership_lock:
+            cached = self._membership_cache.get(collection_id)
+            now = time.monotonic()
+            if cached is not None:
+                age = now - cached[0]
+                if age < MEMBERSHIP_CACHE_SECONDS:
+                    return set(cached[1])
+                if age <= MAX_STALE_MEMBERSHIP_SECONDS:
+                    self._start_membership_refresh(collection_id)
+                    return set(cached[1])
+        return self._load_membership(collection_id)
+
+    def _start_membership_refresh(self, collection_id: int) -> None:
+        if collection_id in self._refreshing_memberships:
+            return
+        self._refreshing_memberships.add(collection_id)
+        threading.Thread(
+            target=self._refresh_membership,
+            args=(collection_id,),
+            daemon=True,
+        ).start()
+
+    def _refresh_membership(self, collection_id: int) -> None:
+        try:
+            self._load_membership(collection_id)
+        except Exception:
+            pass
+        finally:
+            with self._membership_lock:
+                self._refreshing_memberships.discard(collection_id)
+
+    def _load_membership(self, collection_id: int) -> set[int]:
+        with self._membership_lock:
+            collection_lock = self._collection_membership_locks.setdefault(
+                collection_id, threading.Lock()
             )
-            bookmark_ids.update(int(item["_id"]) for item in items)
-            if not has_more:
+        with collection_lock:
+            with self._membership_lock:
+                cached = self._membership_cache.get(collection_id)
+                now = time.monotonic()
+                if cached is not None and now - cached[0] < MEMBERSHIP_CACHE_SECONDS:
+                    return set(cached[1])
+                start_revision = self._membership_revision
+            bookmark_ids: set[int] = set()
+            page = 0
+            while True:
+                items, has_more = self.source.get_raindrops(
+                    collection_id,
+                    page=page,
+                    perpage=50,
+                    search=None,
+                    sort=None,
+                )
+                bookmark_ids.update(int(item["_id"]) for item in items)
+                if not has_more:
+                    break
+                page += 1
+            with self._membership_lock:
+                for bookmark_id, (revision, destination_id) in (
+                    self._membership_moves.items()
+                ):
+                    if revision <= start_revision:
+                        continue
+                    if collection_id != 0:
+                        bookmark_ids.discard(bookmark_id)
+                    if collection_id == destination_id:
+                        bookmark_ids.add(bookmark_id)
                 self._membership_cache[collection_id] = (
-                    now,
+                    time.monotonic(),
                     frozenset(bookmark_ids),
                 )
-                return bookmark_ids
-            page += 1
+            return bookmark_ids
+
+    def record_move(
+        self, *, bookmark_id: int, destination_collection_id: int
+    ) -> None:
+        """Keep warm membership snapshots exact after a dashboard move."""
+        with self._membership_lock:
+            self._membership_revision += 1
+            self._membership_moves[bookmark_id] = (
+                self._membership_revision,
+                destination_collection_id,
+            )
+            for collection_id, (cached_at, cached_ids) in list(
+                self._membership_cache.items()
+            ):
+                updated_ids = set(cached_ids)
+                if collection_id != 0:
+                    updated_ids.discard(bookmark_id)
+                if collection_id == destination_collection_id:
+                    updated_ids.add(bookmark_id)
+                self._membership_cache[collection_id] = (
+                    cached_at,
+                    frozenset(updated_ids),
+                )
 
     def invalidate_membership_cache(self) -> None:
         """Discard cached Raindrop locations after a local move."""
-        self._membership_cache.clear()
+        with self._membership_lock:
+            self._membership_cache.clear()
 
 
 def _collection_id(value: Any) -> int:

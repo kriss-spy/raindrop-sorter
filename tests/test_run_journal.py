@@ -223,6 +223,53 @@ def test_overview_can_be_scoped_to_live_location_bookmarks(tmp_path):
     assert overview["attempt_phases"] == {"dry_run_completed": 1}
 
 
+def test_recent_cursor_is_stable_when_a_newer_attempt_is_inserted(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    for bookmark_id in range(1, 6):
+        attempt = journal.start_attempt({"_id": bookmark_id}, mode="dry-run")
+        journal.complete(attempt, phase="dry_run_completed")
+
+    original = journal.recent(limit=10)
+    first_page = journal.recent(limit=2)
+    newest = journal.start_attempt({"_id": 99}, mode="dry-run")
+    journal.complete(newest, phase="dry_run_completed")
+    last = first_page[-1]
+    second_page = journal.recent(
+        limit=2,
+        before=(last["started_at"], last["attempt_id"]),
+    )
+
+    assert [item["attempt_id"] for item in first_page + second_page] == [
+        item["attempt_id"] for item in original[:4]
+    ]
+
+
+def test_latest_cursor_keeps_unseen_bookmark_when_it_gets_a_new_attempt(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    for bookmark_id in range(1, 4):
+        attempt = journal.start_attempt({"_id": bookmark_id}, mode="dry-run")
+        journal.complete(attempt, phase="dry_run_completed")
+
+    snapshot = journal.newest_cursor()
+    first_page = journal.recent(
+        limit=1,
+        latest_per_bookmark=True,
+        snapshot=snapshot,
+    )
+    newer = journal.start_attempt({"_id": 1}, mode="dry-run")
+    journal.complete(newer, phase="dry_run_completed")
+    first = first_page[-1]
+    second_page = journal.recent(
+        limit=2,
+        latest_per_bookmark=True,
+        snapshot=snapshot,
+        before=(first["started_at"], first["attempt_id"]),
+    )
+
+    assert [item["bookmark_id"] for item in first_page + second_page] == [3, 2, 1]
+    assert second_page[-1]["attempt_id"] != newer.attempt_id
+
+
 def test_processed_date_uses_completion_time_with_started_fallback(tmp_path):
     journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
     completed = journal.start_attempt({"_id": 1}, mode="dry-run")

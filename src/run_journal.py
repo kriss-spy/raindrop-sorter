@@ -385,6 +385,8 @@ class SQLiteRunJournal:
         self,
         *,
         limit: int = 20,
+        before: tuple[str, str] | None = None,
+        snapshot: tuple[str, str] | None = None,
         outcome: str | None = None,
         phase: str | None = None,
         query: str | None = None,
@@ -409,6 +411,8 @@ class SQLiteRunJournal:
                 raise ValueError("processed_on must use YYYY-MM-DD") from error
         if not -14 * 60 <= utc_offset_minutes <= 14 * 60:
             raise ValueError("utc_offset_minutes must be between -840 and 840")
+        if bookmark_ids == set():
+            return []
         with self._connect() as connection:
             clauses: list[str] = []
             parameters: list[Any] = []
@@ -424,33 +428,82 @@ class SQLiteRunJournal:
             if status_mode:
                 clauses.append("mode = ?")
                 parameters.append(status_mode)
+            if before is not None:
+                before_started_at, before_attempt_id = before
+                clauses.append(
+                    "(started_at < ? OR (started_at = ? AND attempt_id < ?))"
+                )
+                parameters.extend(
+                    [before_started_at, before_started_at, before_attempt_id]
+                )
             source = "attempts"
+            cte_parameters: list[Any] = []
             if latest_per_bookmark:
                 source = "latest_attempts"
                 clauses.insert(0, "bookmark_rank = 1")
-            cte_parameters: list[Any] = []
-            if mode and latest_per_bookmark:
-                modes = (mode,) if isinstance(mode, str) else mode
-                placeholders = ", ".join("?" for _mode in modes)
-                latest_cte = _LATEST_ATTEMPTS_CTE.replace(
-                    "FROM attempts\n",
-                    f"FROM attempts WHERE mode IN ({placeholders})\n",
+                cte_clauses: list[str] = []
+                if mode:
+                    modes = (mode,) if isinstance(mode, str) else mode
+                    placeholders = ", ".join("?" for _mode in modes)
+                    cte_clauses.append(f"mode IN ({placeholders})")
+                    cte_parameters.extend(modes)
+                if snapshot is not None:
+                    snapshot_started_at, snapshot_attempt_id = snapshot
+                    cte_clauses.append(
+                        "(started_at < ? OR (started_at = ? AND attempt_id <= ?))"
+                    )
+                    cte_parameters.extend(
+                        [snapshot_started_at, snapshot_started_at, snapshot_attempt_id]
+                    )
+                if bookmark_ids is not None:
+                    placeholders = ", ".join("?" for _id in bookmark_ids)
+                    cte_clauses.append(f"bookmark_id IN ({placeholders})")
+                    cte_parameters.extend(sorted(bookmark_ids))
+                cte_where = (
+                    f"WHERE {' AND '.join(cte_clauses)}" if cte_clauses else ""
                 )
-                cte_parameters.extend(modes)
+                latest_cte = f"""
+                    WITH latest_attempts AS (
+                        SELECT *, ROW_NUMBER() OVER (
+                            PARTITION BY bookmark_id
+                            ORDER BY started_at DESC, attempt_id DESC
+                        ) AS bookmark_rank
+                        FROM attempts {cte_where}
+                    )
+                """
             else:
-                latest_cte = _LATEST_ATTEMPTS_CTE if latest_per_bookmark else ""
+                latest_cte = ""
                 if mode:
                     modes = (mode,) if isinstance(mode, str) else mode
                     placeholders = ", ".join("?" for _mode in modes)
                     clauses.append(f"mode IN ({placeholders})")
                     parameters.extend(modes)
+                if snapshot is not None:
+                    snapshot_started_at, snapshot_attempt_id = snapshot
+                    clauses.append(
+                        "(started_at < ? OR (started_at = ? AND attempt_id <= ?))"
+                    )
+                    parameters.extend(
+                        [snapshot_started_at, snapshot_started_at, snapshot_attempt_id]
+                    )
+                if bookmark_ids is not None:
+                    placeholders = ", ".join("?" for _id in bookmark_ids)
+                    clauses.append(f"bookmark_id IN ({placeholders})")
+                    parameters.extend(sorted(bookmark_ids))
             where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+            needs_python_filter = bool(
+                query or labels or title or link or processed_on
+            )
+            sql_limit = "" if needs_python_filter else "LIMIT ?"
+            if not needs_python_filter:
+                parameters.append(limit)
             rows = connection.execute(
                 f"""
                 {latest_cte}
                 SELECT attempt_id, bookmark_id, started_at, ended_at, current_phase,
                        outcome, destination, mode, bookmark_snapshot_json, decision_json
                 FROM {source} {where} ORDER BY started_at DESC, attempt_id DESC
+                {sql_limit}
                 """,
                 [*cte_parameters, *parameters],
             ).fetchall()
@@ -503,6 +556,19 @@ class SQLiteRunJournal:
             if len(results) == limit:
                 break
         return results
+
+    def newest_cursor(self) -> tuple[str, str] | None:
+        """Return an upper bound that freezes one journal browsing snapshot."""
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT started_at, attempt_id FROM attempts
+                ORDER BY started_at DESC, attempt_id DESC LIMIT 1
+                """
+            ).fetchone()
+        if row is None:
+            return None
+        return str(row["started_at"]), str(row["attempt_id"])
 
     def overview(self, *, bookmark_ids: set[int] | None = None) -> dict[str, Any]:
         """Return compact aggregate data for operator dashboards."""

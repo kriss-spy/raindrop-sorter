@@ -890,6 +890,177 @@ def test_query_and_filter_controls_stay_in_sync(destination_filter_dashboard):
         browser.close()
 
 
+def test_filter_change_renders_first_page_then_appends_in_order(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              const originalFetch = window.fetch.bind(window);
+              const attempts = Array.from({length: 27}, (_, index) => ({
+                attempt_id: `progressive-${index}`,
+                bookmark_id: 1000 + index,
+                title: `Progressive ${String(index).padStart(2, '0')}`,
+                mode: 'apply',
+                outcome: 'confirmed',
+                current_phase: 'applied',
+                started_at: `2026-09-27T00:${String(59 - index).padStart(2, '0')}:00+00:00`,
+                duration_ms: 10,
+              }));
+              window.progressiveRequests = [];
+              window.firstPageFrameObserved = false;
+              window.fetch = (url, options = {}) => {
+                if (!String(url).startsWith('/api/attempts?')) return originalFetch(url, options);
+                const params = new URL(String(url), location.origin).searchParams;
+                const beforeAttemptId = params.get('before_attempt_id');
+                const snapshotAttemptId = params.get('snapshot_attempt_id');
+                const offset = beforeAttemptId
+                  ? Number(beforeAttemptId.replace('progressive-', '')) + 1
+                  : 0;
+                const limit = Number(params.get('limit'));
+                window.progressiveRequests.push({beforeAttemptId, snapshotAttemptId, limit});
+                if (beforeAttemptId) {
+                  window.frameBeforeSecondRequest = window.firstPageFrameObserved;
+                }
+                const pageItems = attempts.slice(offset, offset + limit);
+                const response = new Response(JSON.stringify({
+                  items: pageItems,
+                  count: Math.min(limit, attempts.length - offset),
+                  has_more: offset + limit < attempts.length,
+                  next_before_started_at: pageItems.at(-1)?.started_at || null,
+                  next_before_attempt_id: pageItems.at(-1)?.attempt_id || null,
+                  snapshot_started_at: '2026-09-27T00:59:00+00:00',
+                  snapshot_attempt_id: 'progressive-0',
+                }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                if (offset === 0) {
+                  return new Promise(resolve => {
+                    window.releaseFirstAttemptPage = () => {
+                      requestAnimationFrame(() => { window.firstPageFrameObserved = true; });
+                      resolve(response);
+                    };
+                  });
+                }
+                return new Promise(resolve => {
+                  window.releaseNextAttemptPage = () => resolve(response);
+                });
+              };
+            }
+            """
+        )
+
+        page.locator("#filter-toggle").click()
+        page.locator("#outcome").select_option("confirmed")
+        assert page.locator("#count").text_content() == "Loading…"
+        assert page.locator("[data-attempt-id]").count() == 0
+        page.evaluate("refreshDashboardInBackground()")
+        assert page.evaluate("window.progressiveRequests") == [
+            {"beforeAttemptId": None, "snapshotAttemptId": None, "limit": 24},
+        ]
+
+        page.evaluate("window.releaseFirstAttemptPage()")
+        page.wait_for_function("() => document.querySelectorAll('[data-attempt-id]').length === 24")
+        page.wait_for_function("() => window.progressiveRequests.length === 2")
+
+        assert page.locator("#count").text_content() == "24+ shown"
+        assert page.locator(".attempt-title").all_text_contents() == [
+            f"Progressive {index:02d}" for index in range(24)
+        ]
+        assert page.evaluate("window.progressiveRequests") == [
+            {"beforeAttemptId": None, "snapshotAttemptId": None, "limit": 24},
+            {
+                "beforeAttemptId": "progressive-23",
+                "snapshotAttemptId": "progressive-0",
+                "limit": 100,
+            },
+        ]
+        assert page.evaluate("window.frameBeforeSecondRequest") is True
+
+        page.evaluate("window.releaseNextAttemptPage()")
+        page.wait_for_function("() => document.querySelectorAll('[data-attempt-id]').length === 27")
+        page.wait_for_function("() => window.progressiveRequests.length === 3")
+
+        assert page.locator("#count").text_content() == "27 shown"
+        assert page.locator(".attempt-title").all_text_contents() == [
+            f"Progressive {index:02d}" for index in range(27)
+        ]
+        assert page.evaluate("window.progressiveRequests[2]") == {
+            "beforeAttemptId": None,
+            "snapshotAttemptId": None,
+            "limit": 24,
+        }
+
+        browser.close()
+
+
+def test_background_progressive_refresh_keeps_current_cards_until_complete(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              const originalFetch = window.fetch.bind(window);
+              const attempts = Array.from({length: 27}, (_, index) => ({
+                attempt_id: `background-${index}`,
+                bookmark_id: 2000 + index,
+                title: `Background ${String(index).padStart(2, '0')}`,
+                mode: 'apply', outcome: 'confirmed', current_phase: 'applied',
+                started_at: `2026-09-27T00:${String(59 - index).padStart(2, '0')}:00+00:00`,
+                duration_ms: 10,
+              }));
+              window.fetch = (url, options = {}) => {
+                if (!String(url).startsWith('/api/attempts?')) return originalFetch(url, options);
+                const params = new URL(String(url), location.origin).searchParams;
+                const beforeAttemptId = params.get('before_attempt_id');
+                const offset = beforeAttemptId
+                  ? Number(beforeAttemptId.replace('background-', '')) + 1
+                  : 0;
+                const limit = Number(params.get('limit'));
+                const pageItems = attempts.slice(offset, offset + limit);
+                const response = new Response(JSON.stringify({
+                  items: pageItems,
+                  count: pageItems.length,
+                  has_more: offset + limit < attempts.length,
+                  next_before_started_at: pageItems.at(-1)?.started_at || null,
+                  next_before_attempt_id: pageItems.at(-1)?.attempt_id || null,
+                  snapshot_started_at: attempts[0].started_at,
+                  snapshot_attempt_id: attempts[0].attempt_id,
+                }), {status: 200, headers: {'Content-Type': 'application/json'}});
+                if (offset === 0) return Promise.resolve(response);
+                return new Promise(resolve => {
+                  window.releaseBackgroundTail = () => resolve(response);
+                });
+              };
+            }
+            """
+        )
+
+        page.evaluate("void refreshDashboard({progressive:true, clearBeforeLoad:false})")
+        page.wait_for_function("() => Boolean(window.releaseBackgroundTail)")
+
+        assert page.get_by_text("Root result", exact=True).count() == 1
+        assert page.locator('[data-attempt-id^="background-"]').count() == 0
+
+        page.evaluate("window.releaseBackgroundTail()")
+        page.wait_for_function(
+            "() => document.querySelectorAll('[data-attempt-id^=\"background-\"]').length === 27"
+        )
+        assert page.get_by_text("Root result", exact=True).count() == 0
+
+        browser.close()
+
+
 def test_collection_tree_failure_does_not_replace_journal_results(destination_filter_dashboard):
     with playwright.sync_playwright() as runtime:
         browser = runtime.chromium.launch(headless=True)

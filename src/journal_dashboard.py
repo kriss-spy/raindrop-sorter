@@ -108,6 +108,8 @@ let selectedLocationPath = '';
 let selectedLocationCollectionId = null;
 let overviewRenderGeneration = 0;
 let attemptsRenderGeneration = 0;
+let activeForegroundAttemptsRenderGeneration = null;
+let backgroundRefreshPending = false;
 let expandedCollectionIds = new Set();
 try {
   expandedCollectionIds = new Set(JSON.parse(localStorage.getItem(expandedCollectionsStorageKey) || '[]').map(String));
@@ -735,14 +737,31 @@ function syncBatchControls() {
   select('#selection-count').textContent = `${count} selected`;
   select('#batch-assign').disabled = !count || !select('#batch-destination-search').dataset.collectionId;
 }
-async function renderAttempts() {
+function showAttemptsLoading() {
+  renderedAttempts = [];
+  clearAttemptSelection();
+  clearDetail();
+  select('#count').textContent = 'Loading…';
+  const attemptList = select('#attempts');
+  attemptList.className = resultLayout === 'cards' ? 'attempt-grid' : 'attempt-table-wrap';
+  attemptList.replaceChildren(
+    element('div', 'skeleton'),
+    element('div', 'skeleton'),
+    element('div', 'skeleton'),
+  );
+}
+async function renderAttempts({progressive = false, clearBeforeLoad = true} = {}) {
   const renderGeneration = ++attemptsRenderGeneration;
+  const foregroundLoad = progressive && clearBeforeLoad;
+  if (foregroundLoad) activeForegroundAttemptsRenderGeneration = renderGeneration;
+  try {
   if (selectedLocationPath && selectedLocationCollectionId === null) {
     renderedAttempts = [];
     renderCurrentAttempts();
     return;
   }
-  const params = new URLSearchParams({limit:'500'});
+  if (progressive && clearBeforeLoad) showAttemptsLoading();
+  const params = new URLSearchParams();
   const latestOnly = select('#scope').value === 'latest';
   params.set('latest', latestOnly ? '1' : '0');
   if (freeSearchValue) params.set('q', freeSearchValue);
@@ -757,28 +776,82 @@ async function renderAttempts() {
   if (select('#link-filter').value) params.set('link', select('#link-filter').value);
   if (select('#date-filter').value) params.set('processed_on', select('#date-filter').value);
   params.set('utc_offset_minutes', String(-new Date().getTimezoneOffset()));
-  const result = await fetchJson('/api/attempts?' + params);
-  if (renderGeneration !== attemptsRenderGeneration) return;
-  let items = result.items.filter(attempt => (
-    !pendingAssignmentAttemptIds.has(attempt.attempt_id)
-    && !pendingAssignmentBookmarkIds.has(attempt.bookmark_id)
-  ));
-  const keepPinnedRetry = pinnedRetry
-    && pinnedRetry.query === select('#search').value
-    && pinnedRetry.attempt.attempt_id === selectedAttemptId
-    && select('#workspace').classList.contains('detail-open')
-    && !pendingAssignmentAttemptIds.has(pinnedRetry.attempt.attempt_id)
-    && !pendingAssignmentBookmarkIds.has(pinnedRetry.attempt.bookmark_id);
-  if (keepPinnedRetry && !items.some(attempt => attempt.attempt_id === selectedAttemptId)) {
-    items = [pinnedRetry.attempt, ...items];
-  } else if (pinnedRetry && !keepPinnedRetry) {
-    pinnedRetry = null;
+  let loadedItems = [];
+  let beforeStartedAt = null;
+  let beforeAttemptId = null;
+  let snapshotStartedAt = null;
+  let snapshotAttemptId = null;
+  let loadedCount = 0;
+  let pageLimit = progressive ? 24 : 500;
+  const deferUntilComplete = progressive && !clearBeforeLoad;
+  while (loadedCount < 500) {
+    params.set('limit', String(Math.min(pageLimit, 500 - loadedCount)));
+    if (beforeStartedAt && beforeAttemptId) {
+      params.set('before_started_at', beforeStartedAt);
+      params.set('before_attempt_id', beforeAttemptId);
+    } else {
+      params.delete('before_started_at');
+      params.delete('before_attempt_id');
+    }
+    if (snapshotStartedAt && snapshotAttemptId) {
+      params.set('snapshot_started_at', snapshotStartedAt);
+      params.set('snapshot_attempt_id', snapshotAttemptId);
+    }
+    const result = await fetchJson('/api/attempts?' + params);
+    if (renderGeneration !== attemptsRenderGeneration) return;
+    const pageItems = result.items.filter(attempt => (
+      !pendingAssignmentAttemptIds.has(attempt.attempt_id)
+      && !pendingAssignmentBookmarkIds.has(attempt.bookmark_id)
+    ));
+    const loadedAttemptIds = new Set(loadedItems.map(attempt => attempt.attempt_id));
+    loadedItems = [
+      ...loadedItems,
+      ...pageItems.filter(attempt => !loadedAttemptIds.has(attempt.attempt_id)),
+    ];
+    let visibleItems = loadedItems;
+    const keepPinnedRetry = pinnedRetry
+      && pinnedRetry.query === select('#search').value
+      && pinnedRetry.attempt.attempt_id === selectedAttemptId
+      && select('#workspace').classList.contains('detail-open')
+      && !pendingAssignmentAttemptIds.has(pinnedRetry.attempt.attempt_id)
+      && !pendingAssignmentBookmarkIds.has(pinnedRetry.attempt.bookmark_id);
+    if (keepPinnedRetry && !visibleItems.some(attempt => attempt.attempt_id === selectedAttemptId)) {
+      visibleItems = [pinnedRetry.attempt, ...visibleItems];
+    } else if (pinnedRetry && !keepPinnedRetry) {
+      pinnedRetry = null;
+    }
+    loadedCount += result.items.length;
+    const hasMore = progressive && result.has_more && loadedCount < 500;
+    if (!deferUntilComplete || !hasMore) {
+      if (!hasMore && selectedAttemptId && !visibleItems.some(attempt => attempt.attempt_id === selectedAttemptId)) {
+        clearDetail();
+      }
+      renderedAttempts = visibleItems;
+      [...selectedAttempts]
+        .filter(id => !visibleItems.some(attempt => attempt.attempt_id === id))
+        .forEach(id => selectedAttempts.delete(id));
+      select('#list-title').textContent = latestOnly ? 'Latest Raindrop status' : 'Attempt history';
+      renderCurrentAttempts();
+      select('#count').textContent = `${visibleItems.length}${hasMore ? '+' : ''} shown`;
+    }
+    if (!hasMore || !result.items.length) return;
+    beforeStartedAt = result.next_before_started_at;
+    beforeAttemptId = result.next_before_attempt_id;
+    snapshotStartedAt = result.snapshot_started_at;
+    snapshotAttemptId = result.snapshot_attempt_id;
+    if (!beforeStartedAt || !beforeAttemptId) return;
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    pageLimit = 100;
   }
-  if (selectedAttemptId && !items.some(attempt => attempt.attempt_id === selectedAttemptId)) clearDetail();
-  renderedAttempts = items;
-  [...selectedAttempts].filter(id => !items.some(attempt => attempt.attempt_id === id)).forEach(id => selectedAttempts.delete(id));
-  select('#list-title').textContent = latestOnly ? 'Latest Raindrop status' : 'Attempt history';
-  renderCurrentAttempts();
+  } finally {
+    if (activeForegroundAttemptsRenderGeneration === renderGeneration) {
+      activeForegroundAttemptsRenderGeneration = null;
+      if (backgroundRefreshPending) {
+        backgroundRefreshPending = false;
+        void refreshDashboard({progressive:true, clearBeforeLoad:false});
+      }
+    }
+  }
 }
 function clearDetail() {
   selectedAttemptId = null;
@@ -894,7 +967,7 @@ async function renderResolution(trace, detailPanel) {
         releasePendingAssignments([submittedAttempt]);
         attemptTraceCache.delete(attempt.attempt_id);
         artCollectionsPromise = null;
-        void refreshDashboard();
+        refreshDashboardInBackground();
       } catch (error) {
         releasePendingAssignments([submittedAttempt]);
         const restoreSubmittedView = detailSelectionRevision === assignmentRevision;
@@ -918,7 +991,7 @@ async function renderResolution(trace, detailPanel) {
             if (restoredError) restoredError.textContent = error.message;
           }
         }
-        if (!restoreSubmittedView) void refreshDashboard();
+        if (!restoreSubmittedView) refreshDashboardInBackground();
       }
     };
     section.append(selection, applyButton, errorBox);
@@ -1035,7 +1108,7 @@ function selectLocationCollection(node, locationPath) {
   invalidateDetailSelection();
   clearAttemptSelection();
   clearDetail();
-  void refreshDashboard();
+  void refreshDashboard({progressive:true});
 }
 function renderCollectionTree() {
   const tree = select('#collection-tree');
@@ -1080,17 +1153,30 @@ async function loadCollectionTree() {
     collectionTreeGroups = result.groups || [];
     selectedLocationCollectionId = collectionIdForLocationPath(selectedLocationPath);
     renderCollectionTree();
-    if (selectedLocationPath) void refreshDashboard();
+    if (selectedLocationPath) void refreshDashboard({progressive:true});
   } catch (error) {
     select('#collection-tree').replaceChildren(element('div', 'library-message', error.message));
   }
 }
-async function refreshDashboard() {
+async function refreshDashboard({progressive = false, clearBeforeLoad = true} = {}) {
   try {
-    await renderOverview();
-    await renderAttempts();
+    if (progressive) {
+      await renderAttempts({progressive:true, clearBeforeLoad});
+      await renderOverview();
+    } else {
+      await renderOverview();
+      await renderAttempts();
+    }
   }
   catch (error) { select('#attempts').replaceChildren(element('div', 'error', error.message)); }
+}
+function refreshDashboardInBackground() {
+  if (activeForegroundAttemptsRenderGeneration !== null) {
+    backgroundRefreshPending = true;
+    return;
+  }
+  backgroundRefreshPending = false;
+  void refreshDashboard({progressive:true, clearBeforeLoad:false});
 }
 function closeBatchDestinationResults() {
   const results = select('#batch-destination-results');
@@ -1204,7 +1290,7 @@ async function assignSelected() {
       ? `${result.resolved} assigned · ${result.failed} failed`
       : `${result.resolved} assigned`;
     renderCurrentAttempts();
-    void refreshDashboard();
+    refreshDashboardInBackground();
   } catch (error) {
     releasePendingAssignments(submittedAttempts);
     const visibleAttemptIds = new Set(renderedAttempts.map(attempt => attempt.attempt_id));
@@ -1250,7 +1336,7 @@ select('#filters').onsubmit = event => {
   event.preventDefault();
   invalidateDetailSelection();
   clearCaches();
-  refreshDashboard();
+  refreshDashboard({progressive:true});
 };
 let searchTimer;
 select('#search').oninput = () => {
@@ -1262,7 +1348,12 @@ select('#search').oninput = () => {
     clearAttemptSelection();
     clearDetail();
   }
-  searchTimer = setTimeout(overviewChanged ? refreshDashboard : renderAttempts, 250);
+  attemptsRenderGeneration += 1;
+  showAttemptsLoading();
+  const action = overviewChanged
+    ? () => refreshDashboard({progressive:true})
+    : () => renderAttempts({progressive:true});
+  searchTimer = setTimeout(action, 250);
 };
 function applyFilterControlChange({overviewChanged = false, immediate = true} = {}) {
   clearTimeout(searchTimer);
@@ -1273,7 +1364,13 @@ function applyFilterControlChange({overviewChanged = false, immediate = true} = 
     clearAttemptSelection();
     clearDetail();
   }
-  const action = overviewChanged ? refreshDashboard : renderAttempts;
+  const action = overviewChanged
+    ? () => refreshDashboard({progressive:true})
+    : () => renderAttempts({progressive:true});
+  if (!immediate) {
+    attemptsRenderGeneration += 1;
+    showAttemptsLoading();
+  }
   if (immediate) void action();
   else searchTimer = setTimeout(action, 250);
 }
@@ -1305,7 +1402,7 @@ select('#reset-filters').onclick = () => {
   clearAttemptSelection();
   clearDetail();
   syncQueryFromFilterControls();
-  void refreshDashboard();
+  void refreshDashboard({progressive:true});
 };
 select('#filter-toggle').onclick = () => {
   const panel = select('#filter-panel');
@@ -1400,9 +1497,9 @@ document.addEventListener('keydown', event => {
   }
 });
 syncQueryFromFilterControls();
-refreshDashboard();
+refreshDashboard({progressive:true});
 refreshSorterStatus();
 void loadCollectionTree();
-setInterval(refreshDashboard, 15000);
+setInterval(refreshDashboardInBackground, 15000);
 setInterval(refreshSorterStatus, 1000);
 </script></body></html>"""

@@ -1,6 +1,8 @@
 """Behavior of the live Raindrop library browsing seam."""
 
-from src.live_library import LiveLibraryBrowser
+import time
+
+from src.live_library import MEMBERSHIP_CACHE_SECONDS, LiveLibraryBrowser
 
 
 class FakeLibrarySource:
@@ -132,6 +134,94 @@ def test_current_bookmark_ids_reads_every_live_collection_page():
     # live snapshot instead of repaging the Raindrop API.
     assert browser.current_bookmark_ids(11) == set(range(1, 52))
     assert len(source.pages) == 2
+
+
+def test_record_move_updates_warm_membership_snapshots_without_refetching():
+    class MovingSource(FakeLibrarySource):
+        def __init__(self):
+            super().__init__()
+            self.pages = []
+
+        def get_raindrops(
+            self, collection_id, page=0, perpage=50, search=None, sort=None
+        ):
+            self.pages.append((collection_id, page))
+            return {
+                0: [{"_id": 1}, {"_id": 2}, {"_id": 3}],
+                -1: [{"_id": 2}],
+                11: [{"_id": 1}, {"_id": 2}],
+                20: [{"_id": 3}],
+            }[collection_id], False
+
+    source = MovingSource()
+    browser = LiveLibraryBrowser(source)
+    for collection_id in (0, -1, 11, 20):
+        browser.current_bookmark_ids(collection_id)
+    cached_at = {
+        collection_id: browser._membership_cache[collection_id][0]
+        for collection_id in (0, -1, 11, 20)
+    }
+
+    browser.record_move(bookmark_id=2, destination_collection_id=20)
+
+    assert browser.current_bookmark_ids(0) == {1, 2, 3}
+    assert browser.current_bookmark_ids(-1) == set()
+    assert browser.current_bookmark_ids(11) == {1}
+    assert browser.current_bookmark_ids(20) == {2, 3}
+    assert len(source.pages) == 4
+    assert {
+        collection_id: browser._membership_cache[collection_id][0]
+        for collection_id in (0, -1, 11, 20)
+    } == cached_at
+
+
+def test_expired_membership_returns_stale_snapshot_while_refreshing():
+    class ChangingSource(FakeLibrarySource):
+        def __init__(self):
+            super().__init__()
+            self.reads = 0
+
+        def get_raindrops(
+            self, collection_id, page=0, perpage=50, search=None, sort=None
+        ):
+            self.reads += 1
+            items = [{"_id": 1}] if self.reads == 1 else [{"_id": 1}, {"_id": 2}]
+            return items, False
+
+    source = ChangingSource()
+    browser = LiveLibraryBrowser(source)
+    assert browser.current_bookmark_ids(11) == {1}
+    cached_ids = browser._membership_cache[11][1]
+    browser._membership_cache[11] = (
+        time.monotonic() - MEMBERSHIP_CACHE_SECONDS - 1,
+        cached_ids,
+    )
+
+    assert browser.current_bookmark_ids(11) == {1}
+
+    deadline = time.monotonic() + 1
+    while browser._membership_cache[11][1] != frozenset({1, 2}):
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+    assert source.reads == 2
+
+
+def test_membership_too_stale_to_trust_surfaces_refresh_failure():
+    class FailingSource(FakeLibrarySource):
+        def get_raindrops(
+            self, collection_id, page=0, perpage=50, search=None, sort=None
+        ):
+            raise RuntimeError("Raindrop unavailable")
+
+    browser = LiveLibraryBrowser(FailingSource())
+    browser._membership_cache[11] = (0, frozenset({1}))
+
+    try:
+        browser.current_bookmark_ids(11)
+    except RuntimeError as error:
+        assert str(error) == "Raindrop unavailable"
+    else:
+        raise AssertionError("over-age membership snapshot was silently served")
 
 
 def test_collection_tree_keeps_duplicate_names_and_surfaces_missing_parents():

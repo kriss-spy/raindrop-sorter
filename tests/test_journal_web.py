@@ -2,6 +2,7 @@ import json
 import threading
 from types import SimpleNamespace
 from urllib.error import HTTPError
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 import pytest
@@ -224,12 +225,33 @@ def test_dashboard_can_hide_older_attempts_for_each_bookmark(dashboard):
     assert latest["items"][0]["title"] == "Pixiv illustration"
     assert history["count"] == 2
 
+    first_page = _json(f"{base_url}/api/attempts?latest=0&limit=1")
+    second_page = _json(f"{base_url}/api/attempts?" + urlencode({
+        "latest": 0,
+        "limit": 1,
+        "before_started_at": first_page["next_before_started_at"],
+        "before_attempt_id": first_page["next_before_attempt_id"],
+        "snapshot_started_at": first_page["snapshot_started_at"],
+        "snapshot_attempt_id": first_page["snapshot_attempt_id"],
+    }))
+    assert first_page["count"] == 1
+    assert first_page["has_more"] is True
+    assert first_page["snapshot_started_at"]
+    assert first_page["snapshot_attempt_id"]
+    assert first_page["items"][0]["title"] == "Pixiv illustration"
+    assert second_page["count"] == 1
+    assert second_page["has_more"] is False
+    assert second_page["items"][0]["title"] == "Earlier Pixiv check"
+
 
 def test_dashboard_reports_bad_limits_and_missing_attempts(dashboard):
     base_url, _ = dashboard
     with pytest.raises(HTTPError) as bad_limit:
         urlopen(f"{base_url}/api/attempts?limit=zero")
     assert bad_limit.value.code == 400
+    with pytest.raises(HTTPError) as incomplete_cursor:
+        urlopen(f"{base_url}/api/attempts?before_attempt_id=missing-start")
+    assert incomplete_cursor.value.code == 400
 
     with pytest.raises(HTTPError) as missing:
         urlopen(f"{base_url}/api/attempts/missing")
@@ -453,6 +475,7 @@ def test_dashboard_exposes_art_picker_and_resolves_attempt(tmp_path):
     class FakeClient:
         def __init__(self):
             self.updates = []
+            self.membership_reads = 0
 
         def get_collections(self):
             return [
@@ -468,6 +491,12 @@ def test_dashboard_exposes_art_picker_and_resolves_attempt(tmp_path):
 
         def get_raindrop(self, bookmark_id):
             return {"_id": bookmark_id, "title": "Conflict", "tags": []}
+
+        def get_raindrops(
+            self, collection_id, page=0, perpage=50, search=None, sort=None
+        ):
+            self.membership_reads += 1
+            return [], False
 
         def update_raindrop(self, bookmark_id, collection_id=None, tags=None):
             self.updates.append((bookmark_id, collection_id, tags))
@@ -511,6 +540,9 @@ def test_dashboard_exposes_art_picker_and_resolves_attempt(tmp_path):
             )
         assert cross_origin.value.code == 400
         assert client.updates == []
+        assert _json(
+            f"{base_url}/api/attempts?latest=1&collection_id=10"
+        )["items"] == []
         resolved = _post_json(
             f"{base_url}/api/attempts/{attempt.attempt_id}/resolve",
             {"collection_id": 10, "selection_source": "text"},
@@ -518,6 +550,11 @@ def test_dashboard_exposes_art_picker_and_resolves_attempt(tmp_path):
         assert resolved["outcome"] == "confirmed"
         assert resolved["selection_source"] == "text"
         assert client.updates[0][0:2] == (123, 10)
+        moved = _json(
+            f"{base_url}/api/attempts?latest=1&outcome=confirmed&collection_id=10"
+        )
+        assert moved["items"][0]["bookmark_id"] == 123
+        assert client.membership_reads == 1
     finally:
         server.shutdown()
         server.server_close()
