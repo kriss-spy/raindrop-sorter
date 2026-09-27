@@ -9,7 +9,7 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -388,12 +388,27 @@ class SQLiteRunJournal:
         outcome: str | None = None,
         phase: str | None = None,
         query: str | None = None,
+        labels: tuple[str, ...] = (),
+        title: str | None = None,
+        link: str | None = None,
+        processed_on: str | None = None,
+        utc_offset_minutes: int = 0,
+        bookmark_ids: set[int] | None = None,
         latest_per_bookmark: bool = False,
         mode: str | tuple[str, ...] | None = None,
+        status_mode: str | None = None,
         exclude_phase: str | None = None,
     ) -> list[dict[str, Any]]:
         if limit < 1:
             raise ValueError("limit must be at least 1")
+        requested_date = None
+        if processed_on:
+            try:
+                requested_date = date.fromisoformat(processed_on)
+            except ValueError as error:
+                raise ValueError("processed_on must use YYYY-MM-DD") from error
+        if not -14 * 60 <= utc_offset_minutes <= 14 * 60:
+            raise ValueError("utc_offset_minutes must be between -840 and 840")
         with self._connect() as connection:
             clauses: list[str] = []
             parameters: list[Any] = []
@@ -406,6 +421,9 @@ class SQLiteRunJournal:
             if exclude_phase:
                 clauses.append("current_phase != ?")
                 parameters.append(exclude_phase)
+            if status_mode:
+                clauses.append("mode = ?")
+                parameters.append(status_mode)
             source = "attempts"
             if latest_per_bookmark:
                 source = "latest_attempts"
@@ -438,11 +456,22 @@ class SQLiteRunJournal:
             ).fetchall()
 
         needle = (query or "").strip().casefold()
+        title_needle = (title or "").strip().casefold()
+        link_needle = (link or "").strip().casefold()
+        required_labels = {
+            value.strip().casefold() for value in labels if value.strip()
+        }
+        local_timezone = timezone(timedelta(minutes=utc_offset_minutes))
         results = []
         for row in rows:
             decoded = _decode_row(row)
             snapshot = decoded.pop("bookmark_snapshot", {})
             decision = decoded.pop("decision", {}) or {}
+            visual_labels = {
+                str(label).casefold()
+                for evidence in decision.get("visual_evidence", [])
+                for label in evidence.get("labels", [])
+            }
             decoded.update(
                 title=snapshot.get("title") or f"Bookmark {decoded['bookmark_id']}",
                 link=snapshot.get("link"),
@@ -451,6 +480,20 @@ class SQLiteRunJournal:
                 summary=decision.get("summary"),
                 duration_ms=_duration_ms(decoded["started_at"], decoded["ended_at"]),
             )
+            if bookmark_ids is not None and decoded["bookmark_id"] not in bookmark_ids:
+                continue
+            if required_labels and not required_labels.issubset(visual_labels):
+                continue
+            if title_needle and title_needle not in str(decoded["title"]).casefold():
+                continue
+            if link_needle and link_needle not in str(decoded.get("link") or "").casefold():
+                continue
+            if requested_date is not None:
+                processed_at = datetime.fromisoformat(
+                    decoded["ended_at"] or decoded["started_at"]
+                )
+                if processed_at.astimezone(local_timezone).date() != requested_date:
+                    continue
             if needle and not any(
                 needle in str(decoded.get(key) or "").casefold()
                 for key in ("bookmark_id", "title", "destination", "summary", "current_phase")

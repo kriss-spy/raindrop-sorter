@@ -115,7 +115,17 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "Start the automatic sorter?" in page
     assert "updateOutcomeOptions" in page
     assert "All outcomes ·" in page
-    assert "Search bookmarks" in page
+    assert "Search or use filters" in page
+    assert 'id="filter-toggle"' in page
+    assert 'id="filter-panel"' in page
+    assert 'id="mode"' in page
+    assert 'id="visual-labels"' in page
+    assert 'id="title-filter"' in page
+    assert 'id="link-filter"' in page
+    assert 'id="date-filter" type="date"' in page
+    assert "function parseFilterQuery(" in page
+    assert "function syncQueryFromFilterControls(" in page
+    assert "label:" in page
     assert "bookmark-preview" in page
     assert "MAX_CONCURRENT_PREVIEW_FETCHES = 2" in page
     assert "fetchPreviewBlob(bookmarkId)" in page
@@ -153,15 +163,16 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "event.shiftKey" in page
     assert "event.ctrlKey || event.metaKey" in page
     assert ".attempt-cover,.table-cover{pointer-events:none}" in page
-    assert 'aria-label="Live library collections"' in page
+    assert 'aria-label="Current Raindrop location filter"' in page
     assert 'id="collection-tree"' in page
-    assert 'id="library-load-more"' in page
     assert "/api/library/tree" in page
-    assert "/api/library/bookmarks?" in page
-    assert "sorter-library-selected-collection" in page
     assert "sorter-library-expanded-collections" in page
     assert "function renderCollectionTree()" in page
-    assert "async function selectLiveCollection" in page
+    assert "function collectionFilterPath(group, node)" in page
+    assert "`${groupTitle}/${path}`" in page
+    assert "function selectLocationCollection" in page
+    assert "selectLiveCollection" not in page
+    assert 'id="journal-select"' not in page
 
     overview = _json(f"{base_url}/api/overview")
     assert overview["total_attempts"] == 2
@@ -193,6 +204,12 @@ def test_dashboard_filters_attempts_and_returns_exact_trace(dashboard):
     assert attempts["items"][0]["bookmark_id"] == 1864496693
     assert attempts["items"][0]["cover"] == "https://rdl.ink/pixiv.webp"
     assert _json(f"{base_url}/api/attempts?outcome=confirmed")["items"] == []
+    processed_on = attempts["items"][0]["started_at"][:10]
+    structured = _json(
+        f"{base_url}/api/attempts?mode=dry-run&title=illustration"
+        f"&link=example.test&processed_on={processed_on}&utc_offset_minutes=0"
+    )
+    assert structured["items"][0]["bookmark_id"] == 1864496693
 
     trace = _json(f"{base_url}/api/attempts/{attempt_id}")
     assert trace["attempt"]["attempt_id"] == attempt_id

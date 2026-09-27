@@ -252,6 +252,8 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                     collection_id=int(payload["collection_id"]),
                     selection_source=str(payload.get("selection_source", "custom")),
                 )
+                if self.server.live_library is not None:
+                    self.server.live_library.invalidate_membership_cache()
                 self._send_json(HTTPStatus.OK, result)
         except ReviewAttemptNotFound as error:
             self._send_json(HTTPStatus.NOT_FOUND, {"error": str(error)})
@@ -286,6 +288,8 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             attempt_ids,
             collection_id=collection_id,
         )
+        if self.server.live_library is not None:
+            self.server.live_library.invalidate_membership_cache()
         self._send_json(HTTPStatus.OK, result)
 
     def _sorter_status(self) -> None:
@@ -370,12 +374,35 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         latest = query.get("latest", ["0"])[0].casefold()
         if latest not in {"0", "1", "false", "true"}:
             raise ValueError("latest must be 0, 1, false, or true")
+        bookmark_ids = None
+        if "collection_id" in query:
+            live_library = self._live_library_or_unavailable()
+            if live_library is None:
+                return
+            try:
+                bookmark_ids = live_library.current_bookmark_ids(
+                    int(query["collection_id"][0])
+                )
+            except (TypeError, ValueError):
+                raise
+            except Exception as error:
+                self._send_library_upstream_error(
+                    "load current collection membership", error
+                )
+                return
         items = self.server.journal.recent(
             limit=limit,
             outcome=query.get("outcome", [None])[0] or None,
             phase=query.get("phase", [None])[0] or None,
             query=query.get("q", [None])[0] or None,
+            labels=tuple(query.get("label", [])),
+            title=query.get("title", [None])[0] or None,
+            link=query.get("link", [None])[0] or None,
+            processed_on=query.get("processed_on", [None])[0] or None,
+            utc_offset_minutes=int(query.get("utc_offset_minutes", ["0"])[0]),
+            bookmark_ids=bookmark_ids,
             latest_per_bookmark=latest in {"1", "true"},
+            status_mode=query.get("mode", [None])[0] or None,
         )
         if self.server.cover_cache is not None:
             items = self.server.cover_cache.attach(items)

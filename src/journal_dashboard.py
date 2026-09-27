@@ -48,28 +48,30 @@ button.control{cursor:pointer;color:var(--cyan)}
 @keyframes p{to{background-position:-200%}}
 .resolution{border:1px solid color-mix(in srgb,var(--amber) 55%,var(--line));border-radius:11px;padding:16px;margin:18px 0;background:#17150f}.resolution h3{margin:0 0 7px;font:700 16px system-ui}.choice-group{margin-top:14px}.choice-label{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}.choice-grid,.collection-results{display:flex;flex-wrap:wrap;gap:7px}.choice{border:1px solid var(--line);background:#101820;color:var(--text);border-radius:8px;padding:8px 10px;cursor:pointer;text-align:left}.choice:hover,.choice.selected{border-color:var(--cyan);color:var(--cyan);background:#102126}.choice:disabled{cursor:not-allowed;opacity:.45}.collection-search{width:100%;margin-bottom:8px}.collection-results{max-height:155px;overflow:auto}.selection{color:var(--cyan);margin:14px 0 9px}.apply-choice{width:100%;background:var(--cyan);color:#071013;border:0;border-radius:8px;padding:11px;font-weight:750;cursor:pointer}.apply-choice:disabled{cursor:not-allowed;opacity:.45}.resolution-error{color:var(--red);margin-top:9px}
 html,body{height:100%;overflow:hidden}
-.shell{height:100dvh;max-width:none;padding:10px 16px;display:grid;grid-template-rows:auto auto auto auto minmax(0,1fr);gap:8px}
+.shell{height:100dvh;max-width:none;padding:10px 16px;display:grid;grid-template-rows:auto auto auto auto auto minmax(0,1fr);gap:8px}
 .top{align-items:center;min-height:32px}.brand{font-size:20px;margin:0}
-.toolbar{grid-template-columns:minmax(220px,1fr) 180px 190px 140px 76px repeat(3,36px);grid-template-areas:"search outcome phase scope view refresh control detail";gap:8px;margin:0}
-.toolbar #search{grid-area:search}.toolbar #outcome,.toolbar #library-sort{grid-area:outcome}.toolbar #phase{grid-area:phase}.toolbar #scope{grid-area:scope}.toolbar .view-switch{grid-area:view}.toolbar button[type="submit"]{grid-area:refresh}.toolbar #sorter-toggle{grid-area:control}.toolbar #detail-toggle{grid-area:detail}
+.toolbar{grid-template-columns:minmax(220px,1fr) 36px 76px repeat(3,36px);grid-template-areas:"search filters view refresh control detail";gap:8px;margin:0}
+.toolbar #search{grid-area:search}.toolbar #filter-toggle{grid-area:filters}.toolbar .view-switch{grid-area:view}.toolbar button[type="submit"]{grid-area:refresh}.toolbar #sorter-toggle{grid-area:control}.toolbar #detail-toggle{grid-area:detail}
 .control{padding:8px 10px}.icon-button{display:inline-grid;place-items:center;border:1px solid var(--line);background:#0e151c;color:var(--cyan);width:36px;height:36px;padding:0;border-radius:9px;cursor:pointer}.icon-button:hover,.icon-button:focus-visible{border-color:var(--cyan);background:#122129}.icon-button svg,.icon-link svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}.icon-button.active{color:var(--lime);border-color:var(--lime)}
+.filter-toggle{position:relative}.filter-count{position:absolute;top:-6px;right:-6px;display:grid;place-items:center;min-width:17px;height:17px;padding:0 4px;border-radius:9px;background:var(--cyan);color:#071013;font-size:10px;font-weight:800}.filter-count:empty{display:none}.filter-panel{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:11px;padding:12px;background:color-mix(in srgb,var(--panel) 96%,transparent);border:1px solid var(--line);border-radius:11px;box-shadow:0 14px 36px #05080b66}.filter-panel[hidden]{display:none}.filter-field{display:grid;align-content:start;gap:5px;min-width:0}.filter-field>label,.filter-field-label{color:var(--muted);font-size:11px}.filter-field .control{width:100%;min-width:0}.filter-field-wide{grid-column:span 2}.location-filter{display:flex;align-items:center;min-height:37px;gap:8px;padding:7px 9px;border:1px solid var(--line);border-radius:9px;background:#0e151c}.location-filter output{min-width:0;flex:1;color:var(--cyan);overflow-wrap:anywhere}.filter-clear{border:0;background:transparent;color:var(--muted);cursor:pointer;padding:0 3px}.filter-clear:hover{color:var(--red)}.filter-actions{display:flex;align-items:flex-end;justify-content:flex-end}.reset-filters{width:auto;min-width:110px}
 .view-switch{display:flex}.view-switch .icon-button{border-radius:0}.view-switch .icon-button:first-child{border-radius:9px 0 0 9px}.view-switch .icon-button:last-child{border-radius:0 9px 9px 0;margin-left:-1px}
 .action-bar,.sorter-panel{display:flex;align-items:center;gap:9px;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#101820}.action-bar[hidden],.sorter-panel[hidden]{display:none}.action-bar .control{min-width:260px}.action-message{color:var(--muted);margin-left:auto}.sorter-panel{justify-content:flex-end}.sorter-status{margin-right:auto}.sorter-status strong{color:var(--lime)}.sorter-panel .explain{margin:0}.batch-picker{position:relative;flex:0 1 520px}.batch-picker .control{width:100%}.batch-destination-results{position:absolute;z-index:10;top:calc(100% + 5px);left:0;right:0;max-height:min(380px,60vh);overflow:auto;padding:5px;background:#0e151c;border:1px solid var(--line);border-radius:9px;box-shadow:0 18px 42px #05080bcc}.batch-destination-results[hidden]{display:none}.batch-destination-option{display:block;width:100%;padding:8px 10px;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left;cursor:pointer}.batch-destination-option:hover,.batch-destination-option.active{background:#183039;color:var(--cyan)}.batch-destination-empty{padding:10px;color:var(--muted)}
 .workspace{display:grid;grid-template-columns:280px minmax(0,1fr);gap:8px;position:relative;min-height:0;overflow:hidden}.attempt-panel{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr) auto}.panel-head{padding:9px 12px}
-.library-tree-panel{min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr)}.collection-tree{overflow:auto;padding:7px}.collection-group{margin-bottom:12px}.collection-group-title{padding:5px 8px;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em}.collection-list{display:grid;gap:2px}.collection-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:2px;padding-left:calc(var(--depth,0) * 14px)}.collection-toggle,.collection-select,.journal-select{border:0;background:transparent;color:var(--text);border-radius:6px;cursor:pointer}.collection-toggle{width:24px;height:28px;color:var(--muted)}.collection-toggle:disabled{cursor:default;color:transparent}.collection-select,.journal-select{padding:6px;text-align:left;overflow-wrap:anywhere}.collection-select:hover,.collection-select.active,.journal-select:hover,.journal-select.active{background:#17232b;color:var(--cyan)}.collection-count{padding-right:6px;color:var(--muted);font-size:11px}.library-message{padding:12px;color:var(--muted)}.library-load-more{margin:0 10px 10px;padding:9px;border:1px solid var(--line);border-radius:8px;background:#0e151c;color:var(--cyan);cursor:pointer}.library-load-more[hidden]{display:none}.live-bookmark-list{display:grid;align-content:start}.live-bookmark{padding:11px 12px;border-bottom:1px solid var(--line)}.live-bookmark h3{margin:0;font:650 15px/1.35 system-ui}.live-bookmark-meta,.live-bookmark-tags{color:var(--muted);font-size:12px;margin-top:4px}.live-bookmark-tags{color:var(--cyan)}
+.library-tree-panel{min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr)}.collection-tree{overflow:auto;padding:7px}.collection-group{margin-bottom:12px}.collection-group-title{padding:5px 8px;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.1em}.collection-list{display:grid;gap:2px}.collection-row{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:2px;padding-left:calc(var(--depth,0) * 14px)}.collection-toggle,.collection-select{border:0;background:transparent;color:var(--text);border-radius:6px;cursor:pointer}.collection-toggle{width:24px;height:28px;color:var(--muted)}.collection-toggle:disabled{cursor:default;color:transparent}.collection-select{padding:6px;text-align:left;overflow-wrap:anywhere}.collection-select:hover,.collection-select.active{background:#17232b;color:var(--cyan)}.collection-count{padding-right:6px;color:var(--muted);font-size:11px}.library-message{padding:12px;color:var(--muted)}
 .attempt-grid{padding:10px;overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(245px,1fr));grid-auto-rows:min-content;align-content:start;align-items:stretch;gap:10px;max-height:none}.attempt{position:relative;padding:0;border:1px solid var(--line);border-radius:11px;background:#0d141a;overflow:hidden}.attempt:hover,.attempt.active,.attempt.selected{background:#17232b;border-color:color-mix(in srgb,var(--cyan) 58%,var(--line))}.attempt.active{box-shadow:inset 3px 0 var(--cyan)}.attempt.selected{border-color:var(--cyan);box-shadow:inset 0 0 0 2px color-mix(in srgb,var(--cyan) 42%,transparent)}.attempt.selected.active{box-shadow:inset 3px 0 var(--cyan),inset 0 0 0 2px color-mix(in srgb,var(--cyan) 42%,transparent)}.attempt-body{display:flex;flex-direction:column;gap:5px;padding:9px 10px 10px;min-width:0}.attempt-cover{display:block;width:100%;height:100%;object-fit:cover;background:linear-gradient(135deg,#111d25,#0a1015)}.attempt-cover-wrap{position:relative;background:linear-gradient(135deg,#111d25,#080d11)}.card-cover-wrap{aspect-ratio:16/9}.attempt-cover{position:absolute;inset:0;z-index:1}.attempt-cover-wrap.missing img{display:none}.attempt-select{position:absolute;z-index:3;top:8px;left:8px;width:18px;height:18px;accent-color:var(--cyan)}.attempt-tools{display:flex;align-items:center;gap:7px}.icon-link{display:inline-grid;place-items:center;color:var(--cyan);width:25px;height:25px;border:1px solid var(--line);border-radius:7px;text-decoration:none}.attempt-head .attempt-tools{margin-left:auto}.attempt-head .badge{margin-left:0}
 .attempt-table-wrap{padding:0;overflow:auto}.attempt-table{width:100%;border-collapse:collapse;table-layout:fixed}.attempt-table th,.attempt-table td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}.attempt-table th{position:sticky;top:0;z-index:2;background:#111820;color:var(--muted);font-size:10px;text-transform:uppercase}.attempt-table tbody tr{cursor:pointer}.attempt-table tbody tr:hover,.attempt-table tbody tr.active,.attempt-table tbody tr.selected{background:#17232b}.attempt-table tbody tr.selected{box-shadow:inset 3px 0 var(--cyan)}.attempt-table .col-check{width:42px}.attempt-table .col-cover{width:76px}.attempt-table .col-outcome{width:110px}.attempt-table .col-run{width:145px}.attempt-table .col-time{width:135px}.attempt-table .col-open{width:48px}.table-cover{width:58px;height:42px;object-fit:cover;border-radius:6px;background:#080d11}.table-title{font:650 14px system-ui;overflow-wrap:anywhere}.table-destination{color:var(--cyan);overflow-wrap:anywhere}
 .attempt-table .attempt-select{position:static}.table-cover-wrap{width:58px;height:42px;border-radius:6px;overflow:hidden}.attempt-cover,.table-cover{pointer-events:none}.icon-button:disabled{cursor:not-allowed;opacity:.35}
 .detail-panel{position:absolute;z-index:5;inset:0 0 0 auto;width:min(720px,52vw);display:grid;grid-template-rows:auto minmax(0,1fr);background:#10171f;box-shadow:-18px 0 44px #05080bad;transform:translateX(calc(100% + 24px));transition:transform .2s ease;pointer-events:none}.workspace.detail-open .detail-panel{transform:translateX(0);pointer-events:auto}.detail-panel-head{padding:9px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;color:var(--muted)}.detail-panel-head .icon-button{width:30px;height:30px}.detail-toggle[hidden]{display:none}#detail{padding:18px;max-height:none;overflow:auto;min-height:0}.detail-title{font-size:21px}.detail-links{display:flex;gap:8px;margin-top:7px}.detail-links .icon-link{width:32px;height:32px}.bookmark-preview{max-height:330px;margin:14px 0}.empty{min-height:0}.drawer-scrim{position:absolute;z-index:4;inset:0;background:#05080b99;opacity:0;pointer-events:none;transition:opacity .2s;border:0}.workspace.detail-open .drawer-scrim{opacity:1;pointer-events:auto}
-@media(max-width:1100px){.toolbar{grid-template-columns:minmax(0,1fr) repeat(3,minmax(130px,1fr)) 76px repeat(3,36px);grid-template-areas:"search search search search view refresh control detail" "outcome phase scope . . . . ."}.detail-panel{width:min(680px,92vw)}.workspace{grid-template-columns:240px minmax(0,1fr)}}
-@media(max-width:700px){.shell{padding:8px 10px}.live{display:none}.toolbar{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 76px repeat(3,36px);grid-template-areas:"search search view refresh control detail" "outcome outcome phase phase phase phase" "scope scope scope scope scope scope"}.workspace{grid-template-columns:190px minmax(0,1fr)}.attempt-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}.action-bar,.sorter-panel{flex-wrap:wrap}.action-bar .control{min-width:0;flex:1}.attempt-table{min-width:760px}.detail-panel{width:100%}}
+@media(max-width:1100px){.filter-panel{grid-template-columns:repeat(3,minmax(140px,1fr))}.detail-panel{width:min(680px,92vw)}.workspace{grid-template-columns:240px minmax(0,1fr)}}
+@media(max-width:700px){.shell{padding:8px 10px}.live{display:none}.toolbar{grid-template-columns:minmax(0,1fr) 36px 76px repeat(3,36px);grid-template-areas:"search filters view refresh control detail"}.filter-panel{grid-template-columns:repeat(2,minmax(0,1fr));max-height:42vh;overflow:auto}.filter-field-wide{grid-column:span 2}.workspace{grid-template-columns:190px minmax(0,1fr)}.attempt-grid{grid-template-columns:repeat(auto-fill,minmax(210px,1fr))}.action-bar,.sorter-panel{flex-wrap:wrap}.action-bar .control{min-width:0;flex:1}.attempt-table{min-width:760px}.detail-panel{width:100%}}
 @media(max-height:520px){html,body{overflow:auto}.shell{height:auto;min-height:520px}.workspace{min-height:260px}}
 </style></head><body><main class="shell">
 <header class="top"><h1 class="brand">Raindrop Sorter</h1><div class="live"><i class="dot"></i><span id="updated">Connecting…</span></div></header>
-<form class="toolbar" id="filters"><input class="control" id="search" placeholder="Search bookmarks, destinations, summaries"><select class="control" id="outcome" aria-label="Filter by outcome"><option value="">All outcomes</option></select><select class="control" id="library-sort" aria-label="Sort live collection" hidden><option value="">Newest first</option><option value="created">Oldest first</option><option value="score">Most relevant</option><option value="-sort">Manual collection order</option><option value="title">Title A–Z</option><option value="-title">Title Z–A</option></select><select class="control" id="phase"><option value="">All lifecycle phases</option></select><select class="control" id="scope" aria-label="Dashboard view"><option value="latest">Latest status</option><option value="history">Attempt history</option></select><div class="view-switch" role="group" aria-label="Results layout"><button class="icon-button active" id="card-view" type="button" aria-label="Image card layout" title="Image card layout"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button><button class="icon-button" id="table-view" type="button" aria-label="Table layout" title="Table layout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v16"/></svg></button></div><button class="icon-button" type="submit" aria-label="Refresh dashboard" title="Refresh dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a7.5 7.5 0 1 0 .2 5"/></svg></button><button class="icon-button" id="sorter-toggle" type="button" aria-label="Show sorter controls" title="Show sorter controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg></button><button class="icon-button detail-toggle" id="detail-toggle" type="button" aria-label="Show attempt details" title="Show attempt details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button></form>
+<form class="toolbar" id="filters"><input class="control" id="search" aria-label="Search and filter sorter journal" placeholder="Search or use filters, e.g. outcome:review label:halo"><button class="icon-button filter-toggle" id="filter-toggle" type="button" aria-label="Show filters" aria-expanded="false" title="Show filters"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg><span class="filter-count" id="filter-count"></span></button><div class="view-switch" role="group" aria-label="Results layout"><button class="icon-button active" id="card-view" type="button" aria-label="Image card layout" title="Image card layout"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button><button class="icon-button" id="table-view" type="button" aria-label="Table layout" title="Table layout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v16"/></svg></button></div><button class="icon-button" type="submit" aria-label="Refresh dashboard" title="Refresh dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a7.5 7.5 0 1 0 .2 5"/></svg></button><button class="icon-button" id="sorter-toggle" type="button" aria-label="Show sorter controls" title="Show sorter controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg></button><button class="icon-button detail-toggle" id="detail-toggle" type="button" aria-label="Show attempt details" title="Show attempt details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button></form>
+<section class="filter-panel" id="filter-panel" aria-label="Journal filters" hidden><div class="filter-field"><label for="outcome">Outcome</label><select class="control" id="outcome"><option value="">All outcomes</option></select></div><div class="filter-field"><label for="phase">Lifecycle phase</label><select class="control" id="phase"><option value="">All lifecycle phases</option></select></div><div class="filter-field"><label for="mode">Run mode</label><select class="control" id="mode"><option value="">All run modes</option><option value="dry-run">dry-run</option><option value="apply">apply</option><option value="manual-review">manual-review</option><option value="legacy-tag-migration">legacy-tag-migration</option></select></div><div class="filter-field"><label for="scope">Attempt scope</label><select class="control" id="scope"><option value="latest">Latest status</option><option value="history">Attempt history</option></select></div><div class="filter-field filter-field-wide"><label for="visual-labels">Visual labels · comma separated, all must match</label><input class="control" id="visual-labels" placeholder="halo, blue_hair" autocomplete="off"></div><div class="filter-field"><label for="title-filter">Title contains</label><input class="control" id="title-filter" placeholder="Hatsune Miku" autocomplete="off"></div><div class="filter-field"><label for="link-filter">Source URL contains</label><input class="control" id="link-filter" placeholder="x.com/" autocomplete="off"></div><div class="filter-field"><span class="filter-field-label">Current Raindrop location · choose from tree</span><div class="location-filter"><output id="location-filter">Any location</output><button class="filter-clear" id="location-clear" type="button" aria-label="Clear location filter" title="Clear location filter">×</button></div></div><div class="filter-field"><label for="date-filter">Processed on</label><input class="control" id="date-filter" type="date"></div><div class="filter-actions"><button class="control reset-filters" id="reset-filters" type="button">Reset filters</button></div></section>
 <section class="action-bar" id="batch-bar" hidden><strong id="selection-count">0 selected</strong><div class="batch-picker"><input class="control" id="batch-destination-search" role="combobox" aria-label="Batch destination" aria-autocomplete="list" aria-controls="batch-destination-results" aria-expanded="false" autocomplete="off" placeholder="Search Art destinations…"><div class="batch-destination-results" id="batch-destination-results" role="listbox" hidden></div></div><button class="icon-button" id="batch-assign" type="button" aria-label="Assign selected Raindrops" title="Assign selected Raindrops" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><path d="M5 5v14"/></svg></button><button class="icon-button" id="selection-clear" type="button" aria-label="Clear selection" title="Clear selection"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><span class="action-message" id="batch-message"></span></section>
 <section class="sorter-panel" id="sorter-panel" hidden><div class="sorter-status"><strong id="sorter-state">Loading…</strong><div class="explain" id="sorter-summary">Reading local sorter status</div></div><button class="icon-button" id="process-all" type="button" aria-label="Process all Unsorted Raindrops" title="Process all Unsorted Raindrops"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/><path d="m15 15 3 3 4-5"/></svg></button><button class="icon-button" id="sorter-stop" type="button" aria-label="Stop processing Unsorted Raindrops" title="Stop processing after the current Raindrop"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button><button class="icon-button" id="sorter-start" type="button" aria-label="Start automatic sorter" title="Start automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg></button><button class="icon-button" id="sorter-pause" type="button" aria-label="Pause automatic sorter" title="Pause automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg></button></section>
-<section class="workspace" id="workspace"><aside class="panel library-tree-panel" aria-label="Live library collections"><header class="panel-head"><button class="journal-select active" id="journal-select" type="button">Sorter journal</button></header><div class="collection-tree" id="collection-tree"><div class="skeleton"></div></div></aside><div class="panel attempt-panel"><div class="panel-head"><span id="list-title">Latest Raindrop status</span><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div><button class="library-load-more" id="library-load-more" type="button" hidden>Load more</button></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
+<section class="workspace" id="workspace"><aside class="panel library-tree-panel" aria-label="Current Raindrop location filter"><header class="panel-head"><span>Location</span><span id="tree-filter-state">All</span></header><div class="collection-tree" id="collection-tree"><div class="skeleton"></div></div></aside><div class="panel attempt-panel"><div class="panel-head"><span id="list-title">Latest Raindrop status</span><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
 </main><script>
 const select = selector => document.querySelector(selector);
 const element = (tag, className, text) => {
@@ -95,28 +97,12 @@ let selectionAnchorAttemptId = null;
 let batchDestinationCollections = [];
 let batchDestinationFocusIndex = 0;
 let batchDestinationWantsOpen = false;
-const selectedCollectionStorageKey = 'sorter-library-selected-collection';
 const expandedCollectionsStorageKey = 'sorter-library-expanded-collections';
-const initialLibraryParams = new URLSearchParams(location.search);
-const initialCollectionValue = initialLibraryParams.get('collection');
-const initialCollectionId = initialCollectionValue !== null && /^-?\d+$/.test(initialCollectionValue)
-  ? Number(initialCollectionValue)
-  : null;
-const initialLibrarySearch = initialLibraryParams.get('q') || '';
-const initialLibrarySort = initialLibraryParams.get('sort') || '';
-const initialLibraryPage = Math.max(0, Number.parseInt(initialLibraryParams.get('page') || '0', 10) || 0);
 let collectionTreeGroups = [];
-let liveLibraryMode = initialCollectionId !== null;
-let selectedLiveCollection = null;
-let liveLibraryItems = [];
-let liveLibraryNextPage = 0;
-let liveLibraryCurrentPage = 0;
-let liveLibraryHasMore = false;
-let liveLibraryLoading = false;
-let liveLibraryRequestRevision = 0;
-let liveLibrarySearch = initialLibrarySearch;
-let liveLibrarySort = initialLibrarySort;
 let journalSearchValue = '';
+let freeSearchValue = '';
+let selectedLocationPath = '';
+let selectedLocationCollectionId = null;
 let expandedCollectionIds = new Set();
 try {
   expandedCollectionIds = new Set(JSON.parse(localStorage.getItem(expandedCollectionsStorageKey) || '[]').map(String));
@@ -332,6 +318,104 @@ function markSelectedAttempt() {
 }
 function outcomeBadge(value) {
   return element('span', `badge ${value || 'pending'}`, value || 'pending');
+}
+const structuredFilterKeys = new Set([
+  'outcome', 'phase', 'mode', 'scope', 'location', 'label', 'title', 'link', 'date',
+]);
+function decodeQueryValue(value) {
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1).replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  }
+  return value;
+}
+function parseFilterQuery(query) {
+  const parsed = {
+    text:'', outcome:'', phase:'', mode:'', scope:'latest', location:'',
+    labels:[], title:'', link:'', date:'',
+  };
+  const general = [];
+  const tokens = query.match(/[\w-]+:"(?:\\.|[^"])*"|[\w-]+:[^\s]+|"(?:\\.|[^"])*"|[^\s]+/g) || [];
+  tokens.forEach(token => {
+    const separator = token.indexOf(':');
+    const key = separator > 0 ? token.slice(0, separator).toLocaleLowerCase() : '';
+    if (!structuredFilterKeys.has(key)) {
+      general.push(token);
+      return;
+    }
+    const value = decodeQueryValue(token.slice(separator + 1));
+    if (key === 'label') parsed.labels.push(value);
+    else parsed[key] = value;
+  });
+  parsed.text = general.join(' ').trim();
+  if (!['latest', 'history'].includes(parsed.scope)) parsed.scope = 'latest';
+  return parsed;
+}
+function quoteQueryValue(value) {
+  const normalized = String(value || '').trim();
+  if (!normalized) return '';
+  return /[\s"]/.test(normalized)
+    ? `"${normalized.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
+    : normalized;
+}
+function visualLabelValues() {
+  return select('#visual-labels').value.split(/[,\s]+/).map(value => value.trim()).filter(Boolean);
+}
+function updateFilterUi() {
+  select('#location-filter').textContent = selectedLocationPath || 'Any location';
+  select('#tree-filter-state').textContent = selectedLocationPath || 'All';
+  const activeCount = [
+    select('#outcome').value,
+    select('#phase').value,
+    select('#mode').value,
+    select('#scope').value === 'history' ? 'history' : '',
+    selectedLocationPath,
+    ...visualLabelValues(),
+    select('#title-filter').value,
+    select('#link-filter').value,
+    select('#date-filter').value,
+  ].filter(Boolean).length;
+  select('#filter-count').textContent = activeCount ? String(activeCount) : '';
+  select('#filter-toggle').classList.toggle('active', activeCount > 0);
+}
+function syncQueryFromFilterControls() {
+  const parts = [];
+  if (freeSearchValue) parts.push(freeSearchValue);
+  const add = (key, value) => {
+    const encoded = quoteQueryValue(value);
+    if (encoded) parts.push(`${key}:${encoded}`);
+  };
+  add('outcome', select('#outcome').value);
+  add('phase', select('#phase').value);
+  add('mode', select('#mode').value);
+  if (select('#scope').value === 'history') add('scope', 'history');
+  add('location', selectedLocationPath);
+  visualLabelValues().forEach(label => add('label', label));
+  add('title', select('#title-filter').value);
+  add('link', select('#link-filter').value);
+  add('date', select('#date-filter').value);
+  journalSearchValue = parts.join(' ');
+  select('#search').value = journalSearchValue;
+  updateFilterUi();
+  renderCollectionTree();
+}
+function syncFilterControlsFromQuery(query) {
+  const parsed = parseFilterQuery(query);
+  const previousScope = select('#scope').value;
+  freeSearchValue = parsed.text;
+  select('#outcome').value = parsed.outcome;
+  select('#phase').value = parsed.phase;
+  select('#mode').value = parsed.mode;
+  select('#scope').value = parsed.scope;
+  selectedLocationPath = parsed.location;
+  selectedLocationCollectionId = collectionIdForLocationPath(parsed.location);
+  select('#visual-labels').value = parsed.labels.join(', ');
+  select('#title-filter').value = parsed.title;
+  select('#link-filter').value = parsed.link;
+  select('#date-filter').value = parsed.date;
+  journalSearchValue = query;
+  updateFilterUi();
+  renderCollectionTree();
+  return previousScope !== parsed.scope;
 }
 function updateOutcomeOptions(outcomes, total) {
   const outcomeSelect = select('#outcome');
@@ -566,14 +650,29 @@ function syncBatchControls() {
   select('#batch-assign').disabled = !count || !select('#batch-destination-search').dataset.collectionId;
 }
 async function renderAttempts() {
+  if (selectedLocationPath && selectedLocationCollectionId === null) {
+    renderedAttempts = [];
+    select('#count').textContent = '0 shown';
+    renderAttemptResults();
+    syncSelectionUi();
+    return;
+  }
   const params = new URLSearchParams({limit:'500'});
   const latestOnly = select('#scope').value === 'latest';
   params.set('latest', latestOnly ? '1' : '0');
-  if (select('#search').value) params.set('q', select('#search').value);
+  if (freeSearchValue) params.set('q', freeSearchValue);
   if (select('#outcome').value) params.set('outcome', select('#outcome').value);
   if (select('#phase').value) params.set('phase', select('#phase').value);
+  if (select('#mode').value) params.set('mode', select('#mode').value);
+  if (selectedLocationCollectionId !== null) {
+    params.set('collection_id', String(selectedLocationCollectionId));
+  }
+  visualLabelValues().forEach(label => params.append('label', label));
+  if (select('#title-filter').value) params.set('title', select('#title-filter').value);
+  if (select('#link-filter').value) params.set('link', select('#link-filter').value);
+  if (select('#date-filter').value) params.set('processed_on', select('#date-filter').value);
+  params.set('utc_offset_minutes', String(-new Date().getTimezoneOffset()));
   const result = await fetchJson('/api/attempts?' + params);
-  if (liveLibraryMode) return;
   if (selectedAttemptId && !result.items.some(attempt => attempt.attempt_id === selectedAttemptId)) clearDetail();
   renderedAttempts = result.items;
   [...selectedAttempts].filter(id => !result.items.some(attempt => attempt.attempt_id === id)).forEach(id => selectedAttempts.delete(id));
@@ -785,46 +884,42 @@ async function renderDetail(attemptId) {
     detailPanel.replaceChildren(element('div', 'error', error.message));
   }
 }
-function collectionNodes() {
-  const nodes = [];
-  const visit = node => { nodes.push(node); (node.children || []).forEach(visit); };
-  collectionTreeGroups.forEach(group => (group.collections || []).forEach(visit));
-  return nodes;
-}
 function persistExpandedCollections() {
   localStorage.setItem(expandedCollectionsStorageKey, JSON.stringify([...expandedCollectionIds]));
 }
-function updateLiveLibraryUrl(page = liveLibraryCurrentPage) {
-  if (!selectedLiveCollection) return;
-  const params = new URLSearchParams({collection:String(selectedLiveCollection.id)});
-  if (liveLibrarySearch) params.set('q', liveLibrarySearch);
-  if (liveLibrarySort) params.set('sort', liveLibrarySort);
-  if (page > 0) params.set('page', String(page));
-  history.replaceState(null, '', `${location.pathname}?${params}${location.hash}`);
+function collectionFilterPath(group, node) {
+  const path = String(node.path || node.title || '').trim();
+  const groupTitle = String(group.title || '').trim();
+  if (!path || group.id === 'system' || !groupTitle || path === groupTitle || path.startsWith(groupTitle + '/')) return path;
+  return `${groupTitle}/${path}`;
 }
-function syncDashboardMode() {
-  const search = select('#search');
-  ['#outcome', '#phase', '#scope'].forEach(selector => { select(selector).hidden = liveLibraryMode; });
-  select('#library-sort').hidden = !liveLibraryMode;
-  select('.view-switch').hidden = liveLibraryMode;
-  select('#sorter-toggle').hidden = liveLibraryMode;
-  if (liveLibraryMode) {
-    select('#sorter-panel').hidden = true;
-    select('#sorter-toggle').classList.remove('active');
-    search.placeholder = 'Search this collection with Raindrop syntax';
-    search.setAttribute('aria-label', 'Search selected live collection');
-    search.value = liveLibrarySearch;
-    select('#library-sort').value = liveLibrarySort;
-  } else {
-    search.placeholder = 'Search bookmarks, destinations, summaries';
-    search.setAttribute('aria-label', 'Search sorter journal');
-    search.value = journalSearchValue;
-  }
+function collectionIdForLocationPath(locationPath) {
+  if (!locationPath) return null;
+  let match = null;
+  const visit = (group, node) => {
+    if (collectionFilterPath(group, node) === locationPath) match = Number(node.id);
+    (node.children || []).forEach(child => visit(group, child));
+  };
+  collectionTreeGroups.forEach(group => {
+    (group.collections || []).forEach(node => visit(group, node));
+  });
+  return match;
+}
+function selectLocationCollection(node, locationPath) {
+  const clearing = selectedLocationPath === locationPath;
+  selectedLocationPath = clearing ? '' : locationPath;
+  selectedLocationCollectionId = clearing ? null : Number(node.id);
+  syncQueryFromFilterControls();
+  invalidateDetailSelection();
+  clearAttemptSelection();
+  clearDetail();
+  void renderAttempts();
 }
 function renderCollectionTree() {
   const tree = select('#collection-tree');
   tree.replaceChildren();
-  const renderNode = (node, depth, parent) => {
+  const renderNode = (group, node, depth, parent) => {
+    const locationPath = collectionFilterPath(group, node);
     const row = element('div', 'collection-row');
     row.style.setProperty('--depth', depth);
     const toggle = element('button', 'collection-toggle', expandedCollectionIds.has(String(node.id)) ? '▾' : '▸');
@@ -837,145 +932,41 @@ function renderCollectionTree() {
       persistExpandedCollections();
       renderCollectionTree();
     };
-    const button = element('button', 'collection-select' + (selectedLiveCollection?.id === node.id ? ' active' : ''), node.title);
-    button.type = 'button'; button.title = node.path;
-    button.onclick = () => void selectLiveCollection(node);
+    const button = element('button', 'collection-select' + (selectedLocationPath === locationPath ? ' active' : ''), node.title);
+    button.type = 'button'; button.title = locationPath;
+    button.setAttribute('aria-pressed', String(selectedLocationPath === locationPath));
+    button.onclick = () => selectLocationCollection(node, locationPath);
     row.append(toggle, button, element('span', 'collection-count', String(node.count ?? 0)));
     parent.append(row);
     if ((node.children || []).length && expandedCollectionIds.has(String(node.id))) {
-      node.children.forEach(child => renderNode(child, depth + 1, parent));
+      node.children.forEach(child => renderNode(group, child, depth + 1, parent));
     }
   };
   collectionTreeGroups.forEach(group => {
     const section = element('section', 'collection-group');
     section.append(element('div', 'collection-group-title', group.title));
     const list = element('div', 'collection-list');
-    (group.collections || []).forEach(node => renderNode(node, 0, list));
+    (group.collections || []).forEach(node => renderNode(group, node, 0, list));
     section.append(list); tree.append(section);
   });
-  if (!collectionTreeGroups.length) tree.append(element('div', 'library-message', 'Live library unavailable.'));
-  select('#journal-select').classList.toggle('active', !liveLibraryMode);
-}
-function renderLiveLibraryItems() {
-  const container = select('#attempts');
-  container.className = 'live-bookmark-list';
-  container.replaceChildren();
-  if (!liveLibraryItems.length) {
-    container.append(element('div', 'empty', liveLibrarySearch ? 'No Raindrops match this search.' : 'This collection is empty.'));
-  }
-  liveLibraryItems.forEach(item => {
-    const bookmark = element('article', 'live-bookmark');
-    const title = element('h3', '', item.title || `Bookmark ${item._id}`);
-    let domain = '';
-    try { domain = new URL(item.link).hostname; } catch (_error) { domain = ''; }
-    const collectionId = item.collection?.$id;
-    bookmark.append(title, element('div', 'live-bookmark-meta', `#${item._id}${domain ? ' · ' + domain : ''}${collectionId == null ? '' : ' · collection ' + collectionId}`));
-    if ((item.tags || []).length) bookmark.append(element('div', 'live-bookmark-tags', item.tags.join(' · ')));
-    container.append(bookmark);
-  });
-  select('#count').textContent = `${liveLibraryItems.length}${liveLibraryHasMore ? '+' : ''} loaded`;
-  const more = select('#library-load-more');
-  more.hidden = !liveLibraryHasMore;
-  more.disabled = liveLibraryLoading;
-  more.textContent = liveLibraryLoading ? 'Loading…' : 'Load more';
-}
-async function loadLiveLibraryPage({append = false, page = null} = {}) {
-  if (!selectedLiveCollection || liveLibraryLoading) return;
-  const requestRevision = liveLibraryRequestRevision;
-  const collectionId = selectedLiveCollection.id;
-  const requestedPage = page ?? (append ? liveLibraryNextPage : 0);
-  liveLibraryLoading = true;
-  if (!append) {
-    select('#attempts').replaceChildren(element('div', 'skeleton'));
-    select('#library-load-more').hidden = true;
-  } else {
-    renderLiveLibraryItems();
-  }
-  try {
-    const params = new URLSearchParams({
-      collection_id:String(collectionId),
-      page:String(requestedPage),
-      per_page:'50',
-    });
-    if (liveLibrarySearch) params.set('q', liveLibrarySearch);
-    if (liveLibrarySort) params.set('sort', liveLibrarySort);
-    const result = await fetchJson('/api/library/bookmarks?' + params);
-    if (requestRevision !== liveLibraryRequestRevision) return;
-    liveLibraryItems = append ? [...liveLibraryItems, ...result.items] : result.items;
-    liveLibraryHasMore = Boolean(result.has_more);
-    liveLibraryNextPage = result.next_page ?? result.page;
-    liveLibraryCurrentPage = result.page;
-    updateLiveLibraryUrl(result.page);
-    renderLiveLibraryItems();
-  } catch (error) {
-    if (requestRevision !== liveLibraryRequestRevision) return;
-    select('#attempts').replaceChildren(element('div', 'error', error.message));
-    liveLibraryHasMore = false;
-    select('#library-load-more').hidden = true;
-  } finally {
-    if (requestRevision !== liveLibraryRequestRevision) return;
-    liveLibraryLoading = false;
-    select('#library-load-more').disabled = false;
-    select('#library-load-more').textContent = 'Load more';
-  }
-}
-async function reloadLiveLibrary(targetPage = 0) {
-  liveLibraryRequestRevision += 1;
-  liveLibraryLoading = false;
-  liveLibraryItems = [];
-  liveLibraryNextPage = 0;
-  liveLibraryCurrentPage = 0;
-  liveLibraryHasMore = false;
-  for (let page = 0; page <= targetPage; page += 1) {
-    await loadLiveLibraryPage({append:page > 0, page});
-    if (page < targetPage && !liveLibraryHasMore) break;
-  }
-}
-async function selectLiveCollection(node, {search = '', sort = '', restorePage = 0} = {}) {
-  if (!liveLibraryMode) journalSearchValue = select('#search').value;
-  liveLibraryMode = true;
-  selectedLiveCollection = node;
-  liveLibrarySearch = search;
-  liveLibrarySort = sort;
-  localStorage.setItem(selectedCollectionStorageKey, String(node.id));
-  clearAttemptSelection();
-  clearDetail();
-  select('#batch-bar').hidden = true;
-  select('#list-title').textContent = node.path;
-  syncDashboardMode();
-  renderCollectionTree();
-  updateLiveLibraryUrl(restorePage);
-  await reloadLiveLibrary(restorePage);
+  if (!collectionTreeGroups.length) tree.append(element('div', 'library-message', 'Destination tree unavailable.'));
+  updateFilterUi();
 }
 async function loadCollectionTree() {
   try {
     const result = await fetchJson('/api/library/tree');
     collectionTreeGroups = result.groups || [];
+    selectedLocationCollectionId = collectionIdForLocationPath(selectedLocationPath);
     renderCollectionTree();
-    const restored = initialCollectionId == null
-      ? null
-      : collectionNodes().find(node => node.id === initialCollectionId);
-    if (restored) await selectLiveCollection(restored, {search:initialLibrarySearch, sort:initialLibrarySort, restorePage:initialLibraryPage});
-    else if (initialCollectionId != null) {
-      select('#attempts').replaceChildren(element('div', 'error', 'The collection in this URL is unavailable.'));
-    }
+    if (selectedLocationPath) void renderAttempts();
   } catch (error) {
     select('#collection-tree').replaceChildren(element('div', 'library-message', error.message));
-    if (liveLibraryMode) {
-      select('#attempts').replaceChildren(element('div', 'error', error.message));
-      select('#list-title').textContent = 'Live library unavailable';
-      select('#count').textContent = 'Unavailable';
-    }
   }
 }
 async function refreshDashboard() {
-  if (liveLibraryMode) {
-    await reloadLiveLibrary(liveLibraryCurrentPage);
-    return;
-  }
   try {
     await renderOverview();
-    if (!liveLibraryMode) await renderAttempts();
+    await renderAttempts();
   }
   catch (error) { select('#attempts').replaceChildren(element('div', 'error', error.message)); }
 }
@@ -1098,24 +1089,8 @@ async function sorterAction(action) {
     select('#sorter-summary').textContent = error.message;
   }
 }
-select('#journal-select').onclick = () => {
-  liveLibraryRequestRevision += 1;
-  liveLibraryLoading = false;
-  liveLibraryMode = false;
-  selectedLiveCollection = null;
-  select('#library-load-more').hidden = true;
-  history.replaceState(null, '', `${location.pathname}${location.hash}`);
-  syncDashboardMode();
-  renderCollectionTree();
-  refreshDashboard();
-};
-select('#library-load-more').onclick = () => void loadLiveLibraryPage({append:true});
 select('#filters').onsubmit = event => {
   event.preventDefault();
-  if (liveLibraryMode) {
-    void reloadLiveLibrary(liveLibraryCurrentPage);
-    return;
-  }
   invalidateDetailSelection();
   clearCaches();
   refreshDashboard();
@@ -1123,35 +1098,66 @@ select('#filters').onsubmit = event => {
 let searchTimer;
 select('#search').oninput = () => {
   clearTimeout(searchTimer);
-  if (liveLibraryMode) {
-    liveLibrarySearch = select('#search').value;
-    updateLiveLibraryUrl(0);
-    searchTimer = setTimeout(() => void reloadLiveLibrary(0), 250);
-    return;
+  const scopeChanged = syncFilterControlsFromQuery(select('#search').value);
+  invalidateDetailSelection();
+  if (scopeChanged) {
+    clearAttemptSelection();
+    clearDetail();
   }
-  journalSearchValue = select('#search').value;
-  invalidateDetailSelection();
-  searchTimer = setTimeout(renderAttempts, 250);
+  searchTimer = setTimeout(scopeChanged ? refreshDashboard : renderAttempts, 250);
 };
-select('#library-sort').onchange = () => {
-  liveLibrarySort = select('#library-sort').value;
-  updateLiveLibraryUrl(0);
-  void reloadLiveLibrary(0);
-};
-select('#outcome').onchange = () => { invalidateDetailSelection(); renderAttempts(); };
-select('#phase').onchange = () => { invalidateDetailSelection(); renderAttempts(); };
-select('#scope').onchange = () => {
+function applyFilterControlChange({scopeChanged = false, immediate = true} = {}) {
+  clearTimeout(searchTimer);
+  syncQueryFromFilterControls();
   invalidateDetailSelection();
+  if (scopeChanged) {
+    clearAttemptSelection();
+    clearDetail();
+  }
+  const action = scopeChanged ? refreshDashboard : renderAttempts;
+  if (immediate) void action();
+  else searchTimer = setTimeout(action, 250);
+}
+select('#outcome').onchange = () => applyFilterControlChange();
+select('#phase').onchange = () => applyFilterControlChange();
+select('#mode').onchange = () => applyFilterControlChange();
+select('#scope').onchange = () => applyFilterControlChange({scopeChanged:true});
+['#visual-labels', '#title-filter', '#link-filter', '#date-filter'].forEach(selector => {
+  select(selector).oninput = () => applyFilterControlChange({immediate:false});
+});
+select('#location-clear').onclick = () => {
+  selectedLocationPath = '';
+  selectedLocationCollectionId = null;
+  applyFilterControlChange();
+};
+select('#reset-filters').onclick = () => {
+  freeSearchValue = '';
+  selectedLocationPath = '';
+  selectedLocationCollectionId = null;
+  select('#outcome').value = '';
+  select('#phase').value = '';
+  select('#mode').value = '';
+  select('#scope').value = 'latest';
+  select('#visual-labels').value = '';
+  select('#title-filter').value = '';
+  select('#link-filter').value = '';
+  select('#date-filter').value = '';
   clearAttemptSelection();
   clearDetail();
-  refreshDashboard();
+  syncQueryFromFilterControls();
+  void refreshDashboard();
+};
+select('#filter-toggle').onclick = () => {
+  const panel = select('#filter-panel');
+  panel.hidden = !panel.hidden;
+  select('#filter-toggle').setAttribute('aria-expanded', String(!panel.hidden));
+  select('#filter-toggle').setAttribute('aria-label', panel.hidden ? 'Show filters' : 'Hide filters');
+  select('#filter-toggle').title = panel.hidden ? 'Show filters' : 'Hide filters';
 };
 select('#card-view').onclick = () => {
-  if (liveLibraryMode) return;
   resultLayout = 'cards'; localStorage.setItem('sorter-result-layout', resultLayout); renderAttemptResults(); syncSelectionUi();
 };
 select('#table-view').onclick = () => {
-  if (liveLibraryMode) return;
   resultLayout = 'table'; localStorage.setItem('sorter-result-layout', resultLayout); renderAttemptResults(); syncSelectionUi();
 };
 select('#batch-destination-search').onfocus = async event => {
@@ -1214,7 +1220,7 @@ document.addEventListener('keydown', event => {
     setDetailOpen(false);
   }
 });
-syncDashboardMode();
+syncQueryFromFilterControls();
 refreshDashboard();
 refreshSorterStatus();
 void loadCollectionTree();

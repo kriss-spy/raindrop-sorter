@@ -105,6 +105,35 @@ def test_browse_collection_returns_one_incremental_live_page():
     assert source.last_search == '#tag "exact phrase" / 日本語'
 
 
+def test_current_bookmark_ids_reads_every_live_collection_page():
+    class PagedSource(FakeLibrarySource):
+        def __init__(self):
+            super().__init__()
+            self.pages = []
+
+        def get_raindrops(
+            self, collection_id, page=0, perpage=50, search=None, sort=None
+        ):
+            self.pages.append((collection_id, page, perpage, search, sort))
+            if page == 0:
+                return [{"_id": bookmark_id} for bookmark_id in range(1, 51)], True
+            return [{"_id": 51}], False
+
+    source = PagedSource()
+    browser = LiveLibraryBrowser(source)
+
+    assert browser.current_bookmark_ids(11) == set(range(1, 52))
+    assert source.pages == [
+        (11, 0, 50, None, None),
+        (11, 1, 50, None, None),
+    ]
+
+    # Local filter edits and the 15-second dashboard refresh reuse one bounded
+    # live snapshot instead of repaging the Raindrop API.
+    assert browser.current_bookmark_ids(11) == set(range(1, 52))
+    assert len(source.pages) == 2
+
+
 def test_collection_tree_keeps_duplicate_names_and_surfaces_missing_parents():
     source = FakeLibrarySource()
     source.collections = [

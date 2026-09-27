@@ -102,6 +102,12 @@ def test_recent_can_return_only_latest_attempt_per_bookmark(tmp_path):
         mode="apply",
     )
     assert [item["bookmark_id"] for item in latest_applied] == [123]
+    latest_dry_runs = journal.recent(
+        limit=10,
+        latest_per_bookmark=True,
+        status_mode="dry-run",
+    )
+    assert [item["bookmark_id"] for item in latest_dry_runs] == [456]
 
 
 def test_dashboard_queries_include_snapshot_summary_and_filters(tmp_path):
@@ -131,6 +137,85 @@ def test_dashboard_queries_include_snapshot_summary_and_filters(tmp_path):
     assert trace["attempt"]["bookmark_snapshot"]["title"] == "Mini's new outfit"
     assert journal.has_bookmark(123)
     assert not journal.has_bookmark(999)
+
+
+def test_dashboard_query_filters_structured_attempt_fields(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    attempt = journal.start_attempt(
+        {
+            "_id": 123,
+            "title": "Halo study",
+            "link": "https://x.com/artist/status/123",
+        },
+        mode="dry-run",
+    )
+    decision = RouteDecision(
+        bookmark_id=123,
+        outcome=RouteOutcome.PROVISIONAL,
+        destination="Art/GAMES/BA",
+        text_evidence=(),
+        visual_evidence=(VisualEvidence(
+            status="pass",
+            destination="Art/GAMES/BA",
+            method="wd14+visual_exemplar",
+            explanation="Halo prior.",
+            labels=("1girl", "halo", "blue_hair"),
+        ),),
+        summary="Moved provisionally to Blue Archive.",
+    )
+    journal.record_decision(attempt, decision)
+    journal.complete(attempt, phase="dry_run_completed")
+    with journal._connect() as connection:
+        connection.execute(
+            "UPDATE attempts SET started_at = ?, ended_at = ? WHERE attempt_id = ?",
+            (
+                "2026-09-26T16:30:00+00:00",
+                "2026-09-26T16:30:01+00:00",
+                attempt.attempt_id,
+            ),
+        )
+
+    matching = journal.recent(
+        limit=10,
+        labels=("halo", "blue_hair"),
+        title="study",
+        link="x.com/artist",
+        processed_on="2026-09-27",
+        utc_offset_minutes=480,
+        status_mode="dry-run",
+        bookmark_ids={123},
+    )
+
+    assert [item["bookmark_id"] for item in matching] == [123]
+    assert journal.recent(limit=10, labels=("halo", "red_hair")) == []
+    assert journal.recent(limit=10, bookmark_ids={999}) == []
+    assert journal.recent(
+        limit=10,
+        processed_on="2026-09-26",
+        utc_offset_minutes=480,
+    ) == []
+
+
+def test_processed_date_uses_completion_time_with_started_fallback(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    completed = journal.start_attempt({"_id": 1}, mode="dry-run")
+    journal.complete(completed, phase="dry_run_completed")
+    running = journal.start_attempt({"_id": 2}, mode="dry-run")
+    with journal._connect() as connection:
+        connection.execute(
+            "UPDATE attempts SET started_at = ?, ended_at = ? WHERE attempt_id = ?",
+            ("2026-09-26T23:59:00+00:00", "2026-09-27T00:01:00+00:00", completed.attempt_id),
+        )
+        connection.execute(
+            "UPDATE attempts SET started_at = ? WHERE attempt_id = ?",
+            ("2026-09-27T12:00:00+00:00", running.attempt_id),
+        )
+
+    assert {
+        item["bookmark_id"]
+        for item in journal.recent(limit=10, processed_on="2026-09-27")
+    } == {1, 2}
+    assert journal.recent(limit=10, processed_on="2026-09-26") == []
 
 
 def test_latest_mutating_attempt_does_not_resurrect_pre_manual_outcome(tmp_path):

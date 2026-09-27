@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -45,6 +46,7 @@ class LiveLibraryBrowser:
 
     def __init__(self, source: LibrarySource):
         self.source = source
+        self._membership_cache: dict[int, tuple[float, frozenset[int]]] = {}
 
     def collection_tree(self) -> dict[str, Any]:
         collections = self.source.get_collections()
@@ -166,6 +168,35 @@ class LiveLibraryBrowser:
             "next_page": page + 1 if has_more else None,
             "items": items,
         }
+
+    def current_bookmark_ids(self, collection_id: int) -> set[int]:
+        """Return every bookmark currently present in one Raindrop collection."""
+        cached = self._membership_cache.get(collection_id)
+        now = time.monotonic()
+        if cached is not None and now - cached[0] < 60:
+            return set(cached[1])
+        bookmark_ids: set[int] = set()
+        page = 0
+        while True:
+            items, has_more = self.source.get_raindrops(
+                collection_id,
+                page=page,
+                perpage=50,
+                search=None,
+                sort=None,
+            )
+            bookmark_ids.update(int(item["_id"]) for item in items)
+            if not has_more:
+                self._membership_cache[collection_id] = (
+                    now,
+                    frozenset(bookmark_ids),
+                )
+                return bookmark_ids
+            page += 1
+
+    def invalidate_membership_cache(self) -> None:
+        """Discard cached Raindrop locations after a local move."""
+        self._membership_cache.clear()
 
 
 def _collection_id(value: Any) -> int:
