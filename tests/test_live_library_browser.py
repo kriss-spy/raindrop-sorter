@@ -535,6 +535,64 @@ def test_batch_assignment_keeps_only_failed_cards_selected_during_refresh(
         browser.close()
 
 
+def test_new_selection_clears_previous_batch_result(destination_filter_dashboard):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.evaluate(
+            "document.querySelector('#batch-message').textContent = '1 assigned'"
+        )
+
+        page.locator(".attempt-select").first.check()
+
+        assert page.locator("#selection-count").text_content() == "1 selected"
+        assert page.locator("#batch-message").text_content() == ""
+        browser.close()
+
+
+def test_late_batch_result_does_not_label_a_new_selection(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.locator(".attempt-select").first.check()
+        page.evaluate(
+            """
+            () => {
+              const destination = document.querySelector('#batch-destination-search');
+              destination.dataset.collectionId = '11';
+              destination.value = 'Library/Root/Child';
+              syncSelectionUi();
+              window.fetch = url => {
+                if (String(url) === '/api/attempts/resolve-batch') {
+                  return new Promise(resolve => {
+                    window.resolveOldBatch = () => resolve(new Response(JSON.stringify({
+                      status: 'ok', resolved: 1, failed: 0, results: [], errors: [],
+                    }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                  });
+                }
+                return new Promise(() => {});
+              };
+            }
+            """
+        )
+
+        page.locator("#batch-assign").click()
+        page.wait_for_function("() => typeof window.resolveOldBatch === 'function'")
+        page.locator(".attempt-select").first.check()
+        page.evaluate("window.resolveOldBatch()")
+        page.wait_for_timeout(100)
+
+        assert page.locator("#selection-count").text_content() == "1 selected"
+        assert page.locator("#batch-message").text_content() == ""
+        browser.close()
+
+
 def test_detail_assignment_closes_and_removes_card_before_request_finishes(
     destination_filter_dashboard,
 ):

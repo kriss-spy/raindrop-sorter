@@ -100,6 +100,7 @@ let selectionAnchorAttemptId = null;
 let batchDestinationCollections = [];
 let batchDestinationFocusIndex = 0;
 let batchDestinationWantsOpen = false;
+let batchMessageGeneration = 0;
 const expandedCollectionsStorageKey = 'sorter-library-expanded-collections';
 let collectionTreeGroups = [];
 let journalSearchValue = '';
@@ -518,6 +519,10 @@ function openAttempt(attemptId) {
   renderDetail(attemptId);
   if (discardedRetry) void renderAttempts();
 }
+function clearBatchMessage() {
+  batchMessageGeneration += 1;
+  select('#batch-message').textContent = '';
+}
 function selectionCheckbox(attempt) {
   const checkbox = element('input', 'attempt-select');
   checkbox.type = 'checkbox';
@@ -525,6 +530,7 @@ function selectionCheckbox(attempt) {
   checkbox.setAttribute('aria-label', `Select ${attempt.title || 'Raindrop ' + attempt.bookmark_id}`);
   checkbox.onclick = event => event.stopPropagation();
   checkbox.onchange = () => {
+    clearBatchMessage();
     if (checkbox.checked) {
       selectedAttempts.add(attempt.attempt_id);
       selectionAnchorAttemptId = attempt.attempt_id;
@@ -558,6 +564,7 @@ function handleAttemptActivation(event, attempt) {
   }
   event.preventDefault();
   if (!isAssignable(attempt)) return;
+  clearBatchMessage();
   if (event.shiftKey) {
     const range = eligibleRangeTo(attempt.attempt_id);
     range.forEach(attemptId => selectedAttempts.add(attemptId));
@@ -660,6 +667,7 @@ function renderTable(attempts) {
   selectAll.type = 'checkbox'; selectAll.setAttribute('aria-label', 'Select all assignable Raindrops');
   selectAll.checked = eligible.length > 0 && eligible.every(item => selectedAttempts.has(item.attempt_id));
   selectAll.onchange = () => {
+    clearBatchMessage();
     eligible.forEach(item => selectAll.checked ? selectedAttempts.add(item.attempt_id) : selectedAttempts.delete(item.attempt_id));
     selectionAnchorAttemptId = selectAll.checked && eligible.length ? eligible[0].attempt_id : null;
     renderAttemptResults(); syncSelectionUi();
@@ -1187,6 +1195,7 @@ function closeBatchDestinationResults() {
   input.removeAttribute('aria-activedescendant');
 }
 function chooseBatchDestination(collection) {
+  clearBatchMessage();
   const input = select('#batch-destination-search');
   input.dataset.collectionId = String(collection.collection_id);
   input.value = collection.path;
@@ -1253,6 +1262,7 @@ async function assignSelected() {
   const submittedAttemptIds = new Set(selectedAttempts);
   const submittedAttempts = renderedAttempts.filter(attempt => submittedAttemptIds.has(attempt.attempt_id));
   const previousSelectionAnchorAttemptId = selectionAnchorAttemptId;
+  const messageGeneration = ++batchMessageGeneration;
   const button = select('#batch-assign');
   button.disabled = true;
   select('#batch-message').textContent = 'Assigning…';
@@ -1286,9 +1296,11 @@ async function assignSelected() {
     }
     if (selectedAttemptId && successfulAttemptIds.has(selectedAttemptId)) clearDetail();
     clearDataCaches();
-    select('#batch-message').textContent = result.failed
-      ? `${result.resolved} assigned · ${result.failed} failed`
-      : `${result.resolved} assigned`;
+    if (batchMessageGeneration === messageGeneration) {
+      select('#batch-message').textContent = result.failed
+        ? `${result.resolved} assigned · ${result.failed} failed`
+        : `${result.resolved} assigned`;
+    }
     renderCurrentAttempts();
     refreshDashboardInBackground();
   } catch (error) {
@@ -1303,7 +1315,9 @@ async function assignSelected() {
       selectionAnchorAttemptId = previousSelectionAnchorAttemptId;
     }
     renderCurrentAttempts();
-    select('#batch-message').textContent = error.message;
+    if (batchMessageGeneration === messageGeneration) {
+      select('#batch-message').textContent = error.message;
+    }
   }
 }
 function renderSorterStatus(status) {
@@ -1426,6 +1440,7 @@ select('#batch-destination-search').onfocus = async event => {
   event.target.select();
 };
 select('#batch-destination-search').oninput = () => {
+  clearBatchMessage();
   delete select('#batch-destination-search').dataset.collectionId;
   batchDestinationFocusIndex = 0;
   renderBatchDestinationResults();
@@ -1448,7 +1463,7 @@ select('#batch-destination-search').onkeydown = event => {
 };
 select('#batch-destination-search').onblur = () => setTimeout(closeBatchDestinationResults, 100);
 select('#batch-assign').onclick = assignSelected;
-select('#selection-clear').onclick = () => { clearAttemptSelection(); renderAttemptResults(); syncSelectionUi(); };
+select('#selection-clear').onclick = () => { clearBatchMessage(); clearAttemptSelection(); renderAttemptResults(); syncSelectionUi(); };
 select('#sorter-toggle').onclick = () => {
   const panel = select('#sorter-panel');
   panel.hidden = !panel.hidden;

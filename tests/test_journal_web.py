@@ -141,7 +141,10 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "attemptList.replaceChildren()" not in page
     assert "function clearDataCaches()" in page
     assert "function clearPreviewCache()" in page
-    assert "clearDataCaches();\n    select('#batch-message')" in page
+    assert (
+        "clearDataCaches();\n    if (batchMessageGeneration === messageGeneration)"
+        in page
+    )
     assert "Latest status" in page
     assert "Search Art collections" in page
     assert "Move & confirm" in page
