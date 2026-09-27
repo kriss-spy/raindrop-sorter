@@ -1329,7 +1329,7 @@ def test_apply_is_the_default_run_mode_filter(destination_filter_dashboard):
         browser.close()
 
 
-def test_ai_order_groups_records_by_work_instead_of_shared_pose(
+def test_ai_order_groups_records_by_identity_labels_instead_of_shared_pose(
     destination_filter_dashboard,
 ):
     with playwright.sync_playwright() as runtime:
@@ -1342,20 +1342,20 @@ def test_ai_order_groups_records_by_work_instead_of_shared_pose(
             """
             () => {
               renderedAttempts = [
-                {attempt_id:'a', bookmark_id:1, title:'Blue Archive sitting', mode:'apply',
+                {attempt_id:'a', bookmark_id:1, title:'Black hair sitting', mode:'apply',
                  outcome:'review', current_phase:'applied',
                  started_at:'2026-09-27T03:00:00+00:00',
-                 ai_group:'Art/GAMES/BA', ai_group_source:'visual',
+                 ai_group:null, ai_group_labels:['black_hair', 'red_eyes'],
                  visual_labels:['1girl', 'sitting']},
-                {attempt_id:'b', bookmark_id:2, title:'GFL2 sitting', mode:'apply',
+                {attempt_id:'b', bookmark_id:2, title:'Blue hair sitting', mode:'apply',
                  outcome:'review', current_phase:'applied',
                  started_at:'2026-09-27T02:00:00+00:00',
-                 ai_group:'Art/GAMES/GFL2', ai_group_source:'visual',
+                 ai_group:null, ai_group_labels:['blue_hair', 'blue_eyes'],
                  visual_labels:['1girl', 'sitting']},
-                {attempt_id:'c', bookmark_id:3, title:'Blue Archive standing', mode:'apply',
+                {attempt_id:'c', bookmark_id:3, title:'Black hair standing', mode:'apply',
                  outcome:'review', current_phase:'applied',
                  started_at:'2026-09-27T01:00:00+00:00',
-                 ai_group:'Art/GAMES/BA', ai_group_source:'text',
+                 ai_group:null, ai_group_labels:['black_hair', 'red_eyes'],
                  visual_labels:['1girl', 'standing']},
               ];
               renderCurrentAttempts();
@@ -1364,21 +1364,21 @@ def test_ai_order_groups_records_by_work_instead_of_shared_pose(
             """
         )
 
-        page.get_by_role("button", name="Group by likely work").click()
+        page.get_by_role("button", name="Group by character labels").click()
 
         assert page.locator(".attempt-title").all_text_contents() == [
-            "Blue Archive sitting",
-            "Blue Archive standing",
-            "GFL2 sitting",
+            "Black hair sitting",
+            "Black hair standing",
+            "Blue hair sitting",
         ]
         assert page.locator(".attempt-ai-group").all_text_contents() == [
-            "≈ Art/GAMES/BA · visual",
-            "≈ Art/GAMES/BA · text",
-            "≈ Art/GAMES/GFL2 · visual",
+            "≈ labels: black_hair · red_eyes",
+            "≈ labels: black_hair · red_eyes",
+            "≈ labels: blue_hair · blue_eyes",
         ]
         assert page.locator(".attempt-ai-group").first.is_visible()
         assert page.get_by_role(
-            "button", name="Group by likely work"
+            "button", name="Group by character labels"
         ).get_attribute("aria-pressed") == "true"
         assert page.evaluate(
             "window.firstAiOrderCover === document.querySelector('[data-attempt-id=\"a\"] img')"

@@ -195,6 +195,7 @@ def test_dashboard_query_filters_structured_attempt_fields(tmp_path):
 
     assert [item["bookmark_id"] for item in matching] == [123]
     assert matching[0]["visual_labels"] == ["1girl", "blue_hair", "halo"]
+    assert matching[0]["ai_group_labels"] == ["blue_hair", "halo"]
     assert matching[0]["ai_group"] == "Art/GAMES/BA"
     assert matching[0]["ai_group_source"] == "text"
     assert journal.recent(limit=10, labels=("halo", "red_hair")) == []
@@ -204,6 +205,36 @@ def test_dashboard_query_filters_structured_attempt_fields(tmp_path):
         processed_on="2026-09-26",
         utc_offset_minutes=480,
     ) == []
+
+
+def test_dashboard_ai_group_ignores_visual_exemplar_work_winner(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    attempt = journal.start_attempt({"_id": 456, "title": "Unknown character"}, mode="apply")
+    journal.record_decision(
+        attempt,
+        RouteDecision(
+            bookmark_id=456,
+            outcome=RouteOutcome.REVIEW,
+            destination=None,
+            text_evidence=(),
+            visual_evidence=(VisualEvidence(
+                status="inconclusive",
+                destination=None,
+                method="wd14+visual_exemplar",
+                explanation="Biased nearest work guess.",
+                labels=("1girl", "black_hair", "red_eyes", "sitting"),
+                winner="Art/GAMES/GFL2",
+            ),),
+            summary="Needs review.",
+        ),
+    )
+    journal.complete(attempt)
+
+    record = journal.recent(limit=1)[0]
+
+    assert record["ai_group"] is None
+    assert record["ai_group_source"] is None
+    assert record["ai_group_labels"] == ["black_hair", "red_eyes"]
 
 
 def test_overview_can_be_scoped_to_live_location_bookmarks(tmp_path):

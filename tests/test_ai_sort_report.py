@@ -54,24 +54,24 @@ def test_ai_sort_report_samples_review_apply_records_and_loads_images_smartly(
         journal,
         covers,
         1,
-        "Blue Archive sitting",
-        ("1girl", "sitting"),
-        "Art/GAMES/BA",
+        "Black hair sitting",
+        ("1girl", "black_hair", "red_eyes", "sitting"),
+        "Art/GAMES/GFL2",
     )
     _record_review(
         journal,
         covers,
         2,
-        "GFL2 sitting",
-        ("1girl", "sitting"),
+        "Blue hair sitting",
+        ("1girl", "blue_hair", "blue_eyes", "sitting"),
         "Art/GAMES/GFL2",
     )
     _record_review(
         journal,
         covers,
         3,
-        "Blue Archive standing",
-        ("1girl", "standing"),
+        "Black hair standing",
+        ("1girl", "black_hair", "red_eyes", "standing"),
         "Art/GAMES/BA",
     )
 
@@ -86,12 +86,12 @@ def test_ai_sort_report_samples_review_apply_records_and_loads_images_smartly(
     assert {record["bookmark_id"] for record in records} == {1, 2, 3}
     positions = {record["title"]: index for index, record in enumerate(records)}
     assert abs(
-        positions["Blue Archive sitting"] - positions["Blue Archive standing"]
+        positions["Black hair sitting"] - positions["Black hair standing"]
     ) == 1
     assert 'data-src="https://cdn.test/' in page
     assert ' src="https://cdn.test/' not in page
     assert "IntersectionObserver" in page
     assert "MAX_CONCURRENT_IMAGES=4" in page
     assert "outcome:review mode:apply" in page
-    assert "Likely-work review" in page
+    assert "Raw-label review" in page
     assert "Random seed 7" in page

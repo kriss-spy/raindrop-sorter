@@ -15,6 +15,7 @@ from typing import Any, Protocol
 
 from src.routing import RouteDecision, TextEvidence, VisualEvidence
 from src.state_machine import is_remote_lifecycle_tag
+from src.visual_order import visual_character_labels, visual_identity_labels
 
 
 SCHEMA_VERSION = 2
@@ -45,14 +46,10 @@ def _utc_now() -> str:
 
 def _evidence_destinations(
     evidence_items: list[dict[str, Any]],
-    *,
-    include_visual_winner: bool = False,
 ) -> list[str]:
     destinations: list[str] = []
     for evidence in evidence_items:
         values = [evidence.get("destination"), *(evidence.get("candidates") or [])]
-        if include_visual_winner:
-            values.append(evidence.get("winner"))
         for value in values:
             destination = str(value or "").strip()
             if destination and destination not in destinations:
@@ -61,24 +58,10 @@ def _evidence_destinations(
 
 
 def _review_ai_group(decision: dict[str, Any]) -> tuple[str | None, str | None]:
-    """Choose a review bucket from text first, then the visual work winner."""
+    """Choose a review bucket only from the higher-trust text judge."""
     text_destinations = _evidence_destinations(decision.get("text_evidence", []))
-    visual_destinations = _evidence_destinations(
-        decision.get("visual_evidence", []),
-        include_visual_winner=True,
-    )
     if text_destinations:
-        if len(text_destinations) > 1:
-            visual_set = set(visual_destinations)
-            corroborated = next(
-                (item for item in text_destinations if item in visual_set),
-                None,
-            )
-            if corroborated:
-                return corroborated, "text+visual"
         return text_destinations[0], "text"
-    if visual_destinations:
-        return visual_destinations[0], "visual"
     return None, None
 
 
@@ -604,6 +587,8 @@ class SQLiteRunJournal:
                 collection_id=(snapshot.get("collection") or {}).get("$id"),
                 summary=decision.get("summary"),
                 visual_labels=sorted(visual_labels),
+                ai_character_labels=visual_character_labels(sorted(visual_labels)),
+                ai_group_labels=visual_identity_labels(sorted(visual_labels)),
                 ai_group=ai_group,
                 ai_group_source=ai_group_source,
                 duration_ms=_duration_ms(decoded["started_at"], decoded["ended_at"]),

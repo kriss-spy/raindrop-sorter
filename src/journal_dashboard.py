@@ -71,7 +71,7 @@ html,body{height:100%;overflow:hidden}
 <section class="filter-panel" id="filter-panel" aria-label="Journal filters" hidden><div class="filter-field"><label for="outcome">Outcome</label><select class="control" id="outcome"><option value="">All outcomes</option></select></div><div class="filter-field"><label for="phase">Lifecycle phase</label><select class="control" id="phase"><option value="">All lifecycle phases</option></select></div><div class="filter-field"><label for="mode">Run mode</label><select class="control" id="mode"><option value="">All run modes</option><option value="dry-run">dry-run</option><option value="apply" selected>apply</option><option value="manual-review">manual-review</option><option value="manual-delete">manual-delete</option><option value="legacy-tag-migration">legacy-tag-migration</option></select></div><div class="filter-field"><label for="scope">Attempt scope</label><select class="control" id="scope"><option value="latest">Latest status</option><option value="history">Attempt history</option></select></div><div class="filter-field filter-field-wide"><label for="visual-labels">Visual labels · comma separated, all must match</label><input class="control" id="visual-labels" placeholder="halo, blue_hair" autocomplete="off"></div><div class="filter-field"><label for="title-filter">Title contains</label><input class="control" id="title-filter" placeholder="Hatsune Miku" autocomplete="off"></div><div class="filter-field"><label for="link-filter">Source URL contains</label><input class="control" id="link-filter" placeholder="x.com/" autocomplete="off"></div><div class="filter-field"><span class="filter-field-label">Current Raindrop location · choose from tree</span><div class="location-filter"><output id="location-filter">Any location</output><button class="filter-clear" id="location-clear" type="button" aria-label="Clear location filter" title="Clear location filter">×</button></div></div><div class="filter-field"><label for="date-filter">Processed on</label><input class="control" id="date-filter" type="date"></div><div class="filter-actions"><button class="control reset-filters" id="reset-filters" type="button">Reset filters</button></div></section>
 <section class="action-bar" id="batch-bar" hidden><strong id="selection-count">0 selected</strong><div class="batch-picker"><input class="control" id="batch-destination-search" role="combobox" aria-label="Batch destination" aria-autocomplete="list" aria-controls="batch-destination-results" aria-expanded="false" autocomplete="off" placeholder="Search Art, Goods, Image, Post, or Video destinations…"><div class="batch-destination-results" id="batch-destination-results" role="listbox" hidden></div></div><button class="icon-button" id="batch-assign" type="button" aria-label="Assign selected Raindrops" title="Assign selected Raindrops" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><path d="M5 5v14"/></svg></button><button class="icon-button" id="batch-delete" type="button" aria-label="Delete selected records" title="Mark selected records DELETED" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></button><button class="icon-button" id="selection-clear" type="button" aria-label="Clear selection" title="Clear selection"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><span class="action-message" id="batch-message"></span></section>
 <section class="sorter-panel" id="sorter-panel" hidden><div class="sorter-status"><strong id="sorter-state">Loading…</strong><div class="explain" id="sorter-summary">Reading local sorter status</div></div><button class="icon-button" id="process-all" type="button" aria-label="Process all Unsorted Raindrops" title="Process all Unsorted Raindrops"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/><path d="m15 15 3 3 4-5"/></svg></button><button class="icon-button" id="sorter-stop" type="button" aria-label="Stop processing Unsorted Raindrops" title="Stop processing after the current Raindrop"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button><button class="icon-button" id="sorter-start" type="button" aria-label="Start automatic sorter" title="Start automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg></button><button class="icon-button" id="sorter-pause" type="button" aria-label="Pause automatic sorter" title="Pause automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg></button></section>
-<section class="workspace" id="workspace"><aside class="panel library-tree-panel" aria-label="Current Raindrop location filter"><header class="panel-head"><span>Location</span><span id="tree-filter-state">All</span></header><div class="collection-tree" id="collection-tree"><div class="skeleton"></div></div></aside><div class="panel attempt-panel"><div class="panel-head result-panel-head"><span id="list-title">Latest Raindrop status</span><div class="order-rail" role="group" aria-label="Record order"><button class="order-button active" id="latest-order" type="button" aria-pressed="true">Latest</button><button class="order-button" id="manual-order" type="button" aria-pressed="false">Manual</button><button class="order-button ai" id="ai-order" type="button" aria-label="Group by likely work" aria-pressed="false">AI work</button></div><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
+<section class="workspace" id="workspace"><aside class="panel library-tree-panel" aria-label="Current Raindrop location filter"><header class="panel-head"><span>Location</span><span id="tree-filter-state">All</span></header><div class="collection-tree" id="collection-tree"><div class="skeleton"></div></div></aside><div class="panel attempt-panel"><div class="panel-head result-panel-head"><span id="list-title">Latest Raindrop status</span><div class="order-rail" role="group" aria-label="Record order"><button class="order-button active" id="latest-order" type="button" aria-pressed="true">Latest</button><button class="order-button" id="manual-order" type="button" aria-pressed="false">Manual</button><button class="order-button ai" id="ai-order" type="button" aria-label="Group by character labels" aria-pressed="false">AI labels</button></div><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
 </main><script>
 const select = selector => document.querySelector(selector);
 const element = (tag, className, text) => {
@@ -672,6 +672,11 @@ function manualOrderHandle(attempt) {
   };
   return handle;
 }
+function attemptAiOrderLabel(attempt) {
+  if (attempt.ai_group) return `≈ text: ${attempt.ai_group}`;
+  const labels = attempt.ai_group_labels || [];
+  return labels.length ? `≈ labels: ${labels.slice(0, 4).join(' · ')}` : '';
+}
 function renderCard(attempt) {
   const card = element('article', 'attempt'
     + (attempt.attempt_id === selectedAttemptId ? ' active' : '')
@@ -689,11 +694,8 @@ function renderCard(attempt) {
   const meta = element('div', 'meta attempt-meta', `#${attempt.bookmark_id} · ${attempt.mode} · ${formatDuration(attempt.duration_ms)}`);
   const footer = element('div', 'attempt-footer');
   if (attempt.destination) footer.append(element('div', 'destination attempt-destination', '→ ' + attempt.destination));
-  if (attempt.ai_group) footer.append(element(
-    'div',
-    'attempt-ai-group',
-    `≈ ${attempt.ai_group} · ${attempt.ai_group_source || 'AI'}`,
-  ));
+  const aiOrderLabel = attemptAiOrderLabel(attempt);
+  if (aiOrderLabel) footer.append(element('div', 'attempt-ai-group', aiOrderLabel));
   const startedAt = element('time', 'attempt-time', formatTime(attempt.started_at));
   if (attempt.started_at) startedAt.dateTime = attempt.started_at;
   footer.append(startedAt);
@@ -717,11 +719,8 @@ function renderTableRow(attempt) {
   const outcomeCell = element('td'); outcomeCell.append(outcomeBadge(attempt.current_phase === 'failed' ? 'failed' : attempt.outcome));
   const destinationCell = element('td', 'table-destination');
   destinationCell.append(element('div', '', attempt.destination ? '→ ' + attempt.destination : '—'));
-  if (attempt.ai_group) destinationCell.append(element(
-    'div',
-    'attempt-ai-group',
-    `≈ ${attempt.ai_group} · ${attempt.ai_group_source || 'AI'}`,
-  ));
+  const aiOrderLabel = attemptAiOrderLabel(attempt);
+  if (aiOrderLabel) destinationCell.append(element('div', 'attempt-ai-group', aiOrderLabel));
   const runCell = element('td', 'meta', `${attempt.mode} · ${formatDuration(attempt.duration_ms)}`);
   const timeCell = element('td', 'meta', formatTime(attempt.started_at));
   const openCell = element('td'); openCell.append(raindropLink(attempt.bookmark_id));
@@ -802,18 +801,58 @@ function renderAttemptResults() {
 }
 function reviewGroupOrder(attempts) {
   const groups = new Map();
+  const labelItems = [];
   const ungrouped = [];
   attempts.forEach(attempt => {
     const group = String(attempt.ai_group || '').trim();
-    if (!group) {
+    const labels = new Set((attempt.ai_group_labels || []).map(label => String(label)));
+    if (group) {
+      const key = group.toLocaleLowerCase();
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(attempt);
+    } else if (labels.size) {
+      labelItems.push({attempt, labels});
+    } else {
       ungrouped.push(attempt);
-      return;
     }
-    const key = group.toLocaleLowerCase();
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(attempt);
   });
-  return [...groups.values()].flat().concat(ungrouped);
+  const frequencies = new Map();
+  const characterLabels = new Set(
+    labelItems.flatMap(item => item.attempt.ai_character_labels || [])
+  );
+  labelItems.forEach(item => item.labels.forEach(label => (
+    frequencies.set(label, (frequencies.get(label) || 0) + 1)
+  )));
+  const weights = new Map([...frequencies].map(([label, frequency]) => [
+    label,
+    (characterLabels.has(label) ? 4 : 1)
+      * (1 + Math.log((labelItems.length + 1) / (frequency + 1))),
+  ]));
+  const similarity = (left, right) => {
+    const union = new Set([...left, ...right]);
+    if (!union.size) return 0;
+    const intersection = [...left].filter(label => right.has(label));
+    return intersection.reduce((total, label) => total + weights.get(label), 0)
+      / [...union].reduce((total, label) => total + weights.get(label), 0);
+  };
+  const remaining = [...labelItems];
+  const labelOrdered = [];
+  let current = remaining.shift();
+  while (current) {
+    labelOrdered.push(current.attempt);
+    if (!remaining.length) break;
+    let bestIndex = 0;
+    let bestSimilarity = -1;
+    remaining.forEach((candidate, index) => {
+      const score = similarity(current.labels, candidate.labels);
+      if (score > bestSimilarity) {
+        bestIndex = index;
+        bestSimilarity = score;
+      }
+    });
+    current = remaining.splice(bestIndex, 1)[0];
+  }
+  return [...groups.values()].flat().concat(labelOrdered, ungrouped);
 }
 function attemptOrderStorageKey() {
   return attemptOrderStoragePrefix + JSON.stringify({

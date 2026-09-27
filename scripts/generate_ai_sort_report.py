@@ -66,7 +66,7 @@ def _card(record: dict[str, Any], index: int) -> str:
     title = str(record.get("title") or f"Raindrop {bookmark_id}")
     labels = [str(label) for label in record.get("visual_labels") or []]
     group = str(record.get("ai_group") or "")
-    group_source = str(record.get("ai_group_source") or "")
+    group_labels = [str(label) for label in record.get("ai_group_labels") or []]
     cover = _safe_http_url(record.get("cover"))
     link = _safe_http_url(record.get("link"))
     image = (
@@ -77,11 +77,12 @@ def _card(record: dict[str, Any], index: int) -> str:
         else '<div class="no-cover">No cached cover</div>'
     )
     chips = "".join(f'<span class="chip">{escape(label)}</span>' for label in labels)
-    group_text = (
-        f"{group} · {group_source}"
-        if group
-        else "No likely work"
-    )
+    if group:
+        group_text = f"text: {group}"
+    elif group_labels:
+        group_text = "labels: " + " · ".join(group_labels[:6])
+    else:
+        group_text = "No character-defining labels"
     source = (
         f'<a href="{escape(link, quote=True)}" target="_blank" rel="noreferrer">Source</a>'
         if link
@@ -108,28 +109,30 @@ def render_report(
     seed: int,
     candidate_count: int,
 ) -> str:
-    """Render a standalone visual audit of the likely-work grouping."""
+    """Render a standalone audit of text and raw-label grouping."""
     cards = []
     for index, record in enumerate(records, 1):
         cards.append(_card(record, index))
-    group_counts = Counter(
-        str(record.get("ai_group") or "No likely work") for record in records
+    identity_label_counts = Counter(
+        str(label)
+        for record in records
+        for label in record.get("ai_group_labels") or []
     )
     common = "".join(
-        f'<span class="summary-chip">{escape(group)} <strong>{count}</strong></span>'
-        for group, count in group_counts.most_common(12)
+        f'<span class="summary-chip">{escape(label)} <strong>{count}</strong></span>'
+        for label, count in identity_label_counts.most_common(12)
     )
     generated = datetime.now().astimezone().isoformat(timespec="seconds")
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>AI visual order — {len(records)} review records</title>
+<title>Raw-label order — {len(records)} review records</title>
 <style>
 :root{{--bg:#091017;--panel:#101922;--line:#293943;--text:#edf5f6;--muted:#8ca0aa;--cyan:#61d7d7;--violet:#b9a0ff;--ink:#060a0d;color-scheme:dark}}
 *{{box-sizing:border-box}}body{{margin:0;background:linear-gradient(110deg,#10242d 0,transparent 28rem),var(--bg);color:var(--text);font:14px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace}}a{{color:var(--cyan)}}header,main{{width:min(1840px,calc(100% - 28px));margin:auto}}header{{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(280px,.6fr);gap:24px;padding:30px 0 22px;border-bottom:1px solid var(--line)}}h1{{margin:0;font:750 clamp(34px,5vw,70px)/.94 system-ui;letter-spacing:-.06em}}.lede{{max-width:850px;color:var(--muted);font-size:15px}}.facts{{display:grid;grid-template-columns:repeat(2,1fr);align-self:end;border:1px solid var(--line);background:var(--panel)}}.fact{{padding:13px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}}.fact:nth-child(even){{border-right:0}}.fact:nth-last-child(-n+2){{border-bottom:0}}.fact strong{{display:block;color:var(--violet);font-size:22px}}.fact span{{color:var(--muted);font-size:11px}}.labels{{display:flex;flex-wrap:wrap;gap:6px;margin-top:16px}}.summary-chip,.chip{{border:1px solid var(--line);border-radius:999px;padding:3px 8px;color:var(--muted);font-size:11px}}.summary-chip strong{{color:var(--text)}}.toolbar{{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;margin:16px 0;padding:10px;border:1px solid var(--line);background:#091017e8;backdrop-filter:blur(12px)}}input,button{{border:1px solid var(--line);background:#0d161d;color:var(--text);padding:9px 10px;font:inherit}}input{{min-width:260px;flex:1}}button{{cursor:pointer;color:var(--cyan)}}#shown{{color:var(--muted);white-space:nowrap}}.gallery{{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:12px;padding-bottom:48px}}.record{{min-width:0;border:1px solid var(--line);background:var(--panel);overflow:hidden}}.record[hidden]{{display:none}}.rank{{display:flex;align-items:center;gap:10px;padding:7px 10px;border-bottom:1px solid var(--line);color:var(--muted);font-size:11px}}.rank strong{{color:var(--violet);font-size:14px}}.rank span{{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}.media{{position:relative;display:grid;place-items:center;height:250px;background:var(--ink);text-decoration:none}}.cover{{position:relative;z-index:2;width:100%;height:100%;object-fit:contain;opacity:0;transition:opacity .16s ease}}.cover.loaded{{opacity:1}}.cover.failed{{display:none}}.image-wash{{position:absolute;inset:0;background:linear-gradient(105deg,#0d171f 20%,#172832 36%,#0d171f 52%);background-size:240% 100%;animation:shimmer 1.5s linear infinite}}.cover.loaded+.image-wash,.cover.failed+.image-wash,.no-cover+.image-wash{{display:none}}.no-cover{{position:relative;z-index:2;color:var(--muted)}}@keyframes shimmer{{to{{background-position:-240% 0}}}}.body{{padding:12px}}h2{{margin:0 0 5px;font:680 17px/1.25 system-ui;min-height:2.5em}}.meta,.muted{{color:var(--muted)}}.meta{{font-size:11px}}.chips{{display:flex;flex-wrap:wrap;gap:5px;max-height:86px;overflow:auto;margin:10px 0}}.chip{{color:var(--text)}}.links{{display:flex;justify-content:flex-end;gap:12px;border-top:1px solid var(--line);padding-top:9px}}
 @media(max-width:780px){{header{{grid-template-columns:1fr}}.facts{{max-width:520px}}.gallery{{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}}}}@media(max-width:480px){{header,main{{width:calc(100% - 16px)}}.toolbar{{flex-wrap:wrap}}input{{width:100%;min-width:0}}}}
 </style></head><body>
-<header><section><h1>Likely-work review</h1><p class="lede">A reproducible random sample from <code>outcome:review mode:apply</code>, grouped by the destination suggested by the text judge first and the visual work classifier second. Pose, framing, clothing, and other generic visual labels do not affect the order.</p><div class="labels">{common}</div></section><section class="facts"><div class="fact"><strong>{len(records)}</strong><span>Sampled records</span></div><div class="fact"><strong>{candidate_count}</strong><span>Eligible records</span></div><div class="fact"><strong>{len(group_counts)}</strong><span>Likely-work groups</span></div><div class="fact"><strong>{seed}</strong><span>Random seed</span></div></section></header>
+<header><section><h1>Raw-label review</h1><p class="lede">A reproducible random sample from <code>outcome:review mode:apply</code>. Text candidates are grouped first; remaining records are ordered only by raw WD14 character and identity labels. The biased visual work winner is ignored, along with pose, framing, rating, body, and composition tags.</p><div class="labels">{common}</div></section><section class="facts"><div class="fact"><strong>{len(records)}</strong><span>Sampled records</span></div><div class="fact"><strong>{candidate_count}</strong><span>Eligible records</span></div><div class="fact"><strong>{len(identity_label_counts)}</strong><span>Identity labels used</span></div><div class="fact"><strong>{seed}</strong><span>Random seed</span></div></section></header>
 <main><div class="toolbar"><input id="search" type="search" placeholder="Filter this sample by title or visual label"><button id="images" type="button" aria-pressed="true">Pause images</button><span id="shown">{len(records)} shown</span></div><section class="gallery">{''.join(cards)}</section><p class="muted">Generated {escape(generated)} · Random seed {seed}</p></main>
 <script>
 const MAX_CONCURRENT_IMAGES=4;
