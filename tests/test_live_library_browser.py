@@ -194,3 +194,92 @@ def test_collection_tree_failure_does_not_replace_journal_results(destination_fi
         assert page.locator("#count").text_content() == "2 shown"
 
         browser.close()
+
+
+def test_detail_drawer_discards_stale_async_render_and_resets_scroll(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        attempts = page.locator("[data-attempt-id]")
+        first_id = attempts.nth(0).get_attribute("data-attempt-id")
+        second_id = attempts.nth(1).get_attribute("data-attempt-id")
+        second_title = attempts.nth(1).locator(".attempt-title").inner_text()
+        page.evaluate(
+            """
+            () => {
+              const originalFetch = window.fetch;
+              collectionTreeGroups = [];
+              artCollectionsPromise = null;
+              let delayed = false;
+              window.fetch = (input, init) => {
+                if (!delayed && String(input).includes('/api/review/collections')) {
+                  delayed = true;
+                  return new Promise(resolve => setTimeout(
+                    () => resolve(originalFetch(input, init)), 300
+                  ));
+                }
+                return originalFetch(input, init);
+              };
+            }
+            """
+        )
+
+        page.evaluate("attemptId => openAttempt(attemptId)", first_id)
+        page.locator("#detail .resolution").wait_for()
+        page.evaluate("attemptId => openAttempt(attemptId)", second_id)
+        page.locator("#detail .detail-title").filter(has_text=second_title).wait_for()
+        page.wait_for_timeout(450)
+
+        assert page.locator("#detail > .resolution").count() == 1
+        assert page.locator("#detail > .section").count() == 3
+        page.locator("#detail").evaluate("element => { element.scrollTop = 100; }")
+        page.evaluate("attemptId => openAttempt(attemptId)", first_id)
+        page.locator("#detail .detail-title").wait_for()
+        assert page.locator("#detail").evaluate("element => element.scrollTop") == 0
+
+        browser.close()
+
+
+def test_detail_drawer_uses_loaded_tree_when_collection_endpoint_fails(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        collection_requests = []
+
+        def fail_collections(route):
+            collection_requests.append(route.request.url)
+            route.fulfill(
+                status=504,
+                content_type="application/json",
+                body='{"error":"upstream collection timeout"}',
+            )
+
+        page.route("**/api/review/collections", fail_collections)
+        page.goto(destination_filter_dashboard.url)
+        page.locator("#collection-tree .collection-select").first.wait_for()
+        page.evaluate(
+            """
+            () => {
+              const group = collectionTreeGroups.find(item => item.title === 'Library');
+              group.title = 'Art';
+            }
+            """
+        )
+        attempt_id = page.locator("[data-attempt-id]").first.get_attribute(
+            "data-attempt-id"
+        )
+        page.evaluate("id => openAttempt(id)", attempt_id)
+
+        page.locator("#detail .collection-search").wait_for()
+        assert page.locator("#detail .resolution-error").text_content() == ""
+        assert collection_requests == []
+
+        browser.close()

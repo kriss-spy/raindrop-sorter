@@ -194,7 +194,25 @@ async function postJson(url, payload) {
   if (!response.ok) throw new Error((await response.json()).error || response.statusText);
   return response.json();
 }
+function artCollectionsFromTree() {
+  const artGroup = collectionTreeGroups.find(
+    group => String(group.title || '').trim().toLocaleLowerCase() === 'art'
+  );
+  if (!artGroup) return [];
+  const collections = [];
+  const visit = node => {
+    collections.push({
+      collection_id:Number(node.id),
+      path:collectionFilterPath(artGroup, node),
+    });
+    (node.children || []).forEach(visit);
+  };
+  (artGroup.collections || []).forEach(visit);
+  return collections;
+}
 function artCollections() {
+  const treeCollections = artCollectionsFromTree();
+  if (treeCollections.length) return Promise.resolve(treeCollections);
   if (!artCollectionsPromise) {
     artCollectionsPromise = fetchJson('/api/review/collections')
       .then(result => result.items)
@@ -813,14 +831,18 @@ async function renderResolution(trace, detailPanel) {
 }
 async function renderDetail(attemptId) {
   selectedAttemptId = attemptId;
+  const renderRevision = detailSelectionRevision;
+  const isStaleRender = () => selectedAttemptId !== attemptId
+    || detailSelectionRevision !== renderRevision;
   markSelectedAttempt();
   setDetailOpen(true);
   const detailPanel = select('#detail');
   detailPanel.className = '';
   detailPanel.replaceChildren(element('div', 'skeleton'));
+  detailPanel.scrollTop = 0;
   try {
     const trace = await attemptTrace(attemptId);
-    if (selectedAttemptId !== attemptId) return;
+    if (isStaleRender()) return;
     const attempt = trace.attempt;
     const snapshot = attempt.bookmark_snapshot || {};
     detailPanel.replaceChildren();
@@ -846,6 +868,7 @@ async function renderDetail(attemptId) {
     if (attempt.decision?.summary) detailPanel.append(element('div', 'summary', attempt.decision.summary));
     if (attempt.error) detailPanel.append(element('div', 'error', `${attempt.error.type}: ${attempt.error.message}`));
     await renderResolution(trace, detailPanel);
+    if (isStaleRender()) return;
     const evidenceSection = detailSection(`Evidence · ${trace.evidence.length}`);
     trace.evidence.forEach(evidence => {
       const card = element('div', 'card');
@@ -881,6 +904,7 @@ async function renderDetail(attemptId) {
     timelineSection.append(timeline);
     detailPanel.append(timelineSection);
   } catch (error) {
+    if (isStaleRender()) return;
     detailPanel.replaceChildren(element('div', 'error', error.message));
   }
 }
@@ -1224,7 +1248,6 @@ syncQueryFromFilterControls();
 refreshDashboard();
 refreshSorterStatus();
 void loadCollectionTree();
-void loadBatchDestinations();
 setInterval(refreshDashboard, 15000);
 setInterval(refreshSorterStatus, 1000);
 </script></body></html>"""
