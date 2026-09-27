@@ -21,6 +21,7 @@ from src.journal_dashboard import DASHBOARD_HTML
 from src.journal_review import (
     IneligibleReviewAttempt,
     InvalidReviewDestination,
+    JournalRecordService,
     JournalReviewService,
     ReviewApplyFailed,
     ReviewAttemptNotFound,
@@ -37,6 +38,7 @@ class JournalHTTPServer(ThreadingHTTPServer):
     journal: SQLiteRunJournal
     preview_loader: PreviewLoader | None
     reviewer: JournalReviewService | None
+    record_manager: JournalRecordService | None
     sorter_controller: Any | None
     sorter_unavailable_reason: str
     live_library: LiveLibraryBrowser | None
@@ -64,22 +66,19 @@ def create_server(
     journal_path = Path(journal_path)
     if not journal_path.is_file():
         raise FileNotFoundError(f"journal does not exist: {journal_path}")
+    loopback = host in {"127.0.0.1", "localhost", "::1"}
     if (
         preview_loader is not None
         or raindrop_client is not None
         or sorter_controller is not None
-    ) and host not in {
-        "127.0.0.1", "localhost", "::1"
-    }:
+    ) and not loopback:
         raise ValueError(
             "live library access, image previews, review actions, and sorter controls "
             "require a loopback host"
         )
     server = JournalHTTPServer((host, port), JournalRequestHandler)
-    server.journal = SQLiteRunJournal(
-        journal_path,
-        read_only=raindrop_client is None,
-    )
+    server.journal = SQLiteRunJournal(journal_path, read_only=not loopback)
+    shared_mutation_lock = mutation_lock or threading.RLock()
     server.preview_loader = (
         CachedPreviewLoader(preview_loader) if preview_loader is not None else None
     )
@@ -88,11 +87,19 @@ def create_server(
         JournalReviewService(
             server.journal,
             raindrop_client,
-            mutation_lock=mutation_lock,
+            mutation_lock=shared_mutation_lock,
             cover_cache=cover_cache,
             on_reviews_changed=on_reviews_changed,
         )
         if raindrop_client is not None
+        else None
+    )
+    server.record_manager = (
+        JournalRecordService(
+            server.journal,
+            mutation_lock=shared_mutation_lock,
+        )
+        if loopback
         else None
     )
     server.sorter_controller = sorter_controller
@@ -230,6 +237,8 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
             self._assert_same_origin()
             if request.path == "/api/attempts/resolve-batch":
                 self._resolve_batch(self._read_json())
+            elif request.path == "/api/attempts/delete-batch":
+                self._delete_batch(self._read_json())
             elif request.path.startswith("/api/sorter/"):
                 self._sorter_action(request.path)
             else:
@@ -288,15 +297,7 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                 {"error": "review actions require RAINDROP_TOKEN"},
             )
             return
-        attempt_ids = payload.get("attempt_ids")
-        if not isinstance(attempt_ids, list) or not attempt_ids:
-            raise ValueError("attempt_ids must be a non-empty list")
-        if len(attempt_ids) > 100:
-            raise ValueError("a batch can contain at most 100 attempts")
-        if len(set(attempt_ids)) != len(attempt_ids) or not all(
-            isinstance(attempt_id, str) and attempt_id for attempt_id in attempt_ids
-        ):
-            raise ValueError("attempt_ids must contain unique non-empty strings")
+        attempt_ids = self._batch_attempt_ids(payload)
         collection_id = int(payload["collection_id"])
         result = self.server.reviewer.resolve_batch(
             attempt_ids,
@@ -308,6 +309,30 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                     bookmark_id=int(resolved["bookmark_id"]),
                     destination_collection_id=int(resolved["collection_id"]),
                 )
+        self._send_json(HTTPStatus.OK, result)
+
+    @staticmethod
+    def _batch_attempt_ids(payload: dict[str, Any]) -> list[str]:
+        attempt_ids = payload.get("attempt_ids")
+        if not isinstance(attempt_ids, list) or not attempt_ids:
+            raise ValueError("attempt_ids must be a non-empty list")
+        if len(attempt_ids) > 100:
+            raise ValueError("a batch can contain at most 100 attempts")
+        if len(set(attempt_ids)) != len(attempt_ids) or not all(
+            isinstance(attempt_id, str) and attempt_id for attempt_id in attempt_ids
+        ):
+            raise ValueError("attempt_ids must contain unique non-empty strings")
+        return attempt_ids
+
+    def _delete_batch(self, payload: dict[str, Any]) -> None:
+        if self.server.record_manager is None:
+            self._send_json(
+                HTTPStatus.SERVICE_UNAVAILABLE,
+                {"error": "record deletion requires a loopback dashboard"},
+            )
+            return
+        attempt_ids = self._batch_attempt_ids(payload)
+        result = self.server.record_manager.mark_deleted_batch(attempt_ids)
         self._send_json(HTTPStatus.OK, result)
 
     def _sorter_status(self) -> None:

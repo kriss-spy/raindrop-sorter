@@ -14,7 +14,12 @@ from typing import Any
 from src.cover_cache import SQLiteCoverCache
 from src.destinations import is_art_destination
 from src.routing import RouteEngine, TextIdentifier, VisualVerifier
-from src.run_journal import AttemptHandle, RunJournal, SQLiteRunJournal
+from src.run_journal import (
+    MUTATING_ATTEMPT_MODES,
+    AttemptHandle,
+    RunJournal,
+    SQLiteRunJournal,
+)
 from src.source_error_lifecycle import record_source_error
 from src.source_health import (
     SourceHealthResult,
@@ -657,7 +662,7 @@ def rerun_latest_outcomes(
             limit=limit,
             outcome=outcome,
             latest_per_bookmark=True,
-            mode=("apply", "manual-review", "legacy-tag-migration"),
+            mode=MUTATING_ATTEMPT_MODES,
             exclude_phase="skipped_stale",
         ):
             candidates[int(attempt["bookmark_id"])] = attempt

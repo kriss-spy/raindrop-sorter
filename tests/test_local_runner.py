@@ -590,7 +590,12 @@ def test_rerun_latest_outcomes_only_processes_requested_latest_results():
 
     class Journal:
         def recent(self, *, outcome, mode, exclude_phase, **_kwargs):
-            assert mode == ("apply", "manual-review", "legacy-tag-migration")
+            assert mode == (
+                "apply",
+                "manual-review",
+                "legacy-tag-migration",
+                "manual-delete",
+            )
             assert exclude_phase == "skipped_stale"
             return [
                 attempt

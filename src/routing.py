@@ -30,6 +30,7 @@ class RouteOutcome(StrEnum):
     REVIEW = "review"
     CONFLICT = "conflict"
     ERROR = "error"
+    DELETED = "deleted"
 
 
 TextStrength = Literal["strong", "contextual", "weak", "conflicting"]

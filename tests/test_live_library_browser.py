@@ -593,6 +593,38 @@ def test_late_batch_result_does_not_label_a_new_selection(
         browser.close()
 
 
+def test_delete_selected_records_requires_confirmation_and_marks_them_deleted(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        dialogs = []
+        page.on("dialog", lambda dialog: (dialogs.append(dialog.message), dialog.accept()))
+        page.goto(destination_filter_dashboard.url)
+        page.locator("#filter-toggle").click()
+        page.locator("#outcome").select_option("review")
+        page.locator(".attempt-select").first.check()
+
+        page.get_by_role("button", name="Delete selected records").click()
+        page.wait_for_function(
+            "() => document.querySelector('#batch-message').textContent === '1 marked deleted'"
+        )
+
+        assert dialogs == [
+            "Mark 1 selected Run Journal record as DELETED? "
+            "This does not delete anything from Raindrop.io."
+        ]
+        assert page.locator("[data-attempt-id]").count() == 0
+        response = page.request.get(
+            destination_filter_dashboard.url
+            + "/api/attempts?latest=1&outcome=deleted"
+        )
+        assert response.json()["count"] == 1
+        browser.close()
+
+
 def test_detail_assignment_closes_and_removes_card_before_request_finishes(
     destination_filter_dashboard,
 ):

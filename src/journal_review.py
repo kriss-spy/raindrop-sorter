@@ -64,6 +64,85 @@ class ReviewSelectionSource(StrEnum):
         }[self]
 
 
+class JournalRecordService:
+    """Apply local human lifecycle changes without a Raindrop client."""
+
+    def __init__(
+        self,
+        journal: SQLiteRunJournal,
+        mutation_lock: threading.RLock | None = None,
+    ):
+        self.journal = journal
+        self._lock = mutation_lock or threading.RLock()
+
+    def mark_deleted_batch(self, attempt_ids: list[str]) -> dict[str, Any]:
+        """Mark latest journal records deleted without mutating Raindrop."""
+        deleted = 0
+        errors = []
+        for attempt_id in attempt_ids:
+            try:
+                self._mark_deleted(attempt_id)
+                deleted += 1
+            except Exception as error:
+                errors.append({
+                    "attempt_id": attempt_id,
+                    "error": str(error),
+                    "type": type(error).__name__,
+                })
+        return {
+            "status": "ok" if not errors else "partial",
+            "deleted": deleted,
+            "failed": len(errors),
+            "errors": errors,
+        }
+
+    def _mark_deleted(self, attempt_id: str) -> None:
+        with self._lock:
+            trace = self.journal.explain_attempt(attempt_id)
+            if trace is None:
+                raise ReviewAttemptNotFound("attempt not found")
+            original = trace["attempt"]
+            bookmark_id = int(original["bookmark_id"])
+            latest = self.journal.explain(bookmark_id)
+            if latest is None or latest["attempt"]["attempt_id"] != attempt_id:
+                raise StaleReviewAttempt(
+                    "only the latest record for a Raindrop can be marked deleted"
+                )
+            if original.get("outcome") == RouteOutcome.DELETED.value:
+                raise IneligibleReviewAttempt("record is already marked deleted")
+            if original.get("ended_at") is None:
+                raise IneligibleReviewAttempt("an active record cannot be marked deleted")
+            bookmark = dict(original.get("bookmark_snapshot") or {})
+            bookmark["_id"] = bookmark_id
+            deleted_attempt = self.journal.start_attempt(
+                bookmark,
+                mode="manual-delete",
+                runner_version="journal-dashboard-v1",
+                initial_event=(
+                    "manual_delete_selected",
+                    {"source_attempt_id": attempt_id},
+                ),
+            )
+            decision = RouteDecision(
+                bookmark_id=bookmark_id,
+                outcome=RouteOutcome.DELETED,
+                destination=None,
+                text_evidence=(),
+                visual_evidence=(),
+                summary="Marked deleted because the Raindrop no longer exists.",
+            )
+            self.journal.record_decision(deleted_attempt, decision)
+            self.journal.record_action(
+                deleted_attempt,
+                action_kind="mark_raindrop_deleted",
+                status="succeeded",
+                destination=None,
+                request_count=0,
+                payload={"source_attempt_id": attempt_id},
+            )
+            self.journal.complete(deleted_attempt)
+
+
 class JournalReviewService:
     """Apply explicit human choices while preserving an append-only audit trail."""
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from src.run_journal import SQLiteRunJournal
+from src.run_journal import MUTATING_ATTEMPT_MODES, SQLiteRunJournal
 from src.source_error_lifecycle import record_source_error
 from src.source_health import (
     SourceHealthStatus,
@@ -34,7 +34,7 @@ def ignore_broken_twitter_sources(
             limit=scan_limit,
             outcome=outcome,
             latest_per_bookmark=True,
-            mode=("apply", "manual-review", "legacy-tag-migration"),
+            mode=MUTATING_ATTEMPT_MODES,
             exclude_phase="skipped_stale",
         ):
             bookmark = {

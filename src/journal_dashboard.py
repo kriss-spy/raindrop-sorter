@@ -30,7 +30,7 @@ button.control{cursor:pointer;color:var(--cyan)}
 .meta,.when{color:var(--muted);font-size:12px}
 .destination{color:var(--cyan)}
 .badge{align-self:start;border:1px solid currentColor;border-radius:99px;padding:2px 8px;font-size:10px;text-transform:uppercase}
-.confirmed{color:var(--lime)}.provisional{color:var(--amber)}.review,.pending{color:var(--violet)}.conflict,.error,.failed{color:var(--red)}
+.confirmed{color:var(--lime)}.provisional{color:var(--amber)}.review,.pending{color:var(--violet)}.conflict,.error,.failed{color:var(--red)}.deleted{color:var(--muted)}
 .empty{display:grid;place-content:center;text-align:center;color:var(--muted)}
 .detail-title{font-family:system-ui;font-weight:700;margin:4px 0}
 .external{color:var(--cyan);text-decoration:none}
@@ -68,8 +68,8 @@ html,body{height:100%;overflow:hidden}
 </style></head><body><main class="shell">
 <header class="top"><h1 class="brand">Raindrop Sorter</h1><div class="live"><i class="dot"></i><span id="updated">Connecting…</span></div></header>
 <form class="toolbar" id="filters"><input class="control" id="search" aria-label="Search and filter sorter journal" placeholder="Search or use filters, e.g. outcome:review label:halo"><button class="icon-button filter-toggle" id="filter-toggle" type="button" aria-label="Show filters" aria-expanded="false" title="Show filters"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg><span class="filter-count" id="filter-count"></span></button><div class="view-switch" role="group" aria-label="Results layout"><button class="icon-button active" id="card-view" type="button" aria-label="Image card layout" title="Image card layout"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></button><button class="icon-button" id="table-view" type="button" aria-label="Table layout" title="Table layout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><path d="M8 4v16"/></svg></button></div><button class="icon-button" type="submit" aria-label="Refresh dashboard" title="Refresh dashboard"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5"/><path d="M19 11a7.5 7.5 0 1 0 .2 5"/></svg></button><button class="icon-button" id="sorter-toggle" type="button" aria-label="Show sorter controls" title="Show sorter controls"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h7M15 18h5"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="13" cy="18" r="2"/></svg></button><button class="icon-button detail-toggle" id="detail-toggle" type="button" aria-label="Show attempt details" title="Show attempt details" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M14 4v16"/></svg></button></form>
-<section class="filter-panel" id="filter-panel" aria-label="Journal filters" hidden><div class="filter-field"><label for="outcome">Outcome</label><select class="control" id="outcome"><option value="">All outcomes</option></select></div><div class="filter-field"><label for="phase">Lifecycle phase</label><select class="control" id="phase"><option value="">All lifecycle phases</option></select></div><div class="filter-field"><label for="mode">Run mode</label><select class="control" id="mode"><option value="">All run modes</option><option value="dry-run">dry-run</option><option value="apply">apply</option><option value="manual-review">manual-review</option><option value="legacy-tag-migration">legacy-tag-migration</option></select></div><div class="filter-field"><label for="scope">Attempt scope</label><select class="control" id="scope"><option value="latest">Latest status</option><option value="history">Attempt history</option></select></div><div class="filter-field filter-field-wide"><label for="visual-labels">Visual labels · comma separated, all must match</label><input class="control" id="visual-labels" placeholder="halo, blue_hair" autocomplete="off"></div><div class="filter-field"><label for="title-filter">Title contains</label><input class="control" id="title-filter" placeholder="Hatsune Miku" autocomplete="off"></div><div class="filter-field"><label for="link-filter">Source URL contains</label><input class="control" id="link-filter" placeholder="x.com/" autocomplete="off"></div><div class="filter-field"><span class="filter-field-label">Current Raindrop location · choose from tree</span><div class="location-filter"><output id="location-filter">Any location</output><button class="filter-clear" id="location-clear" type="button" aria-label="Clear location filter" title="Clear location filter">×</button></div></div><div class="filter-field"><label for="date-filter">Processed on</label><input class="control" id="date-filter" type="date"></div><div class="filter-actions"><button class="control reset-filters" id="reset-filters" type="button">Reset filters</button></div></section>
-<section class="action-bar" id="batch-bar" hidden><strong id="selection-count">0 selected</strong><div class="batch-picker"><input class="control" id="batch-destination-search" role="combobox" aria-label="Batch destination" aria-autocomplete="list" aria-controls="batch-destination-results" aria-expanded="false" autocomplete="off" placeholder="Search Art destinations…"><div class="batch-destination-results" id="batch-destination-results" role="listbox" hidden></div></div><button class="icon-button" id="batch-assign" type="button" aria-label="Assign selected Raindrops" title="Assign selected Raindrops" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><path d="M5 5v14"/></svg></button><button class="icon-button" id="selection-clear" type="button" aria-label="Clear selection" title="Clear selection"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><span class="action-message" id="batch-message"></span></section>
+<section class="filter-panel" id="filter-panel" aria-label="Journal filters" hidden><div class="filter-field"><label for="outcome">Outcome</label><select class="control" id="outcome"><option value="">All outcomes</option></select></div><div class="filter-field"><label for="phase">Lifecycle phase</label><select class="control" id="phase"><option value="">All lifecycle phases</option></select></div><div class="filter-field"><label for="mode">Run mode</label><select class="control" id="mode"><option value="">All run modes</option><option value="dry-run">dry-run</option><option value="apply">apply</option><option value="manual-review">manual-review</option><option value="manual-delete">manual-delete</option><option value="legacy-tag-migration">legacy-tag-migration</option></select></div><div class="filter-field"><label for="scope">Attempt scope</label><select class="control" id="scope"><option value="latest">Latest status</option><option value="history">Attempt history</option></select></div><div class="filter-field filter-field-wide"><label for="visual-labels">Visual labels · comma separated, all must match</label><input class="control" id="visual-labels" placeholder="halo, blue_hair" autocomplete="off"></div><div class="filter-field"><label for="title-filter">Title contains</label><input class="control" id="title-filter" placeholder="Hatsune Miku" autocomplete="off"></div><div class="filter-field"><label for="link-filter">Source URL contains</label><input class="control" id="link-filter" placeholder="x.com/" autocomplete="off"></div><div class="filter-field"><span class="filter-field-label">Current Raindrop location · choose from tree</span><div class="location-filter"><output id="location-filter">Any location</output><button class="filter-clear" id="location-clear" type="button" aria-label="Clear location filter" title="Clear location filter">×</button></div></div><div class="filter-field"><label for="date-filter">Processed on</label><input class="control" id="date-filter" type="date"></div><div class="filter-actions"><button class="control reset-filters" id="reset-filters" type="button">Reset filters</button></div></section>
+<section class="action-bar" id="batch-bar" hidden><strong id="selection-count">0 selected</strong><div class="batch-picker"><input class="control" id="batch-destination-search" role="combobox" aria-label="Batch destination" aria-autocomplete="list" aria-controls="batch-destination-results" aria-expanded="false" autocomplete="off" placeholder="Search Art destinations…"><div class="batch-destination-results" id="batch-destination-results" role="listbox" hidden></div></div><button class="icon-button" id="batch-assign" type="button" aria-label="Assign selected Raindrops" title="Assign selected Raindrops" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h12M13 7l5 5-5 5"/><path d="M5 5v14"/></svg></button><button class="icon-button" id="batch-delete" type="button" aria-label="Delete selected records" title="Mark selected records DELETED" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg></button><button class="icon-button" id="selection-clear" type="button" aria-label="Clear selection" title="Clear selection"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button><span class="action-message" id="batch-message"></span></section>
 <section class="sorter-panel" id="sorter-panel" hidden><div class="sorter-status"><strong id="sorter-state">Loading…</strong><div class="explain" id="sorter-summary">Reading local sorter status</div></div><button class="icon-button" id="process-all" type="button" aria-label="Process all Unsorted Raindrops" title="Process all Unsorted Raindrops"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h7"/><path d="m15 15 3 3 4-5"/></svg></button><button class="icon-button" id="sorter-stop" type="button" aria-label="Stop processing Unsorted Raindrops" title="Stop processing after the current Raindrop"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg></button><button class="icon-button" id="sorter-start" type="button" aria-label="Start automatic sorter" title="Start automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg></button><button class="icon-button" id="sorter-pause" type="button" aria-label="Pause automatic sorter" title="Pause automatic sorter"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5v14M15 5v14"/></svg></button></section>
 <section class="workspace" id="workspace"><aside class="panel library-tree-panel" aria-label="Current Raindrop location filter"><header class="panel-head"><span>Location</span><span id="tree-filter-state">All</span></header><div class="collection-tree" id="collection-tree"><div class="skeleton"></div></div></aside><div class="panel attempt-panel"><div class="panel-head"><span id="list-title">Latest Raindrop status</span><span id="count">—</span></div><div id="attempts" class="attempt-grid"><div class="skeleton"></div><div class="skeleton"></div></div></div><button class="drawer-scrim" id="detail-scrim" type="button" aria-label="Close attempt details" aria-hidden="true" tabindex="-1"></button><aside class="panel detail-panel" id="detail-panel" aria-hidden="true" inert><header class="detail-panel-head"><span>Attempt details</span><button class="icon-button" id="detail-close" type="button" aria-label="Close attempt details" title="Close attempt details"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></header><div id="detail" class="empty">Select a Raindrop to inspect its latest trace.</div></aside></section>
 </main><script>
@@ -452,7 +452,7 @@ function syncFilterControlsFromQuery(query) {
 function updateOutcomeOptions(outcomes, total) {
   const outcomeSelect = select('#outcome');
   const selectedOutcome = outcomeSelect.value;
-  const preferredOrder = ['confirmed', 'provisional', 'review', 'conflict', 'error', 'pending', 'failed'];
+  const preferredOrder = ['confirmed', 'provisional', 'review', 'conflict', 'error', 'deleted', 'pending', 'failed'];
   const outcomeNames = [...new Set([...preferredOrder, ...Object.keys(outcomes)])];
   outcomeSelect.replaceChildren(new Option(`All outcomes · ${total}`, ''));
   outcomeNames.forEach(outcome => {
@@ -500,6 +500,11 @@ function isAssignable(attempt) {
   return select('#scope').value === 'latest'
     && (['review', 'provisional', 'conflict'].includes(attempt.outcome) || retrying);
 }
+function isDeletable(attempt) {
+  return select('#scope').value === 'latest'
+    && Boolean(attempt.ended_at)
+    && attempt.outcome !== 'deleted';
+}
 function discardPinnedRetry() {
   if (!pinnedRetry) return false;
   const attemptId = pinnedRetry.attempt.attempt_id;
@@ -538,13 +543,13 @@ function selectionCheckbox(attempt) {
       selectedAttempts.delete(attempt.attempt_id);
       if (!selectedAttempts.size) selectionAnchorAttemptId = null;
     }
-    if (checkbox.checked) void loadBatchDestinations();
+    if (checkbox.checked && selectedAttemptsAreAssignable()) void loadBatchDestinations();
     syncSelectionUi();
   };
   return checkbox;
 }
 function eligibleRangeTo(attemptId) {
-  const eligibleIds = renderedAttempts.filter(isAssignable).map(item => item.attempt_id);
+  const eligibleIds = renderedAttempts.filter(isDeletable).map(item => item.attempt_id);
   const end = eligibleIds.indexOf(attemptId);
   const start = eligibleIds.indexOf(selectionAnchorAttemptId);
   if (end < 0) return [];
@@ -563,7 +568,7 @@ function handleAttemptActivation(event, attempt) {
     return;
   }
   event.preventDefault();
-  if (!isAssignable(attempt)) return;
+  if (!isDeletable(attempt)) return;
   clearBatchMessage();
   if (event.shiftKey) {
     const range = eligibleRangeTo(attempt.attempt_id);
@@ -594,7 +599,7 @@ function renderCard(attempt) {
   activateAttempt(card, attempt);
   const cover = element('div', 'attempt-cover-wrap card-cover-wrap');
   cover.append(previewImage(attempt.bookmark_id, attempt.title, 'attempt-cover', attempt.cover));
-  if (isAssignable(attempt)) card.append(selectionCheckbox(attempt));
+  if (isDeletable(attempt)) card.append(selectionCheckbox(attempt));
   const body = element('div', 'attempt-body');
   const header = element('div', 'attempt-head');
   const tools = element('div', 'attempt-tools');
@@ -615,7 +620,7 @@ function renderTableRow(attempt) {
     + (selectedAttempts.has(attempt.attempt_id) ? ' selected' : ''));
   activateAttempt(row, attempt);
   const checkCell = element('td');
-  if (isAssignable(attempt)) checkCell.append(selectionCheckbox(attempt));
+  if (isDeletable(attempt)) checkCell.append(selectionCheckbox(attempt));
   const coverCell = element('td');
   const coverWrap = element('div', 'attempt-cover-wrap table-cover-wrap');
   coverWrap.append(previewImage(attempt.bookmark_id, attempt.title, 'table-cover', attempt.cover));
@@ -662,9 +667,9 @@ function renderTable(attempts) {
   const table = element('table', 'attempt-table');
   const head = document.createElement('thead');
   const headRow = document.createElement('tr');
-  const eligible = attempts.filter(isAssignable);
+  const eligible = attempts.filter(isDeletable);
   const selectAll = element('input');
-  selectAll.type = 'checkbox'; selectAll.setAttribute('aria-label', 'Select all assignable Raindrops');
+  selectAll.type = 'checkbox'; selectAll.setAttribute('aria-label', 'Select all records');
   selectAll.checked = eligible.length > 0 && eligible.every(item => selectedAttempts.has(item.attempt_id));
   selectAll.onchange = () => {
     clearBatchMessage();
@@ -729,7 +734,7 @@ function syncSelectionUi() {
   }
   const count = selectedAttempts.size;
   select('#batch-bar').hidden = count === 0;
-  if (count) void loadBatchDestinations();
+  if (count && selectedAttemptsAreAssignable()) void loadBatchDestinations();
   syncBatchControls();
   document.querySelectorAll('.attempt-select').forEach(checkbox => {
     const item = checkbox.closest('[data-attempt-id]');
@@ -740,10 +745,17 @@ function syncSelectionUi() {
     item.classList.toggle('selected', selected);
   });
 }
+function selectedAttemptsAreAssignable() {
+  if (!selectedAttempts.size) return false;
+  const attemptsById = new Map(renderedAttempts.map(attempt => [attempt.attempt_id, attempt]));
+  return [...selectedAttempts].every(attemptId => isAssignable(attemptsById.get(attemptId)));
+}
 function syncBatchControls() {
   const count = selectedAttempts.size;
   select('#selection-count').textContent = `${count} selected`;
-  select('#batch-assign').disabled = !count || !select('#batch-destination-search').dataset.collectionId;
+  select('#batch-assign').disabled = !selectedAttemptsAreAssignable()
+    || !select('#batch-destination-search').dataset.collectionId;
+  select('#batch-delete').disabled = !count;
 }
 function showAttemptsLoading() {
   renderedAttempts = [];
@@ -1258,7 +1270,7 @@ async function loadBatchDestinations() {
 }
 async function assignSelected() {
   const collectionId = Number(select('#batch-destination-search').dataset.collectionId);
-  if (!collectionId || !selectedAttempts.size) return;
+  if (!collectionId || !selectedAttemptsAreAssignable()) return;
   const submittedAttemptIds = new Set(selectedAttempts);
   const submittedAttempts = renderedAttempts.filter(attempt => submittedAttemptIds.has(attempt.attempt_id));
   const previousSelectionAnchorAttemptId = selectionAnchorAttemptId;
@@ -1300,6 +1312,76 @@ async function assignSelected() {
       select('#batch-message').textContent = result.failed
         ? `${result.resolved} assigned · ${result.failed} failed`
         : `${result.resolved} assigned`;
+    }
+    renderCurrentAttempts();
+    refreshDashboardInBackground();
+  } catch (error) {
+    releasePendingAssignments(submittedAttempts);
+    const visibleAttemptIds = new Set(renderedAttempts.map(attempt => attempt.attempt_id));
+    renderedAttempts = [
+      ...submittedAttempts.filter(attempt => !visibleAttemptIds.has(attempt.attempt_id)),
+      ...renderedAttempts,
+    ];
+    submittedAttemptIds.forEach(attemptId => selectedAttempts.add(attemptId));
+    if (!selectionAnchorAttemptId) {
+      selectionAnchorAttemptId = previousSelectionAnchorAttemptId;
+    }
+    renderCurrentAttempts();
+    if (batchMessageGeneration === messageGeneration) {
+      select('#batch-message').textContent = error.message;
+    }
+  }
+}
+async function deleteSelected() {
+  if (!selectedAttempts.size) return;
+  const count = selectedAttempts.size;
+  const noun = count === 1 ? 'record' : 'records';
+  if (!confirm(
+    `Mark ${count} selected Run Journal ${noun} as DELETED? `
+    + 'This does not delete anything from Raindrop.io.'
+  )) return;
+  const submittedAttemptIds = new Set(selectedAttempts);
+  const submittedAttempts = renderedAttempts.filter(
+    attempt => submittedAttemptIds.has(attempt.attempt_id)
+  );
+  const previousSelectionAnchorAttemptId = selectionAnchorAttemptId;
+  const messageGeneration = ++batchMessageGeneration;
+  select('#batch-assign').disabled = true;
+  select('#batch-delete').disabled = true;
+  select('#batch-message').textContent = 'Marking deleted…';
+  if (pinnedRetry && submittedAttemptIds.has(pinnedRetry.attempt.attempt_id)) {
+    pinnedRetry = null;
+  }
+  hidePendingAssignments(submittedAttempts);
+  clearAttemptSelection();
+  renderCurrentAttempts();
+  try {
+    const result = await postJson('/api/attempts/delete-batch', {
+      attempt_ids:[...submittedAttemptIds],
+    });
+    const failedAttemptIds = new Set(result.errors.map(item => item.attempt_id));
+    const successfulAttemptIds = new Set(
+      [...submittedAttemptIds].filter(attemptId => !failedAttemptIds.has(attemptId))
+    );
+    releasePendingAssignments(submittedAttempts);
+    const visibleAttemptIds = new Set(renderedAttempts.map(attempt => attempt.attempt_id));
+    renderedAttempts = [
+      ...submittedAttempts.filter(attempt => (
+        failedAttemptIds.has(attempt.attempt_id)
+        && !visibleAttemptIds.has(attempt.attempt_id)
+      )),
+      ...renderedAttempts,
+    ];
+    failedAttemptIds.forEach(attemptId => selectedAttempts.add(attemptId));
+    if (!selectionAnchorAttemptId) {
+      selectionAnchorAttemptId = selectedAttempts.values().next().value || null;
+    }
+    if (selectedAttemptId && successfulAttemptIds.has(selectedAttemptId)) clearDetail();
+    clearDataCaches();
+    if (batchMessageGeneration === messageGeneration) {
+      select('#batch-message').textContent = result.failed
+        ? `${result.deleted} marked deleted · ${result.failed} failed`
+        : `${result.deleted} marked deleted`;
     }
     renderCurrentAttempts();
     refreshDashboardInBackground();
@@ -1463,6 +1545,7 @@ select('#batch-destination-search').onkeydown = event => {
 };
 select('#batch-destination-search').onblur = () => setTimeout(closeBatchDestinationResults, 100);
 select('#batch-assign').onclick = assignSelected;
+select('#batch-delete').onclick = deleteSelected;
 select('#selection-clear').onclick = () => { clearBatchMessage(); clearAttemptSelection(); renderAttemptResults(); syncSelectionUi(); };
 select('#sorter-toggle').onclick = () => {
   const panel = select('#sorter-panel');

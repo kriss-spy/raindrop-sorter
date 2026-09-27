@@ -93,6 +93,7 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert 'aria-label="Image card layout"' in page
     assert 'aria-label="Table layout"' in page
     assert 'aria-label="Assign selected Raindrops"' in page
+    assert 'aria-label="Delete selected records"' in page
     assert 'role="combobox"' in page
     assert 'placeholder="Search Art destinations…"' in page
     assert 'role="listbox"' in page
@@ -111,9 +112,11 @@ def test_dashboard_serves_browser_app_and_overview(dashboard):
     assert "encodeURIComponent(bookmarkId)}/edit" in page
     assert "setInterval(refreshSorterStatus, 1000)" in page
     assert "/api/attempts/resolve-batch" in page
+    assert "/api/attempts/delete-batch" in page
     assert "/api/sorter/${action}" in page
     assert "Process every actionable Raindrop in Unsorted now?" in page
     assert "Start the automatic sorter?" in page
+    assert "This does not delete anything from Raindrop.io." in page
     assert "updateOutcomeOptions" in page
     assert "All outcomes ·" in page
     assert "Search or use filters" in page
@@ -766,6 +769,59 @@ def test_dashboard_batch_resolution_reports_partial_failure(tmp_path):
         assert result["errors"][0]["retry_attempt"]["mode"] == "manual-review"
         assert result["errors"][0]["retry_attempt"]["current_phase"] == "failed"
         assert result["errors"][0]["retry_attempt"]["outcome"] is None
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_dashboard_marks_selected_records_deleted_without_mutating_raindrop(tmp_path):
+    path = tmp_path / "journal.sqlite"
+    journal = SQLiteRunJournal(path)
+    attempt_ids = []
+    for bookmark_id in (101, 102):
+        attempt = journal.start_attempt(
+            {"_id": bookmark_id, "title": f"Deleted {bookmark_id}"},
+            mode="dry-run",
+        )
+        journal.record_decision(
+            attempt,
+            RouteDecision(
+                bookmark_id=bookmark_id,
+                outcome=RouteOutcome.REVIEW,
+                destination=None,
+                text_evidence=(),
+                visual_evidence=(),
+                summary="Needs review.",
+            ),
+        )
+        journal.complete(attempt, phase="dry_run_completed")
+        attempt_ids.append(attempt.attempt_id)
+
+    server = create_server(path, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        result = _post_json(
+            f"http://127.0.0.1:{server.server_port}/api/attempts/delete-batch",
+            {"attempt_ids": attempt_ids},
+        )
+
+        assert result == {"status": "ok", "deleted": 2, "failed": 0, "errors": []}
+        assert journal.automatic_processing_exclusions() == {101, 102}
+        for bookmark_id, source_attempt_id in zip((101, 102), attempt_ids):
+            trace = journal.explain(bookmark_id)
+            assert trace["attempt"]["outcome"] == "deleted"
+            assert trace["attempt"]["current_phase"] == "applied"
+            assert trace["attempt"]["mode"] == "manual-delete"
+            assert trace["attempt"]["decision"]["summary"] == (
+                "Marked deleted because the Raindrop no longer exists."
+            )
+            assert trace["actions"][0]["action_kind"] == "mark_raindrop_deleted"
+            assert trace["actions"][0]["request_count"] == 0
+            assert trace["actions"][0]["payload"]["source_attempt_id"] == (
+                source_attempt_id
+            )
     finally:
         server.shutdown()
         server.server_close()

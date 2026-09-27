@@ -19,6 +19,15 @@ from src.state_machine import is_remote_lifecycle_tag
 
 SCHEMA_VERSION = 2
 AUTOMATIC_ATTEMPT_LEASE_SECONDS = 60 * 60
+MUTATING_ATTEMPT_MODES = (
+    "apply",
+    "manual-review",
+    "legacy-tag-migration",
+    "manual-delete",
+)
+_MUTATING_ATTEMPT_MODES_SQL = ", ".join(
+    repr(mode) for mode in MUTATING_ATTEMPT_MODES
+)
 _LATEST_ATTEMPTS_CTE = """
     WITH latest_attempts AS (
         SELECT *, ROW_NUMBER() OVER (
@@ -686,10 +695,10 @@ class SQLiteRunJournal:
         """Return whether latest database state matches the legacy state exactly."""
         with self._connect() as connection:
             row = connection.execute(
-                """
+                f"""
                 SELECT current_phase, outcome, destination FROM attempts
                 WHERE bookmark_id = ?
-                  AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                  AND mode IN ({_MUTATING_ATTEMPT_MODES_SQL})
                 ORDER BY started_at DESC, attempt_id DESC
                 LIMIT 1
                 """,
@@ -706,14 +715,14 @@ class SQLiteRunJournal:
         """Return bookmarks whose latest database-backed mutation is complete."""
         with self._connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 WITH mutating_attempts AS (
                     SELECT *, ROW_NUMBER() OVER (
                         PARTITION BY bookmark_id
                         ORDER BY started_at DESC, attempt_id DESC
                     ) AS bookmark_rank
                     FROM attempts
-                    WHERE mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                    WHERE mode IN ({_MUTATING_ATTEMPT_MODES_SQL})
                 )
                 SELECT bookmark_id FROM mutating_attempts
                 WHERE bookmark_rank = 1 AND current_phase = 'applied'
@@ -729,7 +738,7 @@ class SQLiteRunJournal:
         ).isoformat()
         with self._connect() as connection:
             rows = connection.execute(
-                """
+                f"""
                 WITH mutating_attempts AS (
                     SELECT attempts.*,
                            COALESCE(claim_heartbeat_at, started_at) AS last_activity_at,
@@ -738,7 +747,7 @@ class SQLiteRunJournal:
                         ORDER BY started_at DESC, attempt_id DESC
                     ) AS bookmark_rank
                     FROM attempts
-                    WHERE mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                    WHERE mode IN ({_MUTATING_ATTEMPT_MODES_SQL})
                 )
                 SELECT bookmark_id FROM mutating_attempts
                 WHERE bookmark_rank = 1
@@ -775,12 +784,12 @@ class SQLiteRunJournal:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             latest = connection.execute(
-                """
+                f"""
                 SELECT current_phase, mode, started_at,
                        COALESCE(claim_heartbeat_at, started_at) AS last_activity_at
                 FROM attempts
                 WHERE bookmark_id = ?
-                  AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                  AND mode IN ({_MUTATING_ATTEMPT_MODES_SQL})
                 ORDER BY started_at DESC, attempt_id DESC
                 LIMIT 1
                 """,
@@ -834,10 +843,10 @@ class SQLiteRunJournal:
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             latest = connection.execute(
-                """
+                f"""
                 SELECT attempt_id FROM attempts
                 WHERE bookmark_id = ?
-                  AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                  AND mode IN ({_MUTATING_ATTEMPT_MODES_SQL})
                 ORDER BY started_at DESC, attempt_id DESC
                 LIMIT 1
                 """,
@@ -871,7 +880,7 @@ class SQLiteRunJournal:
         """Refresh an active automatic claim without changing its lifecycle phase."""
         with self._connect() as connection:
             cursor = connection.execute(
-                """
+                f"""
                 UPDATE attempts SET claim_heartbeat_at = ?
                 WHERE attempt_id = ? AND bookmark_id = ?
                   AND mode = 'apply'
@@ -879,7 +888,7 @@ class SQLiteRunJournal:
                   AND attempt_id = (
                       SELECT attempt_id FROM attempts
                       WHERE bookmark_id = ?
-                        AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                        AND mode IN ({_MUTATING_ATTEMPT_MODES_SQL})
                       ORDER BY started_at DESC, attempt_id DESC
                       LIMIT 1
                   )
@@ -894,10 +903,10 @@ class SQLiteRunJournal:
             if cursor.rowcount == 1:
                 return True
             latest = connection.execute(
-                """
+                f"""
                 SELECT attempt_id, current_phase FROM attempts
                 WHERE bookmark_id = ?
-                  AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                  AND mode IN ({_MUTATING_ATTEMPT_MODES_SQL})
                 ORDER BY started_at DESC, attempt_id DESC
                 LIMIT 1
                 """,
@@ -934,10 +943,10 @@ class SQLiteRunJournal:
         )
         with self._connect() as connection:
             latest = connection.execute(
-                """
+                f"""
                 SELECT current_phase, outcome, destination FROM attempts
                 WHERE bookmark_id = ?
-                  AND mode IN ('apply', 'manual-review', 'legacy-tag-migration')
+                  AND mode IN ({_MUTATING_ATTEMPT_MODES_SQL})
                 ORDER BY started_at DESC, attempt_id DESC
                 LIMIT 1
                 """,
