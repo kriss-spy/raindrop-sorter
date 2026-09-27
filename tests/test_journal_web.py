@@ -357,7 +357,20 @@ def test_dashboard_exposes_live_collection_tree_and_bookmark_pages(tmp_path):
             return {"result": True}
 
     path = tmp_path / "journal.sqlite"
-    SQLiteRunJournal(path)
+    journal = SQLiteRunJournal(path)
+    recent = journal.start_attempt({"_id": 777}, mode="manual-review")
+    journal.record_decision(
+        recent,
+        RouteDecision(
+            bookmark_id=777,
+            outcome=RouteOutcome.CONFIRMED,
+            destination="Art/Miku",
+            text_evidence=(),
+            visual_evidence=(),
+            summary="Assigned to Art/Miku.",
+        ),
+    )
+    journal.complete(recent)
     server = create_server(
         path,
         host="127.0.0.1",
@@ -370,6 +383,7 @@ def test_dashboard_exposes_live_collection_tree_and_bookmark_pages(tmp_path):
     try:
         tree = _json(f"{base_url}/api/library/tree")
         assert tree["groups"][1]["collections"][0]["children"][0]["path"] == "Art/Miku"
+        assert tree["recent_assignment_destinations"][0]["path"] == "Art/Miku"
 
         page = _json(
             f"{base_url}/api/library/bookmarks?collection_id=11&page=1&per_page=25"

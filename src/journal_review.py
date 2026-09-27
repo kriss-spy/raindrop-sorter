@@ -167,13 +167,30 @@ class JournalReviewService:
                 self.client.get_collections(),
                 self.client.get_collection_groups(),
             )
-            return sorted(
+            recency = {
+                item["path"]: item["last_assigned_at"]
+                for item in self.journal.recent_manual_destinations()
+            }
+            items = sorted(
                 (
-                    {"collection_id": collection_id, "path": path}
+                    {
+                        "collection_id": collection_id,
+                        "path": path,
+                        **(
+                            {"last_assigned_at": recency[path]}
+                            if path in recency
+                            else {}
+                        ),
+                    }
                     for path, collection_id in folder_map.items()
                     if is_manual_assignment_destination(path)
                 ),
                 key=lambda item: item["path"].casefold(),
+            )
+            return sorted(
+                items,
+                key=lambda item: item.get("last_assigned_at", ""),
+                reverse=True,
             )
 
     def resolve(

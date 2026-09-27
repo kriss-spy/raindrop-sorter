@@ -390,6 +390,29 @@ class SQLiteRunJournal:
             ).fetchone()
             return self._trace(connection, row)
 
+    def recent_manual_destinations(self) -> list[dict[str, str]]:
+        """Return successful review destinations ordered by latest manual use."""
+        with self._connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT destination AS path, MAX(started_at) AS last_assigned_at
+                FROM attempts
+                WHERE mode = 'manual-review'
+                  AND outcome = 'confirmed'
+                  AND current_phase = 'applied'
+                  AND destination IS NOT NULL
+                GROUP BY destination
+                ORDER BY last_assigned_at DESC, destination COLLATE NOCASE
+                """
+            ).fetchall()
+        return [
+            {
+                "path": str(row["path"]),
+                "last_assigned_at": str(row["last_assigned_at"]),
+            }
+            for row in rows
+        ]
+
     def recent(
         self,
         *,

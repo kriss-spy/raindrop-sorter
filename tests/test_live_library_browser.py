@@ -1550,3 +1550,36 @@ def test_detail_drawer_uses_loaded_tree_when_collection_endpoint_fails(
         assert collection_requests == []
 
         browser.close()
+
+
+def test_detail_review_locations_are_sorted_by_recent_manual_use(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.locator("#collection-tree .collection-select").first.wait_for()
+        page.evaluate(
+            """
+            () => {
+              const group = collectionTreeGroups.find(item => item.title === 'Library');
+              group.title = 'Art';
+              recentAssignmentDestinations = [
+                {path:'Art/Root/Child', last_assigned_at:'2026-09-27T12:00:00+00:00'},
+                {path:'Art/Root', last_assigned_at:'2026-09-27T11:00:00+00:00'},
+              ];
+            }
+            """
+        )
+        attempt_id = page.locator("[data-attempt-id]").first.get_attribute(
+            "data-attempt-id"
+        )
+        page.evaluate("id => openAttempt(id)", attempt_id)
+
+        choices = page.locator("#detail .collection-results .choice")
+        choices.first.wait_for()
+        assert choices.all_text_contents()[:2] == ["Art/Root/Child", "Art/Root"]
+
+        browser.close()

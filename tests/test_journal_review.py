@@ -124,6 +124,43 @@ def test_review_service_lists_assignment_collections_in_supported_groups(tmp_pat
     assert service.client.collection_reads == 2
 
 
+def test_review_service_ranks_assignment_collections_by_recent_manual_use(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    for bookmark_id, destination, started_at in (
+        (1, "Art/TOUHOU", "2026-09-27T10:00:00+00:00"),
+        (2, "Art/MIKU", "2026-09-27T11:00:00+00:00"),
+    ):
+        attempt = journal.start_attempt({"_id": bookmark_id}, mode="manual-review")
+        journal.record_decision(
+            attempt,
+            RouteDecision(
+                bookmark_id=bookmark_id,
+                outcome=RouteOutcome.CONFIRMED,
+                destination=destination,
+                text_evidence=(),
+                visual_evidence=(),
+                summary=f"Assigned to {destination}.",
+            ),
+        )
+        journal.complete(attempt)
+        with journal._connect() as connection:
+            connection.execute(
+                "UPDATE attempts SET started_at = ? WHERE attempt_id = ?",
+                (started_at, attempt.attempt_id),
+            )
+
+    items = JournalReviewService(journal, FakeReviewClient()).assignment_collections()
+
+    assert [item["path"] for item in items[:3]] == [
+        "Art/MIKU",
+        "Art/TOUHOU",
+        "Art/TOUHOU/Portraits",
+    ]
+    assert items[0]["last_assigned_at"] == "2026-09-27T11:00:00+00:00"
+    assert items[1]["last_assigned_at"] == "2026-09-27T10:00:00+00:00"
+    assert items[2].get("last_assigned_at") is None
+
+
 def test_review_service_resolves_conflict_as_new_confirmed_attempt(tmp_path):
     journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
     original = _seed_conflict(journal)

@@ -469,6 +469,51 @@ def test_recent_excludes_stale_skip_before_applying_limit(tmp_path):
     assert [item["bookmark_id"] for item in recent] == [123]
 
 
+def test_recent_manual_destinations_rank_successful_assignments_by_latest_use(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+
+    def record_assignment(bookmark_id, destination, started_at, *, mode="manual-review"):
+        attempt = journal.start_attempt({"_id": bookmark_id}, mode=mode)
+        journal.record_decision(
+            attempt,
+            RouteDecision(
+                bookmark_id=bookmark_id,
+                outcome=RouteOutcome.CONFIRMED,
+                destination=destination,
+                text_evidence=(),
+                visual_evidence=(),
+                summary=f"Assigned to {destination}.",
+            ),
+        )
+        journal.complete(attempt)
+        with journal._connect() as connection:
+            connection.execute(
+                "UPDATE attempts SET started_at = ? WHERE attempt_id = ?",
+                (started_at, attempt.attempt_id),
+            )
+
+    record_assignment(1, "Art/TOUHOU", "2026-09-27T10:00:00+00:00")
+    record_assignment(2, "Art/MIKU", "2026-09-27T11:00:00+00:00")
+    record_assignment(3, "Art/TOUHOU", "2026-09-27T12:00:00+00:00")
+    record_assignment(
+        4,
+        "Art/GAMES/BA",
+        "2026-09-27T13:00:00+00:00",
+        mode="apply",
+    )
+
+    assert journal.recent_manual_destinations() == [
+        {
+            "path": "Art/TOUHOU",
+            "last_assigned_at": "2026-09-27T12:00:00+00:00",
+        },
+        {
+            "path": "Art/MIKU",
+            "last_assigned_at": "2026-09-27T11:00:00+00:00",
+        },
+    ]
+
+
 def test_overview_keeps_failed_and_pending_manual_reviews_separate(tmp_path):
     journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
     failed = journal.start_attempt(

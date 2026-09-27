@@ -103,6 +103,7 @@ let batchDestinationWantsOpen = false;
 let batchMessageGeneration = 0;
 const expandedCollectionsStorageKey = 'sorter-library-expanded-collections';
 let collectionTreeGroups = [];
+let recentAssignmentDestinations = [];
 let journalSearchValue = '';
 let freeSearchValue = '';
 let selectedLocationPath = '';
@@ -228,6 +229,23 @@ function assignmentCollectionsFromTree() {
     group.collections || []
   ).forEach(node => visit(group, node)));
   return collections;
+}
+function rankAssignmentCollections(collections) {
+  const recentByPath = new Map(
+    recentAssignmentDestinations.map(item => [item.path, item.last_assigned_at])
+  );
+  return [...collections].sort((left, right) => {
+    const leftRecent = left.last_assigned_at || recentByPath.get(left.path) || '';
+    const rightRecent = right.last_assigned_at || recentByPath.get(right.path) || '';
+    if (leftRecent !== rightRecent) return rightRecent.localeCompare(leftRecent);
+    return left.path.localeCompare(right.path, undefined, {sensitivity:'base'});
+  });
+}
+function rememberAssignmentDestination(path) {
+  recentAssignmentDestinations = [
+    {path, last_assigned_at:new Date().toISOString()},
+    ...recentAssignmentDestinations.filter(item => item.path !== path),
+  ];
 }
 function assignmentCollections() {
   const treeCollections = assignmentCollectionsFromTree();
@@ -923,7 +941,7 @@ async function renderResolution(trace, detailPanel) {
   section.append(element('div', 'explain', customOnly ? 'Search and choose a collection in the Art, Goods, Image, Post, or Video group. Nothing moves until you press Move & confirm.' : 'Choose an evidence destination or any collection in the Art, Goods, Image, Post, or Video group. Nothing moves until you press Move & confirm.'));
   detailPanel.append(section);
   try {
-    const collections = await assignmentCollections();
+    const collections = rankAssignmentCollections(await assignmentCollections());
     const byPath = new Map(collections.map(item => [item.path, item]));
     let selectedCollection = null;
     const allChoiceButtons = [];
@@ -1007,6 +1025,7 @@ async function renderResolution(trace, detailPanel) {
           selection_source:selectionSource,
           confirmed_correction:attempt.outcome === 'confirmed',
         });
+        rememberAssignmentDestination(selectedCollection.path);
         releasePendingAssignments([submittedAttempt]);
         attemptTraceCache.delete(attempt.attempt_id);
         assignmentCollectionsPromise = null;
@@ -1194,6 +1213,7 @@ function renderCollectionTree() {
 async function loadCollectionTree() {
   try {
     const result = await fetchJson('/api/library/tree');
+    recentAssignmentDestinations = result.recent_assignment_destinations || [];
     collectionTreeGroups = result.groups || [];
     selectedLocationCollectionId = collectionIdForLocationPath(selectedLocationPath);
     renderCollectionTree();
@@ -1323,6 +1343,9 @@ async function assignSelected() {
     const successfulAttemptIds = new Set(
       [...submittedAttemptIds].filter(attemptId => !failedAttempts.has(attemptId))
     );
+    if (successfulAttemptIds.size) {
+      rememberAssignmentDestination(select('#batch-destination-search').value);
+    }
     const failedCards = submittedAttempts.flatMap(attempt => {
       const failure = failedAttempts.get(attempt.attempt_id);
       return failure?.retry_attempt ? [failure.retry_attempt] : [];

@@ -163,6 +163,9 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         except Exception as error:
             self._send_library_upstream_error("load live collection tree", error)
             return
+        tree["recent_assignment_destinations"] = (
+            self.server.journal.recent_manual_destinations()
+        )
         self._send_json(HTTPStatus.OK, tree)
 
     def _library_bookmarks(self, query: dict[str, list[str]]) -> None:
