@@ -145,6 +145,35 @@ def test_collection_tree_filters_journal_by_exact_destination(destination_filter
         browser.close()
 
 
+def test_all_bookmarks_clears_location_filter_without_remote_membership_fetch(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+
+        root_row = page.locator(".collection-row").filter(
+            has=page.locator('.collection-select[title="Library/Root"]')
+        )
+        root_row.locator(".collection-toggle").click()
+        page.locator('.collection-select[title="Library/Root/Child"]').click()
+        page.get_by_text("Child result", exact=True).wait_for()
+
+        page.locator('.collection-select[title="All bookmarks"]').click()
+        page.get_by_text("Root result", exact=True).wait_for()
+
+        assert page.locator("#search").input_value() == ""
+        assert page.locator("#location-filter").text_content() == "Any location"
+        assert page.locator("#tree-filter-state").text_content() == "All"
+        assert destination_filter_dashboard.client.raindrop_fetches == [
+            (11, 0, None, None)
+        ]
+
+        browser.close()
+
+
 def test_location_filter_scopes_outcome_selector_counts(destination_filter_dashboard):
     with playwright.sync_playwright() as runtime:
         browser = runtime.chromium.launch(headless=True)

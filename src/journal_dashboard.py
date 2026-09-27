@@ -107,6 +107,7 @@ let journalSearchValue = '';
 let freeSearchValue = '';
 let selectedLocationPath = '';
 let selectedLocationCollectionId = null;
+const allBookmarksCollectionId = 0;
 let overviewRenderGeneration = 0;
 let attemptsRenderGeneration = 0;
 let activeForegroundAttemptsRenderGeneration = null;
@@ -1125,7 +1126,8 @@ function collectionIdForLocationPath(locationPath) {
 }
 function selectLocationCollection(node, locationPath) {
   discardPinnedRetry();
-  const clearing = selectedLocationPath === locationPath;
+  const clearing = Number(node.id) === allBookmarksCollectionId
+    || selectedLocationPath === locationPath;
   selectedLocationPath = clearing ? '' : locationPath;
   selectedLocationCollectionId = clearing ? null : Number(node.id);
   syncQueryFromFilterControls();
