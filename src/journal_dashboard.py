@@ -504,7 +504,18 @@ function isAssignable(attempt) {
   const retrying = attempt.mode === 'manual-review' && !attempt.outcome
     && ['failed', 'manual_destination_selected'].includes(attempt.current_phase);
   return select('#scope').value === 'latest'
-    && (['review', 'provisional', 'conflict'].includes(attempt.outcome) || retrying);
+    && (['confirmed', 'review', 'provisional', 'conflict'].includes(attempt.outcome) || retrying);
+}
+function confirmConfirmedCorrections(attempts, destination) {
+  const confirmedCount = attempts.filter(attempt => attempt.outcome === 'confirmed').length;
+  if (!confirmedCount) return true;
+  const recordNoun = confirmedCount === 1 ? 'record' : 'records';
+  const raindropNoun = attempts.length === 1 ? 'Raindrop' : 'Raindrops';
+  return confirm(
+    `This selection includes ${confirmedCount} confirmed ${recordNoun}. `
+    + `Reassign all ${attempts.length} selected ${raindropNoun} to ${destination}? `
+    + 'A new manual-review attempt will preserve prior history.'
+  );
 }
 function isDeletable(attempt) {
   return select('#scope').value === 'latest'
@@ -904,11 +915,11 @@ function evidenceDestinations(items) {
 async function renderResolution(trace, detailPanel) {
   const attempt = trace.attempt;
   const retrying = attempt.mode === 'manual-review' && !attempt.outcome && ['failed', 'manual_destination_selected'].includes(attempt.current_phase);
-  if ((!['review', 'provisional', 'conflict'].includes(attempt.outcome) && !retrying) || select('#scope').value !== 'latest') return;
+  if ((!['confirmed', 'review', 'provisional', 'conflict'].includes(attempt.outcome) && !retrying) || select('#scope').value !== 'latest') return;
   const previous = retrying ? [...trace.events].reverse().find(event => event.phase === 'manual_destination_selected')?.payload : null;
-  const customOnly = attempt.outcome === 'review' || Boolean(previous?.custom_only);
+  const customOnly = ['confirmed', 'review'].includes(attempt.outcome) || Boolean(previous?.custom_only);
   const section = element('section', 'resolution');
-  section.append(element('h3', '', retrying ? (attempt.current_phase === 'failed' ? 'Retry failed review' : 'Resume interrupted review') : attempt.outcome === 'review' ? 'Assign destination' : attempt.outcome === 'conflict' ? 'Resolve conflict' : 'Approve provisional route'));
+  section.append(element('h3', '', retrying ? (attempt.current_phase === 'failed' ? 'Retry failed review' : 'Resume interrupted review') : attempt.outcome === 'confirmed' ? 'Correct confirmed destination' : attempt.outcome === 'review' ? 'Assign destination' : attempt.outcome === 'conflict' ? 'Resolve conflict' : 'Approve provisional route'));
   section.append(element('div', 'explain', customOnly ? 'Search and choose a collection in the Art, Goods, Image, or Video group. Nothing moves until you press Move & confirm.' : 'Choose an evidence destination or any collection in the Art, Goods, Image, or Video group. Nothing moves until you press Move & confirm.'));
   detailPanel.append(section);
   try {
@@ -979,7 +990,9 @@ async function renderResolution(trace, detailPanel) {
       ) || {
         attempt_id: attempt.attempt_id,
         bookmark_id: attempt.bookmark_id,
+        outcome: attempt.outcome,
       };
+      if (!confirmConfirmedCorrections([submittedAttempt], selectedCollection.path)) return;
       applyButton.disabled = true; search.disabled = true; errorBox.textContent = '';
       applyButton.textContent = 'Applying…';
       if (pinnedRetry?.attempt.attempt_id === attempt.attempt_id) pinnedRetry = null;
@@ -989,7 +1002,11 @@ async function renderResolution(trace, detailPanel) {
       clearDetail();
       renderCurrentAttempts();
       try {
-        await postJson(`/api/attempts/${encodeURIComponent(attempt.attempt_id)}/resolve`, {collection_id:selectedCollection.collection_id, selection_source:selectionSource});
+        await postJson(`/api/attempts/${encodeURIComponent(attempt.attempt_id)}/resolve`, {
+          collection_id:selectedCollection.collection_id,
+          selection_source:selectionSource,
+          confirmed_correction:attempt.outcome === 'confirmed',
+        });
         releasePendingAssignments([submittedAttempt]);
         attemptTraceCache.delete(attempt.attempt_id);
         assignmentCollectionsPromise = null;
@@ -1280,6 +1297,11 @@ async function assignSelected() {
   if (!collectionId || !selectedAttemptsAreAssignable()) return;
   const submittedAttemptIds = new Set(selectedAttempts);
   const submittedAttempts = renderedAttempts.filter(attempt => submittedAttemptIds.has(attempt.attempt_id));
+  const confirmedCorrection = submittedAttempts.some(attempt => attempt.outcome === 'confirmed');
+  if (!confirmConfirmedCorrections(
+    submittedAttempts,
+    select('#batch-destination-search').value
+  )) return;
   const previousSelectionAnchorAttemptId = selectionAnchorAttemptId;
   const messageGeneration = ++batchMessageGeneration;
   const button = select('#batch-assign');
@@ -1293,7 +1315,9 @@ async function assignSelected() {
   renderCurrentAttempts();
   try {
     const result = await postJson('/api/attempts/resolve-batch', {
-      attempt_ids:[...submittedAttemptIds], collection_id:collectionId,
+      attempt_ids:[...submittedAttemptIds],
+      collection_id:collectionId,
+      confirmed_correction:confirmedCorrection,
     });
     const failedAttempts = new Map(result.errors.map(item => [item.attempt_id, item]));
     const successfulAttemptIds = new Set(

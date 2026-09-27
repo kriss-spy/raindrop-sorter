@@ -1,6 +1,7 @@
 import pytest
 
 from src.journal_review import (
+    IneligibleReviewAttempt,
     InvalidReviewDestination,
     JournalReviewService,
     StaleReviewAttempt,
@@ -149,6 +150,52 @@ def test_review_service_resolves_conflict_as_new_confirmed_attempt(tmp_path):
     assert trace["attempt"]["destination"] == "Art/TOUHOU"
     assert trace["actions"][0]["status"] == "succeeded"
     assert trace["actions"][0]["payload"]["selection_source"] == "text"
+
+
+def test_review_service_corrects_confirmed_as_new_manual_review_attempt(tmp_path):
+    journal = SQLiteRunJournal(tmp_path / "journal.sqlite")
+    original = _seed_conflict(journal)
+    client = FakeReviewClient()
+    service = JournalReviewService(journal, client)
+    confirmed = service.resolve(
+        original.attempt_id,
+        collection_id=10,
+        selection_source="text",
+    )
+
+    with pytest.raises(InvalidReviewDestination, match="confirmed corrections"):
+        service.resolve(
+            confirmed["attempt_id"],
+            collection_id=12,
+            selection_source="visual",
+            confirmed_correction=True,
+        )
+
+    with pytest.raises(IneligibleReviewAttempt, match="explicit confirmation"):
+        service.resolve(
+            confirmed["attempt_id"],
+            collection_id=12,
+            selection_source="custom",
+        )
+
+    corrected = service.resolve(
+        confirmed["attempt_id"],
+        collection_id=12,
+        selection_source="custom",
+        confirmed_correction=True,
+    )
+
+    assert corrected["attempt_id"] != confirmed["attempt_id"]
+    assert corrected["outcome"] == "confirmed"
+    assert corrected["destination"] == "Art/MIKU"
+    assert client.updates[-1][0:2] == (123, 12)
+    original_confirmation = journal.explain_attempt(confirmed["attempt_id"])
+    assert original_confirmation["attempt"]["outcome"] == "confirmed"
+    assert original_confirmation["attempt"]["destination"] == "Art/TOUHOU"
+    latest = journal.explain(123)["attempt"]
+    assert latest["attempt_id"] == corrected["attempt_id"]
+    assert latest["mode"] == "manual-review"
+    assert latest["destination"] == "Art/MIKU"
 
 
 def test_review_service_refreshes_learning_after_successful_assignment(tmp_path):

@@ -570,6 +570,26 @@ def test_dashboard_exposes_assignment_picker_and_resolves_attempt(tmp_path):
         )
         assert moved["items"][0]["bookmark_id"] == 123
         assert client.membership_reads == 1
+
+        with pytest.raises(HTTPError) as missing_confirmation:
+            _post_json(
+                f"{base_url}/api/attempts/{resolved['attempt_id']}/resolve",
+                {"collection_id": 30, "selection_source": "custom"},
+            )
+        assert missing_confirmation.value.code == 409
+        corrected = _post_json(
+            f"{base_url}/api/attempts/{resolved['attempt_id']}/resolve",
+            {
+                "collection_id": 30,
+                "selection_source": "custom",
+                "confirmed_correction": True,
+            },
+        )
+        assert corrected["destination"] == "Image/REFERENCE"
+        assert client.updates[-1][0:2] == (123, 30)
+        first_confirmation = journal.explain_attempt(resolved["attempt_id"])
+        assert first_confirmation["attempt"]["destination"] == "Art/TOUHOU"
+        assert journal.explain(123)["attempt"]["destination"] == "Image/REFERENCE"
     finally:
         server.shutdown()
         server.server_close()

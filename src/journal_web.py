@@ -266,6 +266,7 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
                     attempt_id,
                     collection_id=int(payload["collection_id"]),
                     selection_source=str(payload.get("selection_source", "custom")),
+                    confirmed_correction=payload.get("confirmed_correction") is True,
                 )
                 if self.server.live_library is not None:
                     self.server.live_library.record_move(
@@ -307,6 +308,7 @@ class JournalRequestHandler(BaseHTTPRequestHandler):
         result = self.server.reviewer.resolve_batch(
             attempt_ids,
             collection_id=collection_id,
+            confirmed_correction=payload.get("confirmed_correction") is True,
         )
         if self.server.live_library is not None:
             for resolved in result["results"]:

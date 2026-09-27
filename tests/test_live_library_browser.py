@@ -351,6 +351,71 @@ def test_batch_assignment_clears_successful_cards_before_background_refresh(
         browser.close()
 
 
+def test_batch_correction_of_confirmed_record_requires_confirmation(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            () => {
+              renderedAttempts[0].outcome = 'confirmed';
+              renderedAttempts[0].destination = 'Art/TOUHOU';
+              renderCurrentAttempts();
+              window.confirmedCorrectionRequests = 0;
+              const originalFetch = window.fetch.bind(window);
+              window.fetch = (url, options = {}) => {
+                if (String(url) === '/api/attempts/resolve-batch') {
+                  window.confirmedCorrectionRequests += 1;
+                  window.confirmedCorrectionPayload = JSON.parse(options.body);
+                  return Promise.resolve(new Response(JSON.stringify({
+                    status: 'ok', resolved: 1, failed: 0, results: [], errors: [],
+                  }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                }
+                if (String(url).startsWith('/api/overview') || String(url).startsWith('/api/attempts?')) {
+                  return new Promise(() => {});
+                }
+                return originalFetch(url, options);
+              };
+            }
+            """
+        )
+
+        page.locator(".attempt-select").first.check()
+        page.evaluate(
+            """
+            () => {
+              const destination = document.querySelector('#batch-destination-search');
+              destination.dataset.collectionId = '11';
+              destination.value = 'Art/TOUHOU/Portraits';
+              syncSelectionUi();
+            }
+            """
+        )
+        assert page.locator("#batch-assign").is_enabled()
+
+        dismissed = []
+        page.once("dialog", lambda dialog: (dismissed.append(dialog.message), dialog.dismiss()))
+        page.locator("#batch-assign").click()
+        page.wait_for_timeout(100)
+
+        assert "1 confirmed record" in dismissed[0]
+        assert "manual-review" in dismissed[0]
+        assert page.evaluate("window.confirmedCorrectionRequests") == 0
+        assert page.locator(".attempt-select").first.is_checked()
+
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.locator("#batch-assign").click()
+        page.wait_for_function("() => window.confirmedCorrectionRequests === 1")
+        assert page.evaluate("window.confirmedCorrectionPayload.confirmed_correction") is True
+
+        browser.close()
+
+
 def test_batch_assignment_lists_supported_destination_groups(
     destination_filter_dashboard,
 ):
@@ -778,6 +843,88 @@ def test_detail_assignment_closes_and_removes_card_before_request_finishes(
         assert page.locator("[data-attempt-id]").count() == 1
 
         page.evaluate("window.resolveDetailAssignment()")
+        browser.close()
+
+
+def test_detail_correction_of_confirmed_record_requires_confirmation(
+    destination_filter_dashboard,
+):
+    with playwright.sync_playwright() as runtime:
+        browser = runtime.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.set_default_timeout(5_000)
+        page.goto(destination_filter_dashboard.url)
+        page.get_by_text("Root result", exact=True).wait_for()
+        page.evaluate(
+            """
+            async () => {
+              const attempt = renderedAttempts.find(item => item.title === 'Root result');
+              const trace = await fetchJson('/api/attempts/' + encodeURIComponent(attempt.attempt_id));
+              attempt.outcome = 'confirmed';
+              attempt.destination = 'Art/TOUHOU';
+              trace.attempt.outcome = 'confirmed';
+              trace.attempt.destination = 'Art/TOUHOU';
+              attemptTraceCache.set(attempt.attempt_id, {
+                value: trace,
+                expiresAt: Date.now() + 15_000,
+              });
+              renderCurrentAttempts();
+              window.confirmedDetailCorrectionRequests = 0;
+              const originalFetch = window.fetch.bind(window);
+              window.fetch = (url, options = {}) => {
+                if (String(url) === '/api/review/collections') {
+                  return Promise.resolve(new Response(JSON.stringify({
+                    items: [{collection_id: 11, path: 'Art/TOUHOU/Portraits'}],
+                  }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                }
+                if (String(url).endsWith('/resolve')) {
+                  window.confirmedDetailCorrectionRequests += 1;
+                  window.confirmedDetailCorrectionPayload = JSON.parse(options.body);
+                  return Promise.resolve(new Response(JSON.stringify({
+                    attempt_id: 'corrected-attempt',
+                  }), {status: 200, headers: {'Content-Type': 'application/json'}}));
+                }
+                if (String(url).startsWith('/api/overview') || String(url).startsWith('/api/attempts?')) {
+                  return new Promise(() => {});
+                }
+                return originalFetch(url, options);
+              };
+            }
+            """
+        )
+
+        page.get_by_text("Root result", exact=True).click()
+        page.get_by_role("heading", name="Correct confirmed destination").wait_for()
+        page.get_by_role("button", name="Art/TOUHOU/Portraits", exact=True).click()
+
+        dismissed = []
+        page.once("dialog", lambda dialog: (dismissed.append(dialog.message), dialog.dismiss()))
+        page.get_by_role(
+            "button",
+            name="Move & confirm → Art/TOUHOU/Portraits",
+            exact=True,
+        ).click()
+        page.wait_for_timeout(100)
+
+        assert "confirmed record" in dismissed[0]
+        assert "manual-review" in dismissed[0]
+        assert page.evaluate("window.confirmedDetailCorrectionRequests") == 0
+        assert page.locator("#detail-panel").get_attribute("aria-hidden") == "false"
+
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.get_by_role(
+            "button",
+            name="Move & confirm → Art/TOUHOU/Portraits",
+            exact=True,
+        ).click()
+        page.wait_for_function("() => window.confirmedDetailCorrectionRequests === 1")
+        assert (
+            page.evaluate(
+                "window.confirmedDetailCorrectionPayload.confirmed_correction"
+            )
+            is True
+        )
+
         browser.close()
 
 

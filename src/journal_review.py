@@ -182,12 +182,14 @@ class JournalReviewService:
         *,
         collection_id: int,
         selection_source: str = "custom",
+        confirmed_correction: bool = False,
     ) -> dict[str, Any]:
         collection = self._assignment_destination(collection_id)
         result = self._resolve_validated(
             attempt_id,
             collection=collection,
             selection_source=selection_source,
+            confirmed_correction=confirmed_correction,
         )
         result["learning"] = self._refresh_learning()
         return result
@@ -197,6 +199,7 @@ class JournalReviewService:
         attempt_ids: list[str],
         *,
         collection_id: int,
+        confirmed_correction: bool = False,
     ) -> dict[str, Any]:
         """Resolve a batch after validating its shared destination once."""
         collection = self._assignment_destination(collection_id)
@@ -211,6 +214,7 @@ class JournalReviewService:
                         attempt_id,
                         collection=collection,
                         selection_source="custom",
+                        confirmed_correction=confirmed_correction,
                     )
                 )
             except Exception as error:
@@ -287,6 +291,7 @@ class JournalReviewService:
         *,
         collection: dict[str, Any],
         selection_source: str,
+        confirmed_correction: bool,
     ) -> dict[str, Any]:
         with self._lock:
             trace = self.journal.explain_attempt(attempt_id)
@@ -305,14 +310,22 @@ class JournalReviewService:
                 and original.get("current_phase")
                 in {"failed", "manual_destination_selected"}
             )
+            if (
+                original.get("outcome") == RouteOutcome.CONFIRMED.value
+                and not confirmed_correction
+            ):
+                raise IneligibleReviewAttempt(
+                    "confirmed correction requires explicit confirmation"
+                )
             if original.get("outcome") not in {
+                RouteOutcome.CONFIRMED.value,
                 RouteOutcome.PROVISIONAL.value,
                 RouteOutcome.CONFLICT.value,
                 RouteOutcome.REVIEW.value,
             } and not retrying_manual_review:
                 raise IneligibleReviewAttempt(
-                    "only review, provisional, conflicting, or recoverable "
-                    "manual-review attempts can be resolved"
+                    "only confirmed, review, provisional, conflicting, or "
+                    "recoverable manual-review attempts can be resolved"
                 )
             try:
                 source = ReviewSelectionSource(selection_source)
@@ -343,10 +356,14 @@ class JournalReviewService:
                         original.get("decision") or {}, "visual_evidence"
                     )),
                 }
-                custom_only = original.get("outcome") == RouteOutcome.REVIEW.value
+                custom_only = original.get("outcome") in {
+                    RouteOutcome.CONFIRMED.value,
+                    RouteOutcome.REVIEW.value,
+                }
             if custom_only and source is not ReviewSelectionSource.CUSTOM:
                 raise InvalidReviewDestination(
-                    "review outcomes must use the custom assignment collection picker"
+                    "review outcomes and confirmed corrections must use the custom "
+                    "assignment collection picker"
                 )
             if source.evidence_key is not None:
                 evidence_destinations = set(review_choices.get(source.value, []))
